@@ -100,6 +100,18 @@ describe('core boundary (src/core/index.ts bundled for Node)', () => {
       ])
     })
 
+    it('a desktop-only file that is not TypeScript (a renderer view)', async () => {
+      const result = await checkCoreBoundary(
+        entry(
+          'view.ts',
+          `import App from '${toRepo('src/renderer/src/App.vue')}'\nexport { App }\n`
+        )
+      )
+      expect(result.errors).toEqual([
+        expect.stringMatching(/view\.ts:1: src\/renderer\/src\/App\.vue is desktop-only/)
+      ])
+    })
+
     it('but not on the core modules that replaced them', async () => {
       const result = await checkCoreBoundary(
         entry(

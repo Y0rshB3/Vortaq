@@ -113,7 +113,10 @@ configuration, or `core.context.settings` for the values the guards read).
 - `HandleFn` — `(channel, fn) => void` with the channel's argument and result types.
 - `runHandler(channel, fn, args)` — the error normalisation `typed.ts` always did: log with
   `describeForLog` (never row data or server text), rethrow a plain `Error` with the message.
-- `HandlerRegistry` — an in-memory table with `handle`, `invoke`, `has` and `channels`.
+- `HandlerRegistry` — an in-memory table with `handle`, `invoke`, `has` and `channels`. Unlike
+  Electron IPC it does not clone: arguments and results pass by reference, so an in-process
+  caller must not mutate a result the core may still hold (the webview bridge serialises them
+  anyway).
 
 `typed.ts` keeps the desktop `handle` (ipcMain) and now calls `runHandler`. The handler modules
 without Electron imports take the `HandleFn` as a parameter:
@@ -154,7 +157,10 @@ no inherited `execArgv` (a host started with `--inspect` would make every child 
 port), and `ELECTRON_RUN_AS_NODE=1` when the host itself runs on Electron (VS Code's extension
 host: `process.execPath` is the editor binary). It is a process, not a worker thread:
 `node:sqlite` runs inside `sqlite3_step`, and `Worker.terminate()` cannot interrupt native code,
-so only killing a process cancels a runaway statement.
+so only killing a process cancels a runaway statement. A child that never starts (a failed fork)
+or whose IPC channel closed is reported as exited instead of raising an uncaught `'error'` in
+the host, so the client rejects its pending calls. An optional `execPath` runs the worker on
+another Node binary (the first SQLite fallback of section 8).
 
 `sqliteRuntimeProblem()` (`sqlite/runtime.ts`, new) tells a host whether its Node can run the
 driver (section 8).
@@ -203,8 +209,11 @@ define a port next to it and put the Electron adapter in its own file, listed in
    `electron` or `electron-updater` (static `import`, `require` or dynamic `import()`), any file
    in `DESKTOP_ONLY_FILES` (the app shell and the Electron adapters, including
    `sqlite/worker.ts`, which never names Electron but needs its `parentPort`), and anything under
-   `src/renderer/`, `src/preload/` or `src/main/updates/`. npm packages stay external except the
-   ESM-only ones `electron.vite.config.ts` also inlines (`plist`, `@noble/*`).
+   `src/renderer/`, `src/preload/` or `src/main/updates/`, whatever its extension (an `onLoad`
+   backstop refuses loading any of them however it was resolved). npm packages stay external
+   except the ESM-only ones `electron.vite.config.ts` also inlines (`plist`, `@noble/*`); their
+   insides are not traversed, so the check relies on the two Electron-only package names (no
+   runtime dependency of the core needs Electron).
    - `npm run check:core` runs it from the command line.
    - `scripts/core-bundle.test.ts` (part of `npm test`, hence `npm run check`) asserts that the
      real entry passes and reaches the core modules, and that fixture entries with each kind of
@@ -212,10 +221,13 @@ define a port next to it and put the Electron adapter in its own file, listed in
    - `node scripts/core-bundle.mjs --out <dir>` writes `core.cjs` and `sqliteWorker.cjs`.
 2. **ESLint** — in the core folders (`src/core`, `src/shared`, the `src/main` folders `db`,
    `mysql`, `postgres`, `sqlite`, `mongo`, `backup`, `credentials`, `storage` and `ai`, the
-   Electron-free `src/main/ipc` modules and a few single files), `no-restricted-imports` forbids `electron`, `electron-updater` and the
-   desktop-only files by name, and `no-restricted-syntax` forbids `import('electron')` and
-   `require('electron')`. It also catches type-only imports, which esbuild erases and so cannot
-   see. The four Electron adapters are the only exceptions inside those folders.
+   Electron-free `src/main/ipc` modules and a few single files), `no-restricted-imports` forbids
+   `electron`, `electron-updater` (and their subpaths) and the desktop-only files by name, and
+   `no-restricted-syntax` forbids `import('electron')` and `require('electron')`. It also catches
+   what the bundle check cannot see: type-only imports (esbuild erases them) and `import()` or
+   `require()` with a computed path (esbuild leaves those alone without a warning), which are
+   refused outright in the core folders. The four Electron adapters are the only exceptions
+   inside those folders.
 
 Neither check replaces the other: ESLint flags the line where a forbidden import is written but
 cannot follow the import graph; the bundle check follows the whole graph from the entry, so it
@@ -248,7 +260,9 @@ extension a separate npm project for the same reason.
   applies one row (document) edit, and checks that the production guard refuses an unconfirmed
   write (`db:execute`, `db:applyRowChanges`, `mongo:execute`, `mongo:applyChanges`), leaving the
   data unchanged; on MySQL the confirmed write then succeeds.
-- The SQLite cancel-by-kill integration test now uses `nodeSqliteSpawner` too.
+- The SQLite cancel-by-kill integration test now uses `nodeSqliteSpawner` too, and
+  `src/main/sqlite/nodeSpawner.test.ts` covers its message round trip (bigint and bytes), a
+  message to a dead process and a worker that never starts.
 
 ## 8. SQLite in the editors
 
@@ -290,7 +304,8 @@ Plan:
   without the authorizer (fail closed).
 - **Fallback (not implemented).** In order of preference:
   1. A setting `vortaq.sqlite.nodePath` pointing at a Node ≥ 24.10 the user installed; the
-     spawner forks the same worker with that binary (`fork(..., { execPath })`). Cheap, keeps
+     spawner forks the same worker with that binary (`nodeSqliteSpawner`'s `execPath` option
+     already exists). Cheap, keeps
      every driver behaviour, works on remote hosts with a modern Node.
   2. **sql.js** (SQLite compiled to WebAssembly, MIT) as a read-only fallback: it loads the whole
      file into memory and writes back by exporting the whole database, with no file locking

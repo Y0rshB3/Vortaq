@@ -68,6 +68,7 @@ export default tseslint.config(
             { name: 'electron-updater', message: CORE_MESSAGE }
           ],
           patterns: [
+            { regex: '^electron(-updater)?/', message: CORE_MESSAGE },
             {
               regex:
                 '(^|/)(electronSpawner|electronCodec|electronFetch|bootstrap|window|menu|screenshots|services)$',
@@ -82,13 +83,24 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: 'ImportExpression[source.value=/^electron(-updater)?$/]',
+          selector: 'ImportExpression[source.value=/^electron(-updater)?($|\\u002F)/]',
           message: CORE_MESSAGE
         },
         {
           selector:
-            "CallExpression[callee.name='require'][arguments.0.value=/^electron(-updater)?$/]",
+            "CallExpression[callee.name='require'][arguments.0.value=/^electron(-updater)?($|\\u002F)/]",
           message: CORE_MESSAGE
+        },
+        // scripts/core-bundle.mjs cannot follow an import whose path is computed at run time.
+        {
+          selector: "ImportExpression[source.type!='Literal']",
+          message:
+            'The core boundary check cannot follow a computed import(): use a string literal.'
+        },
+        {
+          selector: "CallExpression[callee.name='require'][arguments.0.type!='Literal']",
+          message:
+            'The core boundary check cannot follow a computed require(): use a string literal.'
         }
       ]
     }

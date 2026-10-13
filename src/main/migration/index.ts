@@ -124,6 +124,8 @@ export function legacySecretsToRetry(
       const owned = kind === 'ai' ? (aiProviderExists?.(id) ?? true) : !!ctx.connections.get(id)
       if (typeof cipher === 'string' && !(key in present) && owned) wanted[key] = cipher
     }
+    // Only desktop profiles (ElectronDB, Navidog) are migrated, so a value is plain or
+    // safeStorage; the editor extension's 'vaultKey' credentials never come through here.
     return { codec: doc.codec === 'plain' ? 'plain' : 'safeStorage', items: wanted }
   } catch {
     return { codec: 'safeStorage', items: {} }

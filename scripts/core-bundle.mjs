@@ -9,6 +9,8 @@
  *
  * A violation is anything reachable from the entry that imports `electron` (statically or with a
  * dynamic import()), an Electron-only package, or one of the desktop-only files listed below.
+ * esbuild leaves `import(variable)` / `require(variable)` alone without a warning, so this check
+ * cannot see them: ESLint forbids non-literal imports in the core folders instead.
  * npm packages stay external (the bundle is for Node with the repository's node_modules, or for
  * the extension's own esbuild step), except the ESM-only ones electron.vite.config.ts also inlines.
  */
@@ -100,8 +102,13 @@ function boundaryPlugin() {
         return check(file)
       })
       b.onResolve({ filter: /^\.\.?\// }, (args) => {
-        const file = sourceFile(resolve(args.resolveDir, args.path))
-        return file ? check(file) : undefined
+        const target = resolve(args.resolveDir, args.path)
+        const file = sourceFile(target)
+        if (file) return check(file)
+        // Not an extensionless .ts import (a .js, .json... file): esbuild resolves it, but a
+        // desktop-only path is still refused here, where the importing line is known.
+        const reason = desktopOnlyReason(target)
+        return reason ? { errors: [{ text: `${reason}: the core must not import it` }] } : undefined
       })
       b.onResolve({ filter: /^[^./]/ }, (args) => {
         const name = packageName(args.path)
@@ -117,6 +124,11 @@ function boundaryPlugin() {
           return { path: args.path, external: true }
         if (INLINE_PACKAGES.includes(name)) return undefined
         return { path: args.path, external: true }
+      })
+      // Backstop for anything resolved another way: no desktop-only file is ever loaded.
+      b.onLoad({ filter: /.*/ }, (args) => {
+        const reason = desktopOnlyReason(args.path)
+        return reason ? { errors: [{ text: `${reason}: the core must not load it` }] } : undefined
       })
     }
   }
@@ -138,11 +150,12 @@ function options(entry, outfile) {
   }
 }
 
+const describe = (e) =>
+  e.location ? `${posix(e.location.file)}:${e.location.line}: ${e.text}` : e.text
+
 function describeFailure(err) {
   if (!Array.isArray(err?.errors)) throw err
-  return err.errors.map((e) =>
-    e.location ? `${posix(e.location.file)}:${e.location.line}: ${e.text}` : e.text
-  )
+  return err.errors.map(describe)
 }
 
 /**
