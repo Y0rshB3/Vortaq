@@ -53,6 +53,22 @@ function licenseTexts(dir) {
 }
 
 /**
+ * Name, version, licence, origin and licence texts of the package installed in
+ * `dir` (a node_modules/<name> folder). Also used by the editor extension's
+ * build for the packages its bundles contain.
+ */
+export function describePackage(dir, fallbackName) {
+  const pkg = readJson(join(dir, 'package.json'))
+  return {
+    name: pkg.name ?? fallbackName ?? dir.split(/[\\/]/).pop(),
+    version: pkg.version,
+    license: licenseId(pkg),
+    repository: repositoryOf(pkg),
+    texts: licenseTexts(dir)
+  }
+}
+
+/**
  * Production packages of `root` (package-lock.json v2/v3), sorted by name.
  * Dev-only entries and optional packages that are not installed are left out.
  */
@@ -63,17 +79,10 @@ export function collectPackages(root) {
     if (!path.startsWith('node_modules/') || entry.dev || entry.devOptional || entry.link) continue
     const dir = join(root, path)
     if (!existsSync(join(dir, 'package.json'))) continue
-    const pkg = readJson(join(dir, 'package.json'))
-    const name = pkg.name ?? path.slice(path.lastIndexOf('node_modules/') + 13)
-    const key = `${name}@${pkg.version}`
+    const described = describePackage(dir, path.slice(path.lastIndexOf('node_modules/') + 13))
+    const key = `${described.name}@${described.version}`
     if (seen.has(key)) continue
-    seen.set(key, {
-      name,
-      version: pkg.version,
-      license: licenseId(pkg),
-      repository: repositoryOf(pkg),
-      texts: licenseTexts(dir)
-    })
+    seen.set(key, described)
   }
   return [...seen.values()].sort(
     (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version)
@@ -98,7 +107,7 @@ function electronSection(root) {
   }
 }
 
-function renderPackage(p) {
+export function renderPackage(p) {
   const lines = [RULE, `${p.name} ${p.version}`, `Licencia: ${p.license}`]
   if (p.repository) lines.push(`Origen: ${p.repository}`)
   if (p.note) lines.push('', p.note)

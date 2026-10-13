@@ -8,6 +8,8 @@ export interface NoticePackage {
   note?: string
 }
 export declare function licenseId(pkg: Record<string, unknown>): string
+export declare function describePackage(dir: string, fallbackName?: string): NoticePackage
+export declare function renderPackage(p: NoticePackage): string
 export declare function collectPackages(root: string): NoticePackage[]
 export declare function renderNotices(input: {
   appName: string
