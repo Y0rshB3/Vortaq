@@ -1,25 +1,15 @@
-import { app, BrowserWindow, safeStorage } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { homedir } from 'node:os'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { APP_NAME, LOG_FILE_NAME } from './brand'
 import type { StartupNotice } from '@shared/types'
 import type { AppContext } from './context'
-import { CredentialStore, plainCodec, type SecretCodec } from './credentials/store'
+import { CredentialStore, plainCodec } from './credentials/store'
+import { electronCodec } from './credentials/electronCodec'
 import { envVar } from './env'
 import { configureLog, getLogger } from './log'
 import { raiseNotice } from './notices'
 import { ConnectionsRepo, JobsRepo, RunsRepo, SettingsRepo } from './storage/repos'
-
-/** Uses Electron safeStorage (Keychain-backed on macOS). */
-function electronCodec(): SecretCodec {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('safeStorage encryption is not available on this system')
-  }
-  return {
-    encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
-    decrypt: (cipher) => safeStorage.decryptString(Buffer.from(cipher, 'base64'))
-  }
-}
 
 /** Shown once when no system keyring is available (Linux without GNOME Keyring/KWallet). */
 export const PLAIN_SECRETS_NOTICE: StartupNotice = {

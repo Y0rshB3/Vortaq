@@ -11,7 +11,13 @@ export const plainCodec: SecretCodec = {
   decrypt: (c) => Buffer.from(c, 'base64').toString('utf8')
 }
 
-export type CodecName = 'safeStorage' | 'plain'
+/**
+ * How the values of credentials.json are encoded: 'safeStorage' (desktop,
+ * credentials/electronCodec.ts), 'plain' (base64 only: no keyring, tests) or
+ * 'vaultKey' (AES-256-GCM with a key the host keeps in its own secret vault,
+ * credentials/keyCodec.ts; the editor extension).
+ */
+export type CodecName = 'safeStorage' | 'plain' | 'vaultKey'
 
 interface SecretsDoc {
   version: number
