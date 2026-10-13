@@ -192,7 +192,9 @@ await core.dispose() // closes connections, tunnels and SQLite workers
 ```
 
 It registers the `connections:*`, `db:*`, `sqlite:*`, `mongo:*`, `filters:*`, `backups:*` and
-`ai:*` channels (`core.channels()`), none of the desktop-only ones. The SQLite spawner, the AI
+`ai:*` channels (`core.channels()`), none of the desktop-only ones. Several processes may share one
+`dataDir` (an editor extension host per window): `createCore` makes the JSON stores re-read a file
+another process changed (`setJsonStoreReload`). The SQLite spawner, the AI
 fetch and the log settings are process-wide: one core per process, like the desktop app's one
 context. `headless` is false, so a `mysql` connection whose server reports MariaDB is promoted in
 the host's own `connections.json`, as in the desktop app.
@@ -397,8 +399,15 @@ extensions/vscode/
   activation and asked again when connecting; the output channel says how many.
 - Opening a connection asks (input box, `password: true`) for a password or SSH password the vault
   does not have yet (imported connections). With «Guardar contraseña» off the typed password is
-  kept only until the connection closes (it lives in credentials.json, encrypted, while open).
+  kept in memory only (`CredentialStore.setTransient`, never written) until the connection closes.
 - `deactivate` and a context disposable close every connection, tunnel and SQLite worker.
+- **Several editor windows** run one extension host each, so several cores share the
+  globalStorage folder. `createCore` turns on `setJsonStoreReload(true)`: each JSON store re-reads
+  its file when another process replaced it (inode, size, mtime) before reading or mutating, so no
+  window overwrites another's connections, passwords or settings with a stale copy (the desktop
+  app keeps reading once). A FileSystemWatcher on `connections.json`/`credentials.json` refreshes
+  the tree. After creating a vault key the extension uses the one SecretStorage kept, and its
+  codec follows a key another window stores later (`followingCodec`).
 - The test API (core, tree, panels, a replaceable prompter) is returned only in
   `ExtensionMode.Test`, so other extensions never get the core.
 
@@ -461,8 +470,12 @@ mapping is the table that stood here, with these changes:
   recomputed from each statement's text and first line; a MySQL routine that came out of a
   DELIMITER block is sent back inside one, because the core splits what it receives again.
 - **Sessions:** PostgreSQL and SQLite documents run on their own session (`sessionKey` = document
-  URI, `executionId` for Detener); it closes with the document or when its target changes.
-  `SET search_path` moves the document's schema. MySQL keeps the desktop behaviour: Detener drops
+  URI, `executionId` for Detener); it closes when the last tab of the document closes
+  (`tabGroups.onDidChangeTabs`; closing a text document also fires on a language change) or when
+  its target changes.
+  `SET search_path` moves the document's schema. «Ejecutar» opens the connection before it splits the script and
+  checks it (opening can turn a `mysql` connection into `mariadb`), and a second «Ejecutar» while
+  one is starting is refused. MySQL keeps the desktop behaviour: Detener drops
   late results.
 - **Production guard:** before a write the host asks with the dialect's `analyzeWrites`
   (renderer allowlist) and, on a guarded connection, shows an input box that must match the
