@@ -49,6 +49,15 @@ import {
 import { recentSqliteFiles, rememberSqliteFile } from '@renderer/utils/sqliteRecent'
 import { MONGO_READ_PREFERENCE_LABELS } from '@shared/mongo/readPreference'
 
+const props = defineProps<{
+  /**
+   * Engines this host cannot run, left out of the engine picker (the editor
+   * extension hides SQLite when the editor's Node lacks node:sqlite). The
+   * desktop app passes nothing.
+   */
+  hiddenEngines?: EngineId[]
+}>()
+
 const ui = useUiStore()
 const connections = useConnectionsStore()
 const settingsStore = useSettingsStore()
@@ -86,7 +95,9 @@ const showBackupDirs = computed(
     can({ engine: engine.value }, 'supportsBackupsVqb')
 )
 /** Engines offered for a new connection (every engine; the engine of a saved one is fixed). */
-const engineChoices = computed(() => (editing.value ? [] : pickableEngines()))
+const engineChoices = computed(() =>
+  editing.value ? [] : pickableEngines().filter((e) => !props.hiddenEngines?.includes(e.id))
+)
 
 function selectEngine(id: EngineId): void {
   if (id === engine.value) return
