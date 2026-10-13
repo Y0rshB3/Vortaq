@@ -1,0 +1,17 @@
+# The VSIX ships the bundles in dist/ (built by scripts/build.mjs, no source maps), the icons in
+# media/ and the documents vsce expects. Sources, tests, scripts and node_modules stay out:
+# `vsce package --no-dependencies` (scripts/package.mjs) relies on the bundles containing every
+# runtime package.
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!media/*.svg
+!dist/extension.cjs
+!dist/sqliteWorker.cjs
+!dist/icon.png
+!dist/THIRD_PARTY_NOTICES.txt
+!dist/webview/*.js
+!dist/webview/*.css
+!dist/webview/assets/*.woff2

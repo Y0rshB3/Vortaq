@@ -36,7 +36,19 @@ const CORE_MESSAGE =
   'The core must stay Electron-free (docs/vscode-extension-design.md): inject a port instead.'
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'out/**', 'dist/**', 'release/**', 'tests/fixtures/**'] },
+  {
+    ignores: [
+      'node_modules/**',
+      'out/**',
+      'dist/**',
+      'release/**',
+      'tests/fixtures/**',
+      'extensions/vscode/dist/**',
+      'extensions/vscode/dist-test/**',
+      'extensions/vscode/node_modules/**',
+      'extensions/vscode/test/fixtures/**'
+    ]
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
@@ -55,6 +67,33 @@ export default tseslint.config(
       '*.mjs'
     ],
     languageOptions: { globals: { ...globals.node } }
+  },
+  /*
+   * Editor extension (extensions/vscode): the host code runs in the editor's Node, the webviews
+   * in a browser frame. Neither may use Electron (its build checks the whole graph as well).
+   */
+  {
+    files: ['extensions/vscode/src/webview/**/*.{ts,vue}'],
+    languageOptions: { globals: { ...globals.browser }, parserOptions: { parser: tseslint.parser } }
+  },
+  {
+    files: ['extensions/vscode/**/*.{ts,mjs}'],
+    ignores: ['extensions/vscode/src/webview/**'],
+    languageOptions: { globals: { ...globals.node } }
+  },
+  {
+    files: ['extensions/vscode/**/*.{ts,vue,mjs}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'electron', message: 'The editor extension runs without Electron.' },
+            { name: 'electron-updater', message: 'The editor extension runs without Electron.' }
+          ]
+        }
+      ]
+    }
   },
   {
     files: CORE_FILES,

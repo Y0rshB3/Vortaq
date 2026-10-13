@@ -4,3 +4,5 @@ dist
 release
 package-lock.json
 tests/fixtures
+extensions/vscode/dist-test
+extensions/vscode/test/fixtures
