@@ -1,19 +1,19 @@
-# Editor extension: Electron-free core (phase 1) and extension design (phase 2+)
+# Editor extension: Electron-free core (phase 1) and the extension (phase 2+)
 
 Vortaq gets a database-client extension for VS Code and its forks (Cursor, Windsurf/Devin
 Desktop, VSCodium), built in this repository from the desktop app's code. This document records
 where the code that extension needs touches Electron, the ports that now separate the two, how
-the boundary is enforced, what the editors' runtime means for SQLite, and the design notes for
-the extension itself.
+the boundary is enforced, what the editors' runtime means for SQLite, and the extension itself
+as built (section 9).
 
 Phases:
 
-| Phase | Content                                                                                                                    |
-| ----- | -------------------------------------------------------------------------------------------------------------------------- |
-| 1     | **This change.** Core usable without Electron, desktop behaviour unchanged.                                                |
-| 2     | Extension MVP: connections tree, run SQL from `.sql` files, editable results webview, production guard, SSH, editor theme. |
-| 3     | Table designer, `.vqb` backups/restore, MongoDB documents, structure-only schema for the editor's AI.                      |
-| 4     | Publish to the Visual Studio Marketplace and Open VSX.                                                                     |
+| Phase | Content                                                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Done. Core usable without Electron, desktop behaviour unchanged.                                                         |
+| 2     | Done (`extensions/vscode`, 0.1.0): connections tree, `.sql` documents, editable results, production guard, editor theme. |
+| 3     | Table designer, `.vqb` backups/restore, MongoDB documents, structure-only schema for the editor's AI.                    |
+| 4     | Publish to the Visual Studio Marketplace and Open VSX.                                                                   |
 
 Scheduled automation (jobs, scheduler, launchd) stays desktop-only. The extension keeps its own
 profile and secrets (VS Code SecretStorage); passwords are never shared with the desktop app.
@@ -316,187 +316,223 @@ Plan:
   - Rejected: `better-sqlite3` and other native modules (a prebuild per editor Electron ABI and
     platform; the same reason the desktop app avoids them).
 
-## 9. Phase 2 design notes (no code yet)
+## 9. Phase 2: the extension as built
+
+Phase 2 is `extensions/vscode/` (extension name «Vortaq», id `y0rshb3.vortaq`, version 0.1.0,
+separate from the desktop version). This section describes it as built; **Deviation** marks where
+it differs from the design notes this section replaced, and why.
 
 ### 9.1 Layout and build
 
 ```
 extensions/vscode/
-  package.json       name "vortaq", displayName "Vortaq", publisher, engines.vscode ^1.123.0,
-                     main ./dist/extension.cjs, contributes (views, commands, configuration)
-  tsconfig.json      paths @shared/* and @main/* to ../../src/…, @core to ../../src/core
-  esbuild.mjs        bundles src/extension.ts (+ the core) and the SQLite worker into dist/
-  src/extension.ts   activate/deactivate; tree, SQL documents, webview panels
-  webview/           Vite build of the Vue views for webviews (reuses src/renderer components)
-  README.md  CHANGELOG.md  LICENSE  icon.png  .vscodeignore
+  package.json        manifest (no dependencies; devDependencies esbuild, @vscode/vsce,
+                      @vscode/test-electron) + its own package-lock.json
+  tsconfig.json       host code and tests (node + vscode types; @core, @shared, @main, @renderer)
+  tsconfig.webview.json  webviews (DOM + Vue; @shared, @renderer)
+  scripts/build.mjs   esbuild: dist/extension.cjs, dist/sqliteWorker.cjs; Vite: dist/webview/*
+  scripts/package.mjs build without source maps, check the file list, vsce package
+  scripts/test-integration.mjs, scripts/screenshots.mjs   VS Code runs (section 9.8)
+  src/extension.ts    activate/deactivate, commands
+  src/protocol.ts     host ⇄ webview messages and their validation
+  src/webviewState.ts state types sent to the webviews
+  src/host/           core wiring, connections, tree, SQL documents, guard, panels, bridge
+  src/webview/        webview bootstrap, bridge, theme, connection form, results
+  media/              activity bar and panel icons (SVG)
+  test/               vscode mock (unit), integration suite, screenshot tour, fixtures
+  README.md (Spanish, Marketplace page)  CHANGELOG.md  LICENSE  .vscodeignore
 ```
 
-- **A separate npm project, not a workspace member** (section 6). Its `package.json` lists only
-  build tools (`@types/vscode`, `esbuild`, `@vscode/vsce`, `ovsx`, the extension test runner).
-  Its esbuild step resolves the runtime packages (`mysql2`, `pg`, `pg-cursor`, `mongodb`,
-  `bson`, `ssh2`, parsers) from the root `node_modules` (`nodePaths`), so the desktop app and the
-  extension always ship the same versions and there is one lockfile for runtime code.
-- **One bundle per entry:** `dist/extension.cjs` (CommonJS, platform node, `vscode` external)
-  and `dist/sqliteWorker.cjs` (`src/main/sqlite/nodeWorker.ts`, as `scripts/core-bundle.mjs`
-  builds it). The VSIX ships `dist/` only (`vsce package --no-dependencies`).
-- **Native and optional modules stay out**, as in `electron-builder.yml`: `ssh2`'s optional
-  `cpu-features` and `sshcrypto.node` (it falls back to pure JS) and the MongoDB driver's
-  optional modules (`kerberos`, `snappy`, `@mongodb-js/zstd`, `mongodb-client-encryption`,
-  `@aws-sdk/credential-providers`, …) are marked external; the driver requires them lazily
-  inside try/catch. `plist` and `@noble/*` are inlined (ESM-only).
-- **Licences:** generate the extension's third-party notices from the bundle's inputs with
-  `scripts/third-party-licenses.mjs` (or its functions) and ship them in the VSIX.
-- **Packaging and publishing (phase 4):** `vsce package` / `vsce publish` (Visual Studio
-  Marketplace, Azure DevOps publisher and token) and `ovsx publish` (Open VSX, Eclipse account
-  and namespace), which is the registry VSCodium, Cursor and Devin Desktop read. Same
-  `--publish never` discipline as the desktop: the release script builds and verifies; uploads
-  are a separate, explicit step.
+- **A separate npm project, not a workspace member**, as designed: the desktop lockfile and
+  electron-builder's dependency walk are untouched (installing `@vscode/vsce` at the root would have
+  changed the flags of an existing package in `package-lock.json`). `npm run ext:install` installs
+  its tooling.
+  - **Deviation:** `@types/vscode` (pinned to 1.120.0, at most `engines.vscode`, no dependencies) is
+    a root devDependency, so `npm run check` typechecks the extension without its install. `ovsx`
+    waits for phase 4.
+  - **Deviation:** no `nodePaths`: every source file is under the repository root, so esbuild
+    resolves the runtime packages from the root `node_modules` on its own.
+- **Bundles** (`scripts/build.mjs`): `dist/extension.cjs` (CommonJS, Node 22 target, `vscode`
+  external, the core and every driver inlined, minified, `legalComments: none`) and
+  `dist/sqliteWorker.cjs` (`src/main/sqlite/nodeWorker.ts`). The optional modules
+  electron-builder also leaves out stay external (`*.node`, `cpu-features`, `kerberos`,
+  `@mongodb-js/zstd`, `snappy`, `mongodb-client-encryption`, `@aws-sdk/credential-providers`,
+  `gcp-metadata`, `socks`, `aws4`, `pg-native`, `pg-cloudflare`); each is required lazily inside
+  try/catch. A boundary plugin fails the build on `electron`/`electron-updater` and on the files of
+  `DESKTOP_ONLY_FILES`/`DESKTOP_ONLY_DIRS` (`scripts/core-bundle.mjs`); the one renderer module the
+  host uses is allowed by name (`components/query/destructiveGuard.ts`, pure TypeScript).
+- **Webviews:** Vite with the renderer's plugins (`@vitejs/plugin-vue`, `vite-plugin-vuetify`),
+  one build per view. **Deviation:** each view is a single IIFE (no code splitting), so the CSP
+  allows scripts by nonce only. A Vite plugin refuses `electron` and anything under `src/main`,
+  `src/core` or `src/preload`. Icons: `dist/webview/mdi.css` holds only the `mdi-*` classes the
+  reused sources and Vuetify's aliases name (about 270) and points at the woff2 font only.
+- **Notices:** `dist/THIRD_PARTY_NOTICES.txt` lists the packages whose files the bundles contain
+  (esbuild metafile and Rollup module ids) plus `@mdi/font` and `vue`, with `describePackage` and
+  `renderPackage` exported from `scripts/third-party-licenses.mjs` (the desktop notices are
+  byte-for-byte unchanged).
+- **Packaging** (`npm run ext:package`): `vsce package --no-dependencies` after checking that the
+  VSIX has the bundles, the notices and the icons, and no source maps, TypeScript/Vue sources,
+  tests, fixtures, `node_modules`, `.node` binaries or secret-looking files. The 0.1.0 VSIX is about 2 MB
+  (17 files). Nothing is published (phase 4). A GitHub release of
+  the VSIX (tag `vscode-v<version>`) must not be marked as the latest release: the desktop update
+  check reads `/releases/latest` and electron-updater its `latest*.yml`.
+- **Desktop untouched:** electron-builder packs only `out/**` and `package.json`; the electron-vite
+  inputs did not change. `npm run check` now also lints, typechecks (`typecheck:ext`) and unit-tests
+  (vitest project `ext`) the extension.
 
 ### 9.2 Activation wiring
 
-```ts
-export async function activate(context: vscode.ExtensionContext) {
-  let key = await context.secrets.get('vortaq.vaultKey')
-  if (!key) await context.secrets.store('vortaq.vaultKey', (key = newVaultKey()))
-  const output = vscode.window.createOutputChannel('Vortaq', { log: true })
-  const core = createCore({
-    dataDir: context.globalStorageUri.fsPath,
-    secrets: { codec: keyCodec(key), codecName: 'vaultKey' },
-    sqliteSpawner: sqliteRuntimeProblem()
-      ? undefined
-      : nodeSqliteSpawner(context.asAbsolutePath('dist/sqliteWorker.cjs')),
-    emit: (channel, payload) => panels.broadcast(channel, payload),
-    log: { sink: (e) => output[e.level](`[${e.scope}] ${e.message}`) }
-  })
-  context.subscriptions.push({ dispose: () => void core.dispose() })
-}
-```
+`host/core.ts` calls `createCore` with the extension's ports:
 
-- `deactivate` (and the disposable above) closes every connection, tunnel and SQLite worker.
-- If SecretStorage loses the key (a reset keychain), stored passwords no longer decrypt: the
-  extension asks for them again (as the desktop's secret migration does for the passwords it
-  cannot decrypt, `passwordsToReenter`) and replaces the key. On Linux, VS Code's SecretStorage
-  depends on the system keyring (`password-store`); without one it may fall back to a weaker
-  store, which the extension's README must say.
-- The vault key never reaches `credentials.json`, a log, a webview or a message.
+| Port        | Extension adapter                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
+| Profile     | `context.globalStorageUri` (never the desktop profile)                                                         |
+| Secrets     | `keyCodec(key)`, codec name `vaultKey`; the key in `context.secrets` under `vortaq.vaultKey` (`host/vault.ts`) |
+| SQLite      | `nodeSqliteSpawner(dist/sqliteWorker.cjs)` only when `sqliteRuntimeProblem()` is null; else no spawner         |
+| Push events | `event:connectionClosed` → the tree, the runner's sessions and a warning                                       |
+| Logging     | `configureLog({ filePath: null, sink })` into the «Vortaq» LogOutputChannel                                    |
+| AI fetch    | not wired (no AI in phase 2)                                                                                   |
+
+- A stored value the current vault key cannot decrypt (SecretStorage lost the key) is dropped at
+  activation and asked again when connecting; the output channel says how many.
+- Opening a connection asks (input box, `password: true`) for a password or SSH password the vault
+  does not have yet (imported connections). With «Guardar contraseña» off the typed password is
+  kept only until the connection closes (it lives in credentials.json, encrypted, while open).
+- `deactivate` and a context disposable close every connection, tunnel and SQLite worker.
+- The test API (core, tree, panels, a replaceable prompter) is returned only in
+  `ExtensionMode.Test`, so other extensions never get the core.
 
 ### 9.3 Webview bridge on the typed IPC map
 
-The renderer only talks to main through `window.vortaq` (`VortaqApi`: `platform`, `invoke`,
-`on`), wrapped by `src/renderer/src/api.ts`. A webview can provide the same object, so the Vue
-views and components run unchanged:
-
-- **Webview side** (a small script loaded before the Vue bundle): `window.vortaq.invoke(channel,
-...args)` posts `{ type: 'invoke', id, channel, args }` through `acquireVsCodeApi()` and resolves
-  or rejects when `{ type: 'result', id, ok, value | message }` arrives; `on(event, listener)`
-  subscribes to `{ type: 'event', channel, payload }` messages.
-- **Extension side:** `webview.onDidReceiveMessage` checks the channel against an allowlist per
-  panel (the core channels the view needs, never `app:*` or `settings:*` as such), calls
-  `core.invoke`, and posts the result or the error **message only** (runHandler already strips
-  the rest). `CoreOptions.emit` forwards `event:*` to the panels that subscribed.
-- **Same trust model as the renderer:** the webview is untrusted UI; every guard stays where it is
-  (handlers in main). The extension must never add `confirmProduction: true` on its own.
-- **Serialisation:** Electron IPC uses structured clone, webview messages are JSON. Before reusing
-  a view, check that its channels' results are JSON-safe (no `Date`, `Map`, `Set`, `bigint`,
-  `Uint8Array`, or `undefined` holes); binary cells already travel as `0x…` text and MongoDB
-  values as canonical EJSON. Add a JSON round-trip assertion to the core integration test when the
-  first view is wired.
-- Views that need desktop chrome (window controls, Electron-only dialogs) get small adapters
-  behind the same `useEngineUi`/composable seams; dialogs map to `vscode.window` pickers.
-- Webviews use a strict CSP with a nonce, `localResourceRoots` limited to `dist/webview`, and
-  `retainContextWhenHidden` only for the results panel if needed.
+- **Webview side** (`src/webview/bridge.ts`): `window.vortaq` (`platform`, `invoke`, `on`) over
+  `acquireVsCodeApi()`, so the renderer's `api.ts`, stores and components run unchanged. The page
+  posts `ready`; the host answers with `init` (and later `state`) messages: state never goes into
+  the HTML.
+- **Host side** (`host/webview/bridge.ts`): `parseWebviewMessage` checks every field (types,
+  lengths, at most 8 arguments) and drops anything else. `invoke` answers only the panel's
+  channels, then a per-panel scope check, then the guard, then `core.invoke`; results go through
+  `toJsonSafe` (bigint, bytes, dates, NaN… as exact text) and errors as their message only.
+  - Connection form: `connections:save/test/set*Password/has*Password` and `sqlite:createFile`,
+    only for the connection it edits or the one its first save created (`connections:test` too: it
+    falls back to the stored passwords of `input.id`), and `sqlite:createFile` only for the path
+    the user just chose in the save dialog. Host adapters answer `app:pickFile`, `app:pickSaveFile`,
+    `app:pickDirectory` (VS Code dialogs) and `app:openPath` (only the edited connection's extra
+    backup folders).
+  - Results: `db:tableStructure` and `db:applyRowChanges`, only on the panel's own connection.
+  - Never `db:execute`, `connections:delete`, `settings:*`, `jobs:*` or other `app:*` channels.
+- **Deviation:** `settings:get` was not moved out of `ipc/app.ts`: the webviews receive the
+  settings they read (typed-confirmation environments, destructive confirmation, row limit) in their
+  state, and the reused stores are filled from it.
+- **JSON safety:** checked as planned: `tests/integration/coreNode.test.ts` asserts that
+  `db:execute` results of every engine and MongoDB pages round-trip through JSON unchanged.
+- **CSP:** `default-src 'none'`; `script-src 'nonce-…'`; `style-src` the extension's files and the
+  nonce (the editor-theme stylesheet and Vuetify's theme stylesheet, via `theme.cspNonce`);
+  `font-src`/`img-src` the extension's files; `base-uri`/`form-action 'none'`; command URIs off;
+  `localResourceRoots` = `dist/webview`. `retainContextWhenHidden` only for results (unapplied
+  edits survive switching tabs).
+- Notifications of the reused components become VS Code notifications and their confirmations VS
+  Code modal dialogs.
 
 ### 9.4 Theming
 
-The renderer's design tokens are CSS variables (`--nd-*`, `src/renderer/src/styles/tokens.css`,
-dark on `:root` and `.v-theme--vortaqDark`, light on `.v-theme--vortaqLight`). VS Code exposes
-the editor theme to webviews as `--vscode-*` variables and a body class (`vscode-dark`,
-`vscode-light`, `vscode-high-contrast`, `vscode-high-contrast-light`). A `vscode-theme.css`
-loaded after `tokens.css` re-declares the tokens from the editor's:
+**Deviation:** no static `vscode-theme.css`. `src/webview/theme.ts` builds the stylesheet at run
+time, because some tokens need numbers (`rgba(var(--nd-accent-rgb), …)`) and Vuetify needs opaque
+hex colours; it re-runs when VS Code changes the body class or the variables on `<html>`. The
+mapping is the table that stood here, with these changes:
 
-| Token                                                  | From                                                                                              |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `--nd-bg-app`                                          | `--vscode-editor-background`                                                                      |
-| `--nd-bg-panel`                                        | `--vscode-sideBar-background` (fallback `--vscode-editor-background`)                             |
-| `--nd-bg-raised`                                       | `--vscode-editorWidget-background`                                                                |
-| `--nd-bg-sunken`, `--nd-bg-input`                      | `--vscode-input-background`                                                                       |
-| `--nd-text`                                            | `--vscode-foreground`                                                                             |
-| `--nd-text-muted`, `--nd-text-2`                       | `--vscode-descriptionForeground`                                                                  |
-| `--nd-text-disabled`                                   | `--vscode-disabledForeground`                                                                     |
-| `--nd-border`, `--nd-hairline`                         | `--vscode-panel-border` / `--vscode-widget-border`                                                |
-| `--nd-border-strong`                                   | `--vscode-contrastBorder` (high contrast), else `--vscode-focusBorder`                            |
-| `--nd-accent`, `--nd-on-accent`                        | `--vscode-button-background`, `--vscode-button-foreground`                                        |
-| `--nd-hover`                                           | `--vscode-list-hoverBackground`                                                                   |
-| `--nd-selected`, `--nd-selected-strong`                | `--vscode-list-inactiveSelectionBackground`, `--vscode-list-activeSelectionBackground`            |
-| `--nd-selection`                                       | `--vscode-editor-selectionBackground`                                                             |
-| `--nd-error`, `--nd-warning`, `--nd-info`              | `--vscode-errorForeground`, `--vscode-editorWarning-foreground`, `--vscode-editorInfo-foreground` |
-| `--nd-success`                                         | `--vscode-testing-iconPassed`                                                                     |
-| `--nd-scrollbar`, `--nd-scrollbar-hover`               | `--vscode-scrollbarSlider-background`, `--vscode-scrollbarSlider-hoverBackground`                 |
-| `--nd-font-ui`, `--nd-fs-base`                         | `--vscode-font-family`, `--vscode-font-size`                                                      |
-| `--nd-font-mono`                                       | `--vscode-editor-font-family`                                                                     |
-| `--nd-glass*`, `--nd-glow*`, `--nd-nebula*`, gradients | flat values (no blur or glow inside the editor)                                                   |
-
-Vuetify's theme colours are hex values (`src/renderer/src/plugins/vuetify.ts`): at start-up and
-on every body-class change (a `MutationObserver`), read the computed `--vscode-*` values, pick
-`vortaqDark` or `vortaqLight`, and update the theme's colours. The `nd-` prefix stays (CLAUDE.md).
-"Editor theme" in phase 2 means exactly this: the webviews follow the editor's colours and fonts;
-`.sql` documents use the editor itself.
+- `--nd-border-strong` comes from `input-border` / `widget-border` (the focus colour would have
+  made every strong border blue); `contrastActiveBorder` in high contrast.
+- High-contrast themes paint buttons black: the accent (`--nd-accent`, Vuetify `primary`) is
+  `focusBorder` there, with black or white text by contrast.
+- Radii shrink to the editor's (6/4/3 px); shadows go in high contrast; glass, glow and nebula
+  are flat or transparent; `--nd-font-mono` is `editor.fontFamily`, so grids use the editor font.
+- `theme.test.ts` checks that every colour and font token of `tokens.css` is re-declared for the
+  four kinds of theme.
 
 ### 9.5 SQL documents, guard UX, SSH, remote
 
-- **`.sql` files:** a status-bar item chooses the connection and database of the active document
-  (stored per document URI in `workspaceState`); «Ejecutar» runs the selection, the statement under
-  the cursor (the connection's dialect `splitStatements`) or the whole file through `db:execute`,
-  with an `executionId` so «Cancelar» can call `db:cancel`; results open in the results webview
-  (the query result grid, editable where `resultEditability` allows).
-- **Production guard:** before a write the extension asks with the dialect's `analyzeWrites`
-  (renderer allowlist, the same decision the desktop UI makes) and shows a typed confirmation
-  (`window.showInputBox` that must match the connection name, the `requiresTypedConfirm`
-  environments from settings); only then it sends `confirmProduction: true`. Main still enforces
-  it with the denylist, so a missed prompt fails closed with the usual message.
-- **SSH:** the tunnel is `ssh2` in pure JS and needs nothing from Electron; private-key paths are
-  validated by `connectionSaveError` with the host's `process.platform`.
-- **Remote development:** declare `extensionKind: ["ui", "workspace"]`: by default it runs next to
-  the editor UI (databases reachable from the user's machine, the OS keychain for SecretStorage);
-  on a remote host it can run there when the database is only reachable from it. On Cursor's
-  remote server (Node 20) SQLite is unavailable and `sqliteRuntimeProblem` says so.
+- **Targets:** connection, database and (PostgreSQL) schema per document (`host/targets.ts`):
+  workspace state for files, session only for untitled documents. Status bar item (red background
+  for production, warning colour for other guarded environments), a CodeLens on the first line
+  («conexión · base de datos», «Ejecutar todo») and editor-title buttons (Ejecutar/Detener, elegir
+  conexión).
+- **Ejecutar:** selection, else the statement under the cursor, else the whole document
+  (`host/statement.ts`). **Deviation:** `SqlStatement` has no offsets, so the document ranges are
+  recomputed from each statement's text and first line; a MySQL routine that came out of a
+  DELIMITER block is sent back inside one, because the core splits what it receives again.
+- **Sessions:** PostgreSQL and SQLite documents run on their own session (`sessionKey` = document
+  URI, `executionId` for Detener); it closes with the document or when its target changes.
+  `SET search_path` moves the document's schema. MySQL keeps the desktop behaviour: Detener drops
+  late results.
+- **Production guard:** before a write the host asks with the dialect's `analyzeWrites`
+  (renderer allowlist) and, on a guarded connection, shows an input box that must match the
+  connection name; only then `confirmProduction: true` is sent. Elsewhere, destructive statements
+  ask a modal question when `vortaq.confirmDestructive` is on. **Deviation (stronger):** webview
+  writes never carry the webview's own confirmation: the bridge strips `confirmProduction` from
+  every argument and the host asks, from the call's arguments («Se aplicarán 2 cambios en
+  tienda.clientes (1 modificación, 1 fila borrada)»), when the write arrives. The webview answers
+  a typed-name `ui.ask` with yes because the real question is the host's. Main still enforces it.
+  The integration suite checks the three layers (core alone, dismissed prompt, forged webview
+  flag).
+- **Settings:** `vortaq.maxRows`, `vortaq.typedConfirmEnvironments`, `vortaq.confirmDestructive`
+  (both application-scoped: a workspace cannot relax them), `vortaq.codeLens`; the guard ones are
+  copied into the core's settings.json, where the core reads them.
+- **Re-running** a document whose results hold unapplied edits asks «Descartar y ejecutar».
+- **SSH:** as designed (pure-JS `ssh2`). **Remote:** `extensionKind: ["ui", "workspace"]`;
+  untrusted and virtual workspaces are supported (nothing runs without a user action).
 
 ### 9.6 Connection import from the desktop app (without passwords)
 
-«Importar conexiones de Vortaq» reads the desktop profile's `connections.json` only when the
-user runs the command (default `<appData>/Vortaq`, or a file the user picks), assigns new ids,
-and never reads `credentials.json`: passwords are typed again and stored in the extension's
-vault. The desktop app is the same product, but its secrets stay where they are, as the
-extension's never reach the desktop. The `.ncx` importer (`src/main/importers/connections/`,
-Electron-free) can run in the extension later for a file the user picks.
+`host/desktopImport.ts` reads `<profile>/connections.json` only (macOS
+`~/Library/Application Support/Vortaq`, Windows `%APPDATA%\Vortaq`, Linux
+`$XDG_CONFIG_HOME/Vortaq` or `~/.config/Vortaq`; «Elegir connections.json…» when it is not
+there), copies known fields only (a hand-edited file may carry anything), drops ids, dates and
+the desktop's backup folders, validates each entry with `connectionSaveError` and lists them with
+checkboxes (duplicate names unchecked). It never opens `credentials.json`; the unit test checks
+the only file read. `VORTAQ_TEST_DESKTOP_PROFILE` (test-only) points at the fixture in
+`extensions/vscode/test/fixtures/desktop-profile/`.
 
 ### 9.7 Naming
 
-- Name **«Vortaq»**, description **«Cliente de bases de datos para VS Code»**. "VS Code" and
-  "Visual Studio Code" stay out of the name (Microsoft's trademark guidance for extensions); the
-  description only states compatibility.
-- Publisher and namespace to register before phase 4 (Marketplace publisher, Open VSX namespace),
-  e.g. `y0rshb3.vortaq`. Command and setting ids use the `vortaq.` prefix.
-- UI texts in Spanish, code and comments in English, as in the desktop app.
+As designed: «Vortaq», «Cliente de bases de datos para VS Code», `vortaq.` ids, Spanish UI.
+Publisher `y0rshb3` is a placeholder until the Marketplace publisher and Open VSX namespace exist
+(phase 4).
 
-### 9.8 Testing in phase 2
+### 9.8 Testing
 
-- Keep `scripts/core-bundle.test.ts` and `coreNode.test.ts` as the gates for the core.
-- Extension tests with `@vscode/test-electron` (downloads a VS Code build) for activation, the
-  tree and the bridge; they are not part of the desktop gate.
-- A smoke that packages the VSIX and checks it contains `dist/extension.cjs`,
-  `dist/sqliteWorker.cjs` and the notices, and no `.node` binaries.
+- **Unit** (vitest project `ext`, mocked `vscode`, in `npm run check`): statement selection,
+  document targets, guard prompting and webview-call preparation, bridge validation/allowlist/
+  serialization, CSP, form scope, desktop import (fixture, no passwords, only connections.json
+  read), vault key, settings, theme mapping, copy formats.
+- **Integration in VS Code** (`npm run ext:test`, not part of the desktop gate): downloads VS Code
+  with `@vscode/test-electron` 3.x (2.x cannot start 1.110+ builds on macOS) into
+  `~/Library/Caches/vortaq-vscode-test` (Windows `%LOCALAPPDATA%\vortaq-vscode-test`, else
+  `~/.cache/vortaq-vscode-test`; `VORTAQ_VSCODE_TEST_CACHE` overrides it) and runs
+  `test/integration/suite.ts` with a scratch profile, in-memory SecretStorage
+  (`--use-inmemory-secretstorage`, no keychain item) and no other extensions. No mocha: a small
+  sequential runner with `node:assert`; the webviews' part is played through the panels' message
+  handlers, so the allowlists, scopes and guard are the real ones. `--required` fails on a missing
+  server URL.
+- **Screenshots** (`node extensions/vscode/scripts/screenshots.mjs <dir>`): the same VS Code with
+  `--remote-debugging-port`; `test/integration/shots.ts` walks the views and the script captures
+  the window with `Page.captureScreenshot` (no screen-recording permission needed), in the dark,
+  light and high-contrast themes.
 
-## 10. Left for phase 2
+## 10. Left for phase 3 (and later)
 
-- The extension package itself (sections 9.1–9.8).
-- `settings:get`/`settings:update` live in `ipc/app.ts` with Electron-only handlers; if the
-  webviews need them, move those two handlers to an Electron-free module first.
-- JSON-safety check of every result type used by the first webview.
-- Decide whether the extension contributes the AI context as a Language Model tool (phase 3);
-  it must reuse the structure-only readers (`MetadataQueryable`, `PgMetadataQueryable`,
-  `SqliteMetadataQueryable`, `MongoStructureSource`) and never send rows.
-- The SQLite fallback of section 8, only if users on older or remote hosts ask for it.
+- Table designer; `.vqb` backups and restore (core channels exist: `backups:*`).
+- MongoDB: document editing (`mongo:applyChanges`), shell queries from the editor
+  (`mongo:execute` for `.mongodb`/`.js` documents), «Cargar más».
+- Pagination of SQL results and «Ver datos» (filters, sort on the server), export to a file.
+- Transaction controls for PostgreSQL/SQLite document sessions (state in the status bar,
+  Confirmar/Deshacer) and the desktop's «transacción abierta» prompt when closing a document.
+- Schema-aware SQL completion in `.sql` documents.
+- Structure-only AI context as a Language Model tool, reusing `MetadataQueryable`,
+  `PgMetadataQueryable`, `SqliteMetadataQueryable` and `MongoStructureSource`; never rows.
+- `.ncx` import for a file the user picks; the SQLite fallback of section 8
+  (`vortaq.sqlite.nodePath` first) if users on old or remote hosts ask for it.
+- English UI strings (`package.nls`) if the extension is offered beyond Spanish.
+- Phase 4: Marketplace and Open VSX publisher, `vsce publish` / `ovsx publish` as an explicit step.
 
 ## 11. Sources
 
