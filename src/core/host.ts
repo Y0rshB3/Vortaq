@@ -21,6 +21,7 @@ import { registerFiltersHandlers } from '@main/ipc/filters'
 import { HandlerRegistry } from '@main/ipc/router'
 import { configureLog } from '@main/log'
 import { setSqliteSpawner, type ProcessSpawner } from '@main/sqlite/spawner'
+import { setJsonStoreReload } from '@main/storage/jsonStore'
 import { ConnectionsRepo, JobsRepo, RunsRepo, SettingsRepo } from '@main/storage/repos'
 
 export interface CoreOptions {
@@ -75,8 +76,13 @@ export interface VortaqCore {
 /**
  * Creates the core. The SQLite spawner, the AI fetch and the log settings are
  * process-wide (one core per process, like the desktop app's one context).
+ * Several processes may use the same dataDir (one per editor window): the JSON
+ * files are re-read when another process changed them.
  */
 export function createCore(options: CoreOptions): VortaqCore {
+  // Several processes may share the profile (one extension host per editor window): each
+  // store re-reads a file another process rewrote instead of overwriting it with a stale copy.
+  setJsonStoreReload(true)
   if (options.log) configureLog(options.log)
   if (options.sqliteSpawner) setSqliteSpawner(options.sqliteSpawner)
   if (options.fetch) setAiFetch(options.fetch)
