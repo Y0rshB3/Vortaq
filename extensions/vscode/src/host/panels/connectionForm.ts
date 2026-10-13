@@ -7,6 +7,7 @@
  * create the SQLite file the user just chose in the save dialog.
  */
 import { stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import * as vscode from 'vscode'
 import type { ConnectionConfig, EngineId } from '@core'
 import type { HostMessage } from '../../protocol'
@@ -50,6 +51,26 @@ const dialogFilters = (filters: FileFilters): Record<string, string[]> | undefin
           .map((f) => [f.name, f.extensions.filter((e) => typeof e === 'string')])
       )
     : undefined
+
+/**
+ * Files the core opens are local paths of the machine the extension runs on.
+ * In a remote window the dialogs can browse the remote file system: those
+ * picks are refused instead of being used as local paths.
+ */
+function localPath(uri: vscode.Uri | undefined): string | null {
+  if (!uri) return null
+  if (uri.scheme !== 'file')
+    throw new Error(
+      'Elige un archivo de este equipo: Vortaq abre los archivos donde se ejecuta la extensión.'
+    )
+  return uri.fsPath
+}
+
+/** First folder of the workspace when it is local, else the user's home folder. */
+function localHome(): vscode.Uri {
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri
+  return folder?.scheme === 'file' ? folder : vscode.Uri.file(homedir())
+}
 
 /**
  * The scope rules of one form, apart from VS Code so they can be tested:
@@ -189,36 +210,38 @@ export class ConnectionFormPanel {
       local: {
         'app:pickFile': async (title, filters) => {
           const picked = await vscode.window.showOpenDialog({
+            defaultUri: localHome(),
             title: typeof title === 'string' ? title : undefined,
             canSelectFiles: true,
             canSelectFolders: false,
             canSelectMany: false,
             filters: dialogFilters(filters as FileFilters)
           })
-          return picked?.[0]?.fsPath ?? null
+          return localPath(picked?.[0])
         },
         'app:pickSaveFile': async (title, defaultName, filters) => {
-          const home = vscode.workspace.workspaceFolders?.[0]?.uri
+          const home = localHome()
           const picked = await vscode.window.showSaveDialog({
             title: typeof title === 'string' ? title : undefined,
             defaultUri:
-              home && typeof defaultName === 'string'
+              typeof defaultName === 'string' && /^[^\\/]+$/.test(defaultName)
                 ? vscode.Uri.joinPath(home, defaultName)
-                : undefined,
+                : home,
             filters: dialogFilters(filters as FileFilters)
           })
-          const path = picked?.fsPath ?? null
+          const path = localPath(picked)
           this.scope.savePathChosen(path)
           return path
         },
         'app:pickDirectory': async (title) => {
           const picked = await vscode.window.showOpenDialog({
+            defaultUri: localHome(),
             title: typeof title === 'string' ? title : undefined,
             canSelectFiles: false,
             canSelectFolders: true,
             canSelectMany: false
           })
-          return picked?.[0]?.fsPath ?? null
+          return localPath(picked?.[0])
         },
         'app:openPath': async (path) => {
           if (!this.scope.mayReveal(path))

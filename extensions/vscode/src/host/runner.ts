@@ -35,6 +35,8 @@ const hasTabSession = (c: Pick<ConnectionConfig, 'engine'>): boolean =>
 
 export class SqlRunner implements vscode.Disposable {
   private readonly running = new Map<string, Running>()
+  /** Documents between «Ejecutar» and their run starting (prompts, connecting). */
+  private readonly starting = new Set<string>()
   private seq = 0
   private runIds = 0
   /** Documents with a tab session on the server (PostgreSQL/SQLite), by URI. */
@@ -82,35 +84,46 @@ export class SqlRunner implements vscode.Disposable {
   async run(editor: vscode.TextEditor, all: boolean): Promise<void> {
     const doc = editor.document
     const uri = doc.uri.toString()
-    if (this.running.has(uri)) {
+    // `starting` covers the prompts and the connect before the run is registered, so a second
+    // Cmd+Enter meanwhile cannot send the script twice.
+    if (this.running.has(uri) || this.starting.has(uri)) {
       void vscode.window.showInformationMessage(
         'Este documento ya está ejecutando una consulta. Pulsa «Detener» para cancelarla.'
       )
       return
     }
-    let target = this.targets.get(uri)
-    let connection = target ? this.connections.get(target.connectionId) : null
-    if (!target || !connection) {
-      target = await this.pick(doc)
-      connection = target ? this.connections.get(target.connectionId) : null
-      if (!target || !connection) return
+    this.starting.add(uri)
+    try {
+      let target = this.targets.get(uri)
+      let connection = target ? this.connections.get(target.connectionId) : null
+      if (!target || !connection) {
+        target = await this.pick(doc)
+        connection = target ? this.connections.get(target.connectionId) : null
+        if (!target || !connection) return
+      }
+      // Open first: a `mysql` connection whose server is MariaDB becomes `mariadb` when it
+      // opens, and the statement split and the guard must use the dialect that will run it.
+      if (!(await this.connections.open(connection.id))) return
+      connection = this.connections.get(connection.id) ?? connection
+      const text = doc.getText()
+      const selection = editor.selection
+      const picked: RunTarget | null = all
+        ? text.trim()
+          ? { sql: text, start: 0, end: text.length, kind: 'document' }
+          : null
+        : runTarget(
+            text,
+            { start: doc.offsetAt(selection.start), end: doc.offsetAt(selection.end) },
+            sqlDialectOf(connection)
+          )
+      if (!picked) {
+        void vscode.window.showWarningMessage('No hay SQL para ejecutar.')
+        return
+      }
+      await this.execute(uri, connection, target, picked, editor)
+    } finally {
+      this.starting.delete(uri)
     }
-    const text = doc.getText()
-    const selection = editor.selection
-    const picked: RunTarget | null = all
-      ? text.trim()
-        ? { sql: text, start: 0, end: text.length, kind: 'document' }
-        : null
-      : runTarget(
-          text,
-          { start: doc.offsetAt(selection.start), end: doc.offsetAt(selection.end) },
-          sqlDialectOf(connection)
-        )
-    if (!picked) {
-      void vscode.window.showWarningMessage('No hay SQL para ejecutar.')
-      return
-    }
-    await this.execute(uri, connection, target, picked, editor)
   }
 
   /** Runs `picked` for the document `uri` (also used by the integration tests). */
@@ -121,7 +134,11 @@ export class SqlRunner implements vscode.Disposable {
     picked: RunTarget,
     editor?: vscode.TextEditor
   ): Promise<QueryStatementResult[] | null> {
+    if (this.running.has(uri)) return null
     if (!(await this.results.mayReplace(`doc:${uri}`))) return null
+    const info = await this.connections.open(connection.id)
+    if (!info) return null
+    connection = this.connections.get(connection.id) ?? connection
     const decision = await this.guard.checkSql(
       connection,
       picked.sql,
@@ -134,9 +151,7 @@ export class SqlRunner implements vscode.Disposable {
       )
       return null
     }
-    const info = await this.connections.open(connection.id)
-    if (!info) return null
-    connection = this.connections.get(connection.id) ?? connection
+    if (this.running.has(uri)) return null
     if (editor) this.flash(editor, picked)
 
     const name = uri.startsWith('untitled:')

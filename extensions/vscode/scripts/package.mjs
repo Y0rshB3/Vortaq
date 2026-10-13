@@ -1,5 +1,5 @@
 /**
- * Builds the extension (without source maps) and packages it as
+ * Builds the extension (without source maps, checked) and packages it as
  * extensions/vscode/vortaq-<version>.vsix with `vsce package --no-dependencies`: the bundles in
  * dist/ already contain every runtime package. Before packaging it checks the file list:
  * the bundles, the notices and the icons must be there; source maps, TypeScript sources,
@@ -57,8 +57,23 @@ function vsce(args) {
   return result.stdout
 }
 
+/** A dev build (`ext:test`, `--dev`) inlines source maps, which embed the whole source. */
+function assertNoSourceMaps() {
+  for (const file of [
+    'dist/extension.cjs',
+    'dist/sqliteWorker.cjs',
+    'dist/webview/connection.js',
+    'dist/webview/results.js'
+  ])
+    if (readFileSync(join(EXT, file), 'utf8').includes('sourceMappingURL='))
+      throw new Error(`${file} carries a source map: it is a development build`)
+}
+
 async function main() {
+  // vsce also rebuilds through vscode:prepublish, so a direct `vsce package` never ships a
+  // development build either.
   await buildExtension({ dev: false })
+  assertNoSourceMaps()
   const files = vsce(['ls', '--no-dependencies'])
     .split('\n')
     .map((l) => l.trim().replace(/\\/g, '/'))

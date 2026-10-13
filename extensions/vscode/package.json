@@ -419,6 +419,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "node scripts/build.mjs",
     "build": "node scripts/build.mjs",
     "package": "node scripts/package.mjs",
     "test:integration": "node scripts/test-integration.mjs"
