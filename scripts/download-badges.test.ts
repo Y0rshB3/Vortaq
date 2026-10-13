@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { badge, installerDownloads } from './download-badges.mjs'
+import { badge, installerDownloads, latestDesktopRelease } from './download-badges.mjs'
 
 describe('download badges', () => {
   it('counts installers only, not update metadata, blockmaps or checksums', () => {
@@ -18,6 +18,18 @@ describe('download badges', () => {
     }
     expect(installerDownloads(release)).toBe(8)
     expect(installerDownloads({})).toBe(0)
+  })
+
+  it('takes the newest desktop release, never an editor-extension release', () => {
+    const releases = [
+      { tag_name: 'v2.0.0', published_at: '2026-10-08T11:07:37Z' },
+      { tag_name: 'vscode-v0.1.0', published_at: '2026-10-13T18:00:00Z' },
+      { tag_name: 'v2.0.1', published_at: '2026-10-09T01:59:54Z' },
+      { tag_name: 'v2.1.0', published_at: '2026-10-14T00:00:00Z', draft: true },
+      { tag_name: 'v2.1.0-beta.1', published_at: '2026-10-12T00:00:00Z', prerelease: true }
+    ]
+    expect(latestDesktopRelease(releases)?.tag_name).toBe('v2.0.1')
+    expect(latestDesktopRelease([])).toBeUndefined()
   })
 
   it('writes a shields.io endpoint badge', () => {

@@ -26,6 +26,24 @@ export default defineConfig({
         }
       },
       {
+        // Editor extension (extensions/vscode): host modules with a mocked `vscode`, and the
+        // pure webview helpers. Its VS Code integration suite runs with `npm run ext:test`.
+        resolve: {
+          alias: {
+            ...alias,
+            '@core': resolve('src/core/index.ts'),
+            vscode: resolve('extensions/vscode/test/vscode.mock.ts')
+          }
+        },
+        test: {
+          name: 'ext',
+          environment: 'node',
+          include: ['extensions/vscode/src/**/*.test.ts'],
+          // theme.test.ts reads the desktop design tokens (tokens.css?raw).
+          css: { include: [/styles\/tokens\.css/] }
+        }
+      },
+      {
         plugins: [vue()],
         resolve: { alias },
         test: {

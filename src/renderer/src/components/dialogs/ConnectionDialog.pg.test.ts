@@ -35,6 +35,16 @@ describe('ConnectionDialog · PostgreSQL', () => {
     expect(wrapper.find('[data-test="conn-pg-database"]').exists()).toBe(false)
   })
 
+  it('leaves out the engines the host cannot run (hiddenEngines, editor extension)', async () => {
+    const pinia = freshPinia()
+    useUiStore().connectionDialog = { open: true, editing: null }
+    wrapper = mountWith(ConnectionDialog, pinia, { props: { hiddenEngines: ['sqlite'] } })
+    await settle()
+    expect(wrapper.find('[data-test="conn-engine-sqlite"]').exists()).toBe(false)
+    for (const id of ['mysql', 'mariadb', 'postgresql', 'mongodb'])
+      expect(wrapper.find(`[data-test="conn-engine-${id}"]`).exists()).toBe(true)
+  })
+
   it('creates a MariaDB connection from the picker (engine mariadb, MySQL defaults)', async () => {
     expect(emptyConnectionInput('mariadb')).toMatchObject({
       engine: 'mariadb',

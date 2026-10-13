@@ -3,6 +3,10 @@ node_modules/
 out/
 dist/
 release/
+# Editor extension: integration-suite bundle, packaged VSIX, downloaded VS Code test builds
+extensions/vscode/dist-test/
+*.vsix
+.vscode-test/
 .vite/
 coverage/
 *.tsbuildinfo

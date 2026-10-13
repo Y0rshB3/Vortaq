@@ -67,18 +67,37 @@ export class CredentialStore {
     return `${kind}:${id}`
   }
 
+  /**
+   * Secrets kept in memory only, never written: the editor extension keeps here
+   * a password typed for a connection that does not save passwords, until the
+   * connection closes. The desktop app never sets one.
+   */
+  private readonly transient = new Map<string, string>()
+
   has(kind: SecretKind, id: string): boolean {
-    return this.key(kind, id) in this.store.get().items
+    const k = this.key(kind, id)
+    return this.transient.has(k) || k in this.store.get().items
   }
 
   get(kind: SecretKind, id: string): string | null {
-    const cipher = this.store.get().items[this.key(kind, id)]
+    const k = this.key(kind, id)
+    const kept = this.transient.get(k)
+    if (kept !== undefined) return kept
+    const cipher = this.store.get().items[k]
     if (cipher === undefined) return null
     return this.codec.decrypt(cipher)
   }
 
+  /** Keeps (or with null, forgets) a secret in memory only; it wins over a stored one. */
+  setTransient(kind: SecretKind, id: string, secret: string | null): void {
+    const k = this.key(kind, id)
+    if (secret === null || secret === '') this.transient.delete(k)
+    else this.transient.set(k, secret)
+  }
+
   set(kind: SecretKind, id: string, secret: string | null): void {
     const k = this.key(kind, id)
+    this.transient.delete(k)
     this.store.update((d) => {
       if (secret === null || secret === '') delete d.items[k]
       else d.items[k] = this.codec.encrypt(secret)
@@ -115,6 +134,7 @@ export class CredentialStore {
 
   /** Removes every secret of a connection, of every kind, in one write. */
   deleteAll(id: string): void {
+    for (const kind of SECRET_KINDS) this.transient.delete(this.key(kind, id))
     this.store.update((d) => {
       for (const kind of SECRET_KINDS) delete d.items[this.key(kind, id)]
     })

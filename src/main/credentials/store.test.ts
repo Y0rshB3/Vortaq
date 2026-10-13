@@ -22,6 +22,25 @@ describe('CredentialStore', () => {
     expect(store.get('mysql', 'c1')).toBeNull()
   })
 
+  it('keeps transient secrets in memory only, ahead of stored ones', () => {
+    const store = new CredentialStore(dir, plainCodec, 'plain')
+    store.setTransient(DB_PASSWORD, 'c1', 'typed-once')
+    expect(store.has(DB_PASSWORD, 'c1')).toBe(true)
+    expect(store.get(DB_PASSWORD, 'c1')).toBe('typed-once')
+    // Nothing reaches credentials.json, and a fresh store (another process) does not see it.
+    expect(new CredentialStore(dir, plainCodec, 'plain').has(DB_PASSWORD, 'c1')).toBe(false)
+    store.setTransient(DB_PASSWORD, 'c1', null)
+    expect(store.has(DB_PASSWORD, 'c1')).toBe(false)
+    // A stored value replaces it, and deleteAll forgets both.
+    store.setTransient('ssh', 'c2', 'a')
+    store.set('ssh', 'c2', 'b')
+    expect(store.get('ssh', 'c2')).toBe('b')
+    store.setTransient('mysql', 'c2', 'x')
+    store.deleteAll('c2')
+    expect(store.has('mysql', 'c2')).toBe(false)
+    expect(store.has('ssh', 'c2')).toBe(false)
+  })
+
   it('deleteAll removes every secret kind of one connection and nothing else', () => {
     const store = new CredentialStore(dir, plainCodec, 'plain')
     expect([...SECRET_KINDS].sort()).toEqual(['mysql', 'ssh', 'sslKey'])

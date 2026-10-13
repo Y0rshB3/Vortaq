@@ -1,0 +1,54 @@
+/*
+ * Layout of Vortaq's webviews inside the editor. Colours and fonts come from
+ * the editor theme (theme.ts re-declares the --nd-* tokens); this file only
+ * undoes the webview's default page styles and sizes the views.
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  /* VS Code's default webview stylesheet pads the body and colours code. */
+  padding: 0 !important;
+  font-family: var(--nd-font-ui);
+  font-size: var(--nd-fs-base);
+}
+
+code,
+kbd,
+samp {
+  color: inherit;
+  background: none;
+  font-family: var(--nd-font-mono);
+}
+
+#app,
+#app > .v-application,
+.vq-webview .v-application__wrap {
+  height: 100%;
+  min-height: 0;
+}
+
+.vq-webview.v-application {
+  background: var(--nd-bg-app);
+}
+
+/* Grids use the editor font (theme.ts maps --nd-font-mono to editor.fontFamily). */
+.vq-webview .nd-mono,
+.vq-webview .editable-grid,
+.vq-webview .result-grid {
+  font-family: var(--nd-font-mono);
+}
+
+/*
+ * Connection form: the desktop dialog is the content of the editor tab, from the top and
+ * without the dimmed backdrop. Vuetify teleports the dialog to the body's overlay container,
+ * so it is matched by its content class rather than through the app root.
+ */
+.v-dialog:has(> .vq-connection-dialog) {
+  align-items: flex-start;
+}

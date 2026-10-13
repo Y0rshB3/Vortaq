@@ -1,0 +1,432 @@
+{
+  "name": "vortaq",
+  "displayName": "Vortaq",
+  "description": "Cliente de bases de datos para VS Code",
+  "version": "0.1.0",
+  "publisher": "y0rshb3",
+  "license": "MIT",
+  "author": "Y0rshB3",
+  "private": true,
+  "homepage": "https://github.com/Y0rshB3/Vortaq/tree/main/extensions/vscode#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Y0rshB3/Vortaq.git",
+    "directory": "extensions/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/Y0rshB3/Vortaq/issues"
+  },
+  "icon": "dist/icon.png",
+  "galleryBanner": {
+    "color": "#0e131c",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.123.0"
+  },
+  "categories": [
+    "Data Science",
+    "Other"
+  ],
+  "keywords": [
+    "mysql",
+    "mariadb",
+    "postgresql",
+    "sqlite",
+    "mongodb",
+    "sql",
+    "database",
+    "base de datos"
+  ],
+  "main": "./dist/extension.cjs",
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "activationEvents": [
+    "onLanguage:sql"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vortaq",
+          "title": "Vortaq",
+          "icon": "media/vortaq.svg"
+        }
+      ]
+    },
+    "views": {
+      "vortaq": [
+        {
+          "id": "vortaq.connections",
+          "name": "Conexiones",
+          "icon": "media/vortaq.svg",
+          "contextualTitle": "Vortaq"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "vortaq.connections",
+        "contents": "Todavía no hay conexiones.\n[Añadir conexión](command:vortaq.addConnection)\n[Importar de Vortaq](command:vortaq.importDesktop)\nLas contraseñas se guardan cifradas en el almacén seguro del editor. Al importar desde la aplicación de escritorio no se copian: se escriben una vez al conectar."
+      }
+    ],
+    "commands": [
+      {
+        "command": "vortaq.addConnection",
+        "title": "Añadir conexión",
+        "category": "Vortaq",
+        "icon": "$(add)"
+      },
+      {
+        "command": "vortaq.importDesktop",
+        "title": "Importar conexiones de Vortaq (escritorio)",
+        "shortTitle": "Importar de Vortaq",
+        "category": "Vortaq",
+        "icon": "$(desktop-download)"
+      },
+      {
+        "command": "vortaq.refresh",
+        "title": "Refrescar",
+        "category": "Vortaq",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vortaq.connect",
+        "title": "Conectar",
+        "category": "Vortaq",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "vortaq.disconnect",
+        "title": "Desconectar",
+        "category": "Vortaq",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "vortaq.newQuery",
+        "title": "Nueva consulta",
+        "category": "Vortaq",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "vortaq.viewData",
+        "title": "Ver datos",
+        "category": "Vortaq",
+        "icon": "$(table)"
+      },
+      {
+        "command": "vortaq.viewDocuments",
+        "title": "Ver documentos",
+        "category": "Vortaq",
+        "icon": "$(json)"
+      },
+      {
+        "command": "vortaq.copyName",
+        "title": "Copiar nombre",
+        "category": "Vortaq"
+      },
+      {
+        "command": "vortaq.editConnection",
+        "title": "Editar conexión",
+        "category": "Vortaq",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vortaq.deleteConnection",
+        "title": "Eliminar conexión",
+        "category": "Vortaq",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vortaq.run",
+        "title": "Ejecutar",
+        "category": "Vortaq",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vortaq.runAll",
+        "title": "Ejecutar todo",
+        "category": "Vortaq",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "vortaq.stop",
+        "title": "Detener",
+        "category": "Vortaq",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "vortaq.pickConnection",
+        "title": "Elegir conexión y base de datos",
+        "category": "Vortaq",
+        "icon": "$(database)"
+      },
+      {
+        "command": "vortaq.showLog",
+        "title": "Mostrar registro",
+        "category": "Vortaq"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "vortaq.addConnection",
+          "when": "view == vortaq.connections",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vortaq.importDesktop",
+          "when": "view == vortaq.connections",
+          "group": "navigation@2"
+        },
+        {
+          "command": "vortaq.refresh",
+          "when": "view == vortaq.connections",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vortaq.newQuery",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection|database|schema)\\.sql/",
+          "group": "inline@1"
+        },
+        {
+          "command": "vortaq.viewData",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "vortaq.viewDocuments",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.collection/",
+          "group": "inline@1"
+        },
+        {
+          "command": "vortaq.connect",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.connection\\.\\w+\\.closed$/",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "vortaq.disconnect",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.connection\\.\\w+\\.open$/",
+          "group": "1_connection@1"
+        },
+        {
+          "command": "vortaq.newQuery",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection|database|schema)\\.sql/",
+          "group": "2_query@1"
+        },
+        {
+          "command": "vortaq.viewData",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "2_query@1"
+        },
+        {
+          "command": "vortaq.viewDocuments",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.collection/",
+          "group": "2_query@1"
+        },
+        {
+          "command": "vortaq.newQuery",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "2_query@2"
+        },
+        {
+          "command": "vortaq.copyName",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection|database|schema|table|view|collection)/",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "vortaq.refresh",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection\\.\\w+\\.open|database|schema|group)/",
+          "group": "4_refresh@1"
+        },
+        {
+          "command": "vortaq.editConnection",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.connection/",
+          "group": "5_edit@1"
+        },
+        {
+          "command": "vortaq.deleteConnection",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.connection/",
+          "group": "5_edit@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "vortaq.run",
+          "when": "editorLangId == sql && !vortaq.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vortaq.stop",
+          "when": "editorLangId == sql && vortaq.running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "vortaq.pickConnection",
+          "when": "editorLangId == sql",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vortaq.connect",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.disconnect",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.viewData",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.viewDocuments",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.copyName",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.editConnection",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.deleteConnection",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.run",
+          "when": "editorLangId == sql"
+        },
+        {
+          "command": "vortaq.runAll",
+          "when": "editorLangId == sql"
+        },
+        {
+          "command": "vortaq.stop",
+          "when": "vortaq.running"
+        },
+        {
+          "command": "vortaq.pickConnection",
+          "when": "editorLangId == sql"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "vortaq.run",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && editorLangId == sql"
+      },
+      {
+        "command": "vortaq.runAll",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId == sql"
+      }
+    ],
+    "colors": [
+      {
+        "id": "vortaq.environment.production",
+        "description": "Color de las conexiones de producción en el árbol de Vortaq.",
+        "defaults": {
+          "dark": "#f87171",
+          "light": "#dc2626",
+          "highContrast": "#ff6b6b",
+          "highContrastLight": "#b91c1c"
+        }
+      },
+      {
+        "id": "vortaq.environment.staging",
+        "description": "Color de las conexiones de staging en el árbol de Vortaq.",
+        "defaults": {
+          "dark": "#fbbf24",
+          "light": "#b45309",
+          "highContrast": "#ffd34d",
+          "highContrastLight": "#92400e"
+        }
+      },
+      {
+        "id": "vortaq.environment.local",
+        "description": "Color de las conexiones locales en el árbol de Vortaq.",
+        "defaults": {
+          "dark": "#34d399",
+          "light": "#047857",
+          "highContrast": "#5eead4",
+          "highContrastLight": "#065f46"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Vortaq",
+      "properties": {
+        "vortaq.maxRows": {
+          "type": "integer",
+          "default": 1000,
+          "minimum": 1,
+          "maximum": 100000,
+          "markdownDescription": "Filas que se muestran como máximo en cada resultado y en «Ver datos»."
+        },
+        "vortaq.typedConfirmEnvironments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "production",
+              "staging",
+              "local",
+              "other"
+            ],
+            "enumDescriptions": [
+              "Producción (siempre incluida)",
+              "Staging",
+              "Local",
+              "Otro"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [
+            "production"
+          ],
+          "markdownDescription": "Entornos en los que cualquier escritura pide escribir el nombre de la conexión. Producción siempre la pide, aunque no esté en la lista. Solo se puede cambiar en los ajustes de usuario (no en los de un espacio de trabajo).",
+          "scope": "application"
+        },
+        "vortaq.confirmDestructive": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Pedir confirmación antes de borrar o eliminar (DROP, TRUNCATE, DELETE, borrar filas) en cualquier conexión. Solo se puede cambiar en los ajustes de usuario.",
+          "scope": "application"
+        },
+        "vortaq.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Mostrar la conexión y «Ejecutar» encima de los documentos SQL."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
+    "test:integration": "node scripts/test-integration.mjs"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.12"
+  }
+}

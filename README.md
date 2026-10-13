@@ -60,6 +60,7 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
 - [Copias de seguridad y rollback a local](#copias-de-seguridad-y-rollback-a-local)
 - [Automatización](#automatización)
 - [Asistente de IA](#asistente-de-ia)
+- [Extensión para editores (VS Code, Cursor, VSCodium, Windsurf)](#extensión-para-editores-vs-code-cursor-vscodium-windsurf)
 - [Dónde se guardan los datos](#dónde-se-guardan-los-datos)
 - [Actualizaciones](#actualizaciones)
 - [Solución de problemas](#solución-de-problemas)
@@ -1189,6 +1190,61 @@ tampoco lee filas).
 
 En conexiones de Producción el asistente funciona igual (solo estructura) y el panel muestra la etiqueta del
 entorno.
+
+## Extensión para editores (VS Code, Cursor, VSCodium, Windsurf)
+
+Vortaq también existe como extensión para VS Code y los editores basados en él (Cursor, VSCodium,
+Windsurf). Usa el mismo núcleo que la aplicación de escritorio (los mismos drivers, el mismo análisis de SQL y
+la misma protección de producción) y trabaja con los cinco motores: MySQL, MariaDB, PostgreSQL, SQLite y
+MongoDB. Su código está en [`extensions/vscode`](extensions/vscode) y tiene su propia numeración de versiones
+(empieza en la 0.1.0).
+
+Qué hace en esta primera versión:
+
+- **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
+  colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
+  mismo formulario que en escritorio (SSH, SSL/TLS, entorno, «Sin contraseña», «Probar conexión»).
+- **SQL desde tus archivos `.sql`**: cada documento elige su conexión y base de datos (barra de estado o la línea
+  de encima del documento). `Cmd+Enter` / `Ctrl+Enter` ejecuta la selección, la sentencia del cursor o el
+  documento; `Cmd+Shift+Enter` / `Ctrl+Shift+Enter`, todo; **Detener** cancela.
+- **Resultados** en un panel junto al editor: varias pestañas, Mensajes, filas y tiempos, copiar como TSV, CSV o
+  JSON, y **edición** de los resultados de una tabla con clave (Aplicar / Descartar, `NULL`).
+- **Ver datos** de tablas y vistas y **Ver documentos** de MongoDB (de solo lectura en esta versión).
+- **Producción**: cualquier escritura pide escribir el nombre de la conexión, igual que en escritorio.
+- Los paneles siguen el **tema del editor** (claro, oscuro y alto contraste).
+
+**Importar desde la aplicación de escritorio.** El botón «Importar de Vortaq» de la extensión lee las conexiones
+de la aplicación de escritorio instalada en el mismo equipo y te deja elegir cuáles traer. **Las contraseñas no
+se importan** (la aplicación de escritorio las guarda cifradas con su propia clave): las escribes una vez al
+conectar y la extensión las guarda cifradas en el almacén seguro del editor. Cada aplicación conserva sus
+propias conexiones y contraseñas.
+
+### Instalar la extensión
+
+Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en una más reciente).
+
+- **Desde el archivo `.vsix`** (hoy): descarga `vortaq-0.1.0.vsix` de la versión
+  [`vscode-v0.1.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.1.0) en GitHub
+  (`https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.1.0/vortaq-0.1.0.vsix`, cuando esté
+  publicada) y en el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
+  _Install from VSIX…_). Funciona igual en VS Code, Cursor, VSCodium y Windsurf. Desde la terminal:
+
+  ```bash
+  code --install-extension vortaq-0.1.0.vsix
+  cursor --install-extension vortaq-0.1.0.vsix
+  codium --install-extension vortaq-0.1.0.vsix
+  ```
+
+- **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
+  buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
+
+Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
+`extensions/vscode/vortaq-0.1.0.vsix`.
+
+**SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
+Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el
+servidor remoto de Cursor** (SSH/WSL), que usa un Node más antiguo: ahí SQLite no aparece en el formulario y
+sus conexiones explican por qué. El resto de motores funcionan igual en remoto.
 
 ## Dónde se guardan los datos
 
