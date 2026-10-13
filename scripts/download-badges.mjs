@@ -21,6 +21,15 @@ export function installerDownloads(release) {
     .reduce((sum, a) => sum + (a.download_count ?? 0), 0)
 }
 
+export const DESKTOP_TAG = /^v\d/
+
+/** The newest published desktop release, or undefined. */
+export function latestDesktopRelease(releases) {
+  return releases
+    .filter((r) => !r.draft && !r.prerelease && DESKTOP_TAG.test(r.tag_name ?? ''))
+    .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at))[0]
+}
+
 /** shields.io endpoint badge for a count. */
 export function badge(label, count, color) {
   return { schemaVersion: 1, label, message: String(count), color, cacheSeconds: 1800 }
@@ -52,7 +61,7 @@ async function main() {
   const all = (await releases(repo, process.env.GITHUB_TOKEN)).filter(
     (r) => !r.draft && !r.prerelease
   )
-  const latest = [...all].sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at))[0]
+  const latest = latestDesktopRelease(all)
   const latestCount = latest ? installerDownloads(latest) : 0
   const total = all.reduce((sum, r) => sum + installerDownloads(r), 0)
   mkdirSync(dir, { recursive: true })
