@@ -1,10 +1,10 @@
 import type { AppContext } from '../context'
 import { createBackupHandlers } from '../backup/handlers'
 import { createBackupService, type BackupService } from '../backup/index'
-import { handle } from './typed'
+import type { HandleFn } from './router'
 
 /** Handlers for the backups:* channels; logic lives in src/main/backup/handlers.ts. */
-export function registerBackupsHandlers(ctx: AppContext): void {
+export function registerBackupsHandlers(ctx: AppContext, handle: HandleFn): void {
   let service: Promise<BackupService> | null = null
   const getService = (): Promise<BackupService> => {
     // The connection manager is loaded lazily so registering handlers stays cheap.

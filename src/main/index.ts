@@ -12,6 +12,8 @@ import { runProfileMigration, runSecretMigration } from './migration'
 import { migrateImportedMariaDb } from './migration/mariadbEngine'
 import { setSqliteSpawner } from './sqlite/spawner'
 import { electronSqliteSpawner } from './sqlite/electronSpawner'
+import { setAiFetch } from './ai/index'
+import { electronFetch } from './ai/electronFetch'
 import {
   SCREENSHOT_QUERY,
   SCREENSHOT_WINDOW,
@@ -65,8 +67,10 @@ app.whenReady().then(async () => {
     const promoted = migrateImportedMariaDb(ctx.connections)
     if (promoted) log.info(`${promoted} imported MariaDB connection(s) now use the MariaDB engine`)
   }
-  // SQLite connections run in utility processes (src/main/sqlite/worker.ts).
+  // Host ports (docs/vscode-extension-design.md): SQLite connections run in utility
+  // processes (src/main/sqlite/worker.ts); AI provider calls use Electron's network stack.
   setSqliteSpawner(electronSqliteSpawner)
+  setAiFetch(electronFetch)
   registerAllHandlers(ctx)
 
   if (runJobId) {

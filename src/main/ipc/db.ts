@@ -22,7 +22,7 @@ import {
 } from './mongo'
 import { createSqliteFile } from '../sqlite/driver'
 import { assertProductionWriteConfirmed, assertScriptAllowed } from './productionGuard'
-import { handle } from './typed'
+import type { HandleFn, IpcHandler } from './router'
 
 /**
  * MySQL takes the database as a plain string (v0.1.x). The object form is
@@ -36,18 +36,18 @@ function mysqlSchema(ref: SchemaRef): string {
 const CHANNEL_NOT_FOR_MYSQL = 'Esta operación no existe en las conexiones MySQL ni MariaDB.'
 
 /** Registers every mongo:* handler of the map (each keeps its channel's types). */
-function registerChannels(channels: MongoChannelHandlers): void {
+function registerChannels(handle: HandleFn, channels: MongoChannelHandlers): void {
   const register = <C extends MongoChannel>(channel: C): void =>
-    handle(channel, channels[channel] as Parameters<typeof handle<C>>[1])
+    handle(channel, channels[channel] as IpcHandler<C>)
   for (const channel of Object.keys(channels) as MongoChannel[]) register(channel)
 }
 
-export function registerDbHandlers(ctx: AppContext): void {
+export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
   const manager = getConnectionManager(ctx)
   const pg = createPgDbHandlers(ctx, manager)
   const lite = createSqliteDbHandlers(ctx, manager)
   const mongo = createMongoHandlers(ctx, manager)
-  registerChannels(mongo.channels)
+  registerChannels(handle, mongo.channels)
 
   /** True for PostgreSQL connections: their db:* calls go to dbPostgres.ts. */
   const isPg = (id: string): boolean => ctx.connections.get(id)?.engine === 'postgresql'

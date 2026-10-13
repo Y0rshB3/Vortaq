@@ -18,6 +18,7 @@ export default defineConfig({
           environment: 'node',
           include: [
             'src/main/**/*.test.ts',
+            'src/core/**/*.test.ts',
             'src/shared/**/*.test.ts',
             'scripts/**/*.test.ts',
             'tests/integration/**/*.test.ts'

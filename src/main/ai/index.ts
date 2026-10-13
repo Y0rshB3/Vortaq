@@ -10,24 +10,21 @@ export { AiService } from './service'
 
 const services = new WeakMap<AppContext, AiService>()
 
-let netFetch: Promise<FetchFn | null> | null = null
+let hostFetch: FetchFn | null = null
 
 /**
- * Electron's network stack (system proxy and certificates), loaded lazily
- * (dynamic import keeps this module testable without electron). Every
- * provider call goes through it: network access stays in main.
+ * Registers the network function every provider call goes through (a host
+ * port, like setSqliteSpawner): the desktop app registers Electron's net.fetch
+ * (system proxy and certificates, electronFetch.ts) at startup; other hosts
+ * and tests keep Node's global fetch. Network access stays in main.
  */
-const electronFetch: FetchFn = (async (input: Parameters<FetchFn>[0], init?: RequestInit) => {
-  netFetch ??= import('electron')
-    .then(
-      ({ net }) =>
-        ((i: Parameters<FetchFn>[0], o?: RequestInit) =>
-          net.fetch(i instanceof URL ? i.toString() : i, o)) as FetchFn
-    )
-    .catch(() => null)
-  const f = (await netFetch) ?? fetch
-  return f(input, init)
-}) as FetchFn
+export function setAiFetch(fetchFn: FetchFn | null): void {
+  hostFetch = fetchFn
+}
+
+/** Read at call time, so a service built before setAiFetch still uses the host's fetch. */
+const providerFetch: FetchFn = ((input: Parameters<FetchFn>[0], init?: RequestInit) =>
+  (hostFetch ?? fetch)(input, init)) as FetchFn
 
 export function getAiService(ctx: AppContext): AiService {
   let service = services.get(ctx)
@@ -72,7 +69,7 @@ export function getAiService(ctx: AppContext): AiService {
     },
     emit: (channel, payload) => ctx.emit(channel, payload),
     log: { info: (m) => log.info(m), warn: (m) => log.warn(m) },
-    fetch: electronFetch,
+    fetch: providerFetch,
     ...(fixture ? { adapterFactory: () => new FixtureAdapter() } : {})
   })
   services.set(ctx, service)

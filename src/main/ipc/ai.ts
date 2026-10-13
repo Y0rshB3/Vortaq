@@ -1,12 +1,12 @@
 import type { AppContext } from '../context'
 import { getAiService } from '../ai'
-import { handle } from './typed'
+import type { HandleFn } from './router'
 
 /**
  * AI assistant channels. Keys only travel renderer -> main (setKey, test,
  * listModels); nothing here returns a key. Requests carry structure only.
  */
-export function registerAiHandlers(ctx: AppContext): void {
+export function registerAiHandlers(ctx: AppContext, handle: HandleFn): void {
   const ai = (): ReturnType<typeof getAiService> => getAiService(ctx)
 
   handle('ai:providers', () => ai().listProviders())

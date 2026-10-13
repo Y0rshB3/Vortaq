@@ -39,6 +39,7 @@
     "test:integration": "vitest run --project node",
     "test:integration:required": "node scripts/test-integration-required.mjs",
     "check": "npm run lint && npm run typecheck && npm run test",
+    "check:core": "node scripts/core-bundle.mjs",
     "screenshots": "node scripts/seed-screenshots.mjs && npm run build && VORTAQ_USER_DATA=${VORTAQ_SHOTS_PROFILE:-${ELECTRONDB_SHOTS_PROFILE:-${NAVIDOG_SHOTS_PROFILE:-${TMPDIR:-/tmp}/vortaq-shots/profile}}} VORTAQ_PLAIN_SECRETS=1 VORTAQ_AI_FIXTURE=1 VORTAQ_NAVICAT_CANDIDATES=${VORTAQ_NAVICAT_CANDIDATES:-tests/fixtures/navicat} VORTAQ_UPDATES_FIXTURE=${VORTAQ_UPDATES_FIXTURE:-tests/fixtures/updates/latest-release.json} VORTAQ_IMPORT_HOME=${VORTAQ_IMPORT_HOME:-${TMPDIR:-/tmp}/vortaq-shots/import-home} VORTAQ_IMPORT_PICK=${VORTAQ_IMPORT_PICK:-${TMPDIR:-/tmp}/vortaq-shots/import/vortaq_shots_import.sql} VORTAQ_WHATS_NEW_FROM=${VORTAQ_WHATS_NEW_FROM:-0.1.2} VORTAQ_WHATS_NEW_VERSION=${VORTAQ_WHATS_NEW_VERSION:-0.1.4} VORTAQ_SCREENSHOTS=${VORTAQ_SHOTS_DIR:-${ELECTRONDB_SHOTS_DIR:-${NAVIDOG_SHOTS_DIR:-${TMPDIR:-/tmp}/vortaq-shots}}} npx electron ."
   },
   "dependencies": {

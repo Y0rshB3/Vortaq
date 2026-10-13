@@ -1,7 +1,7 @@
 import type { SchemaRef } from '@shared/types'
 import type { AppContext } from '../context'
 import { FilterProfilesRepo } from '../storage/filterProfiles'
-import { handle } from './typed'
+import type { HandleFn } from './router'
 
 /**
  * Storage key of a namespace: the MySQL database name as before (existing
@@ -13,7 +13,7 @@ export function schemaKey(schema: SchemaRef): string {
 }
 
 /** Filter profiles of the table data filter builder (Navicat "Guardar perfil"). */
-export function registerFiltersHandlers(ctx: AppContext): void {
+export function registerFiltersHandlers(ctx: AppContext, handle: HandleFn): void {
   const repo = new FilterProfilesRepo(ctx.userDataPath)
   handle('filters:list', (connectionId, schema, table) =>
     repo.list(connectionId, schemaKey(schema), table)
