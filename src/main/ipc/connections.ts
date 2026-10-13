@@ -4,7 +4,7 @@ import type { AppContext } from '../context'
 import { DB_PASSWORD } from '../credentials/store'
 import { getConnectionManager } from '../db/manager'
 import { getAiService } from '../ai'
-import { handle } from './typed'
+import type { HandleFn } from './router'
 
 /** Fields whose change invalidates an open pool. */
 function endpointSignature(c: ConnectionInput | ConnectionConfig): string {
@@ -33,7 +33,7 @@ function assertEngineAvailable(input: Pick<ConnectionInput, 'engine'> | null): v
   if (problem) throw new Error(problem)
 }
 
-export function registerConnectionsHandlers(ctx: AppContext): void {
+export function registerConnectionsHandlers(ctx: AppContext, handle: HandleFn): void {
   const manager = getConnectionManager(ctx)
 
   handle('connections:list', () => ctx.connections.list())
