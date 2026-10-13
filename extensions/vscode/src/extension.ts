@@ -38,6 +38,7 @@ export interface VortaqTestApi {
   core: import('@core').VortaqCore
   connections: ConnectionService
   tree: ConnectionsTree
+  view: vscode.TreeView<TreeNode>
   targets: DocumentTargets
   runner: SqlRunner
   results: ResultsPanels
@@ -429,6 +430,7 @@ export async function activate(
     core,
     connections: service,
     tree,
+    view,
     targets,
     runner: sqlRunner,
     results,

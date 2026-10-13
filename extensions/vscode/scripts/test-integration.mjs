@@ -22,10 +22,11 @@
  */
 import { cpSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { buildExtension, DIST_TEST, EXT } from './build.mjs'
 
-const SERVERS = [
+export const SERVERS = [
   ['VORTAQ_TEST_MYSQL_URL', 'MySQL'],
   ['VORTAQ_TEST_PG_URL', 'PostgreSQL'],
   ['VORTAQ_TEST_MONGO_URL', 'MongoDB']
@@ -103,7 +104,8 @@ async function main(argv) {
   }
 }
 
-main(process.argv.slice(2)).catch((err) => {
-  console.error(err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main(process.argv.slice(2)).catch((err) => {
+    console.error(err instanceof Error ? err.message : err)
+    process.exit(1)
+  })

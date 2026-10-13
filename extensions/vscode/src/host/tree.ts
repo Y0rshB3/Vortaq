@@ -242,6 +242,40 @@ export class ConnectionsTree implements vscode.TreeDataProvider<TreeNode>, vscod
     return item
   }
 
+  /** Parent of a node (TreeView.reveal walks it to expand the ancestors). */
+  getParent(node: TreeNode): TreeNode | undefined {
+    const id = node.connectionId
+    switch (node.kind) {
+      case 'connection':
+        return undefined
+      case 'database':
+      case 'message':
+        return this.connectionNode(id)
+      case 'schema':
+        return { kind: 'database', connectionId: id, database: node.database }
+      case 'group':
+        return node.schema !== undefined
+          ? { kind: 'schema', connectionId: id, database: node.database, schema: node.schema }
+          : { kind: 'database', connectionId: id, database: node.database }
+      case 'table':
+      case 'view':
+        return {
+          kind: 'group',
+          connectionId: id,
+          database: node.database,
+          ...(node.schema !== undefined ? { schema: node.schema } : {}),
+          group: node.kind === 'table' ? 'tables' : 'views'
+        }
+      case 'collection':
+        return {
+          kind: 'group',
+          connectionId: id,
+          database: node.database,
+          group: node.view ? 'mongoViews' : 'collections'
+        }
+    }
+  }
+
   async getChildren(node?: TreeNode): Promise<TreeNode[]> {
     if (!node) {
       const list = await this.connections.list()

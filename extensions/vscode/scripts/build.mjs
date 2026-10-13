@@ -12,7 +12,8 @@
  *
  *   node extensions/vscode/scripts/build.mjs [--dev] [--tests]
  *     --dev    no minification, inline source maps (never packaged: package.mjs builds without)
- *     --tests  also bundles the integration suite into extensions/vscode/dist-test/
+ *     --tests  also bundles the integration suite and the screenshot tour into
+ *              extensions/vscode/dist-test/
  *
  * The runtime packages (mysql2, pg, mongodb, ssh2, vue, vuetify…) come from the repository's
  * root node_modules, so the desktop app and the extension ship the same versions. Nothing
@@ -335,11 +336,13 @@ export async function buildExtension({ dev = false, tests = false } = {}) {
 
   if (tests) {
     rmSync(DIST_TEST, { recursive: true, force: true })
-    await bundleHost({
-      dev: true,
-      entry: join(EXT, 'test/integration/suite.ts'),
-      outfile: join(DIST_TEST, 'suite.cjs')
-    })
+    // The integration suite and the screenshot tour (scripts/screenshots.mjs); never packaged.
+    for (const name of ['suite', 'shots'])
+      await bundleHost({
+        dev: true,
+        entry: join(EXT, `test/integration/${name}.ts`),
+        outfile: join(DIST_TEST, `${name}.cjs`)
+      })
   }
   const size = (f) => `${(statSync(join(DIST, f)).size / 1024).toFixed(0)} KB`
   console.log(
