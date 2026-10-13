@@ -1,6 +1,6 @@
 # Cambios
 
-## 0.1.0 — primera versión (sin publicar)
+## 0.1.0 — primera versión (2026-10-13)
 
 - Conexiones de MySQL, MariaDB, PostgreSQL, SQLite y MongoDB en la barra de actividad, con su
   motor, color, entorno y candado de producción; conectar, desconectar, refrescar, copiar nombre,
