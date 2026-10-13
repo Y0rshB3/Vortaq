@@ -114,6 +114,14 @@ const okMongo = (results: MongoCommandResult[]): MongoCommandResult[] => {
 
 const CONFIRM = /necesita confirmación explícita/
 
+/**
+ * The editor extension's webviews receive results as JSON messages, not through Electron's
+ * structured clone (docs/vscode-extension-design.md, 9.3): nothing may change on the way.
+ */
+function expectJsonSafe(value: unknown): void {
+  expect(JSON.parse(JSON.stringify(value))).toEqual(value)
+}
+
 describe('core bundle loaded by plain Node', () => {
   it('loads without Electron and keeps its secrets encrypted', async () => {
     const { dir } = await loadBundle()
@@ -174,6 +182,25 @@ describe('core bundle in plain Node [SQLite file, child-process worker]', () => 
     expect(info.engine).toBe('sqlite')
     const [r] = ok(await core.invoke('db:execute', id, "SELECT 'ok' AS v, sqlite_version() AS s"))
     expect(r.resultSet?.rows[0][0]).toBe('ok')
+  })
+
+  it('returns results that survive JSON (webview messages)', async () => {
+    const results = ok(
+      await core.invoke(
+        'db:execute',
+        id,
+        "SELECT 1 AS i, 1.5 AS r, 'x' AS t, x'00ff' AS b, NULL AS n, 9223372036854775807 AS big"
+      )
+    )
+    expect(results[0].resultSet?.rows[0]).toEqual([
+      1,
+      1.5,
+      'x',
+      '0x00FF',
+      null,
+      '9223372036854775807'
+    ])
+    expectJsonSafe(results)
   })
 
   it('introspects a table and applies one row edit', async () => {
@@ -253,6 +280,20 @@ describeServer(MYSQL84_TARGET, 'core bundle in plain Node', (url) => {
     expect(info.version).toMatch(/^8\.4/)
     const [r] = ok(await core.invoke('db:execute', id, "SELECT 'ok' AS v"))
     expect(r.resultSet?.rows).toEqual([['ok']])
+  })
+
+  it('returns results that survive JSON (webview messages)', async () => {
+    const results = ok(
+      await core.invoke(
+        'db:execute',
+        id,
+        `SELECT 1 AS i, 1.5 AS d, 2.5e0 AS f, 'x' AS t, x'00ff' AS b, NULL AS n,
+                CAST(18446744073709551615 AS UNSIGNED) AS big, NOW() AS ts, DATE('2026-01-02') AS dt,
+                CAST('{"a":1}' AS JSON) AS j, CAST(1 AS UNSIGNED) = 1 AS flag`
+      )
+    )
+    expectJsonSafe(results)
+    expect(results[0].resultSet?.rows[0][6]).toBe('18446744073709551615')
   })
 
   it('introspects a table and applies one row edit', async () => {
@@ -350,6 +391,22 @@ describeServer(POSTGRES_TARGET, 'core bundle in plain Node', (url) => {
     expect(r.resultSet?.rows).toEqual([['ok']])
   })
 
+  it('returns results that survive JSON (webview messages)', async () => {
+    const results = ok(
+      await core.invoke(
+        'db:execute',
+        id,
+        `SELECT 1 AS i, 1.5::float8 AS f, 'NaN'::float8 AS nan, 'x' AS t, '\\x00ff'::bytea AS b,
+                NULL AS n, 9223372036854775807::bigint AS big, 1.10::numeric AS num, now() AS ts,
+                '{"a":1}'::jsonb AS j, interval '1 day' AS iv, true AS flag`
+      )
+    )
+    expectJsonSafe(results)
+    const row = results[0].resultSet!.rows[0]
+    expect(row[2]).toBe('NaN')
+    expect(row[6]).toBe('9223372036854775807')
+  })
+
   it('introspects a table and applies one row edit', async () => {
     const ref = { database, schema: SCHEMA }
     ok(
@@ -439,6 +496,27 @@ describeServer(MONGO_TARGET, 'core bundle in plain Node', (url) => {
     const [found] = okMongo(await run(id, 'db.item.find({ _id: 1 })'))
     expect(found.kind).toBe('documents')
     expect(found.page?.docs).toEqual(['{"_id":{"$numberInt":"1"},"name":"uno"}'])
+  })
+
+  it('returns pages that survive JSON (webview messages)', async () => {
+    okMongo(
+      await run(
+        id,
+        "db.json_safe.insertOne({ _id: 7, big: NumberLong('9223372036854775807'), d: Decimal128('1.10'), at: ISODate('2026-01-02T03:04:05Z'), bin: BinData(0, 'AP8=') })"
+      )
+    )
+    const page = await core.invoke('mongo:find', id, {
+      database: DB,
+      collection: 'json_safe',
+      filter: '{}',
+      sort: '',
+      projection: '',
+      skip: 0,
+      limit: 10
+    })
+    expectJsonSafe(page)
+    expect(page.docs[0]).toContain('"$numberLong":"9223372036854775807"')
+    okMongo(await run(id, 'db.json_safe.drop()'))
   })
 
   it('introspects the collections and applies one document edit', async () => {
