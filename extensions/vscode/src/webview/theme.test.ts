@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import tokensCss from '@renderer/styles/tokens.css?raw'
 import {
   parseColor,
+  readableOn,
   themeCss,
   themeKindOf,
   toHex,
@@ -74,6 +75,30 @@ describe('editor theme → design tokens', () => {
     expect(dark['color-scheme']).toBe('dark')
     expect(tokenDeclarations('light')['color-scheme']).toBe('light')
     expect(vsVar(['a', 'b'], '#000')).toBe('var(--vscode-a, var(--vscode-b, #000))')
+  })
+
+  it('high-contrast themes take the accent from the focus colour, with readable text on it', () => {
+    const hcDark = {
+      'editor-background': '#000000',
+      'button-background': '#000000',
+      focusBorder: '#f38518'
+    }
+    expect(tokenDeclarations('hc-dark')['--nd-accent']).toMatch(/^var\(--vscode-focusBorder/)
+    expect(vuetifyColors(hcDark, 'hc-dark')).toMatchObject({
+      primary: '#f38518',
+      'on-primary': '#000000'
+    })
+    expect(themeCss(hcDark, 'hc-dark')).toContain('--nd-on-accent: #000000;')
+    const hcLight = {
+      'editor-background': '#ffffff',
+      'button-background': '#0f4a85',
+      focusBorder: '#006bbd'
+    }
+    expect(vuetifyColors(hcLight, 'hc-light')).toMatchObject({
+      primary: '#006bbd',
+      'on-primary': '#ffffff'
+    })
+    expect(readableOn({ r: 255, g: 255, b: 255, a: 1 })).toBe('#000000')
   })
 
   it('high-contrast themes draw borders with the contrast border colour', () => {

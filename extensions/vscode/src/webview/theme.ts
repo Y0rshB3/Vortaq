@@ -35,6 +35,22 @@ const soft = (expr: string, percent: number): string =>
   `color-mix(in srgb, ${expr} ${percent}%, transparent)`
 const flat = (expr: string): string => `linear-gradient(${expr}, ${expr})`
 
+/** Where the accent colour comes from (see tokenDeclarations). */
+const ACCENT_VARS = {
+  normal: ['button-background'],
+  hc: ['focusBorder', 'contrastActiveBorder', 'button-background']
+} as const
+
+/** Black or white, whichever has more contrast on `c` (WCAG relative luminance). */
+export function readableOn(c: Rgba): '#000000' | '#ffffff' {
+  const lin = (v: number): number => {
+    const s = v / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  const l = 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+  return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05) ? '#000000' : '#ffffff'
+}
+
 /** Default values of VS Code's Dark Modern / Light Modern themes, for missing variables. */
 const DEFAULTS = {
   dark: {
@@ -77,7 +93,9 @@ export function tokenDeclarations(kind: ThemeKind): Record<string, string> {
   const strongBorder = hc
     ? vsVar(['contrastActiveBorder', 'contrastBorder'], d.border)
     : vsVar(['input-border', 'widget-border', 'panel-border'], d.border)
-  const accent = vsVar(['button-background'], d.accent)
+  // High-contrast themes paint buttons black (or dark) with a border: the accent used for
+  // active tabs, checkboxes and primary buttons is the focus colour there instead.
+  const accent = vsVar(ACCENT_VARS[hc ? 'hc' : 'normal'], d.accent)
   const violet = vsVar(['charts-purple'], '#b180d7')
   const focus = vsVar(['focusBorder'], d.accent)
   const error = vsVar(['errorForeground'], '#f85149')
@@ -110,6 +128,7 @@ export function tokenDeclarations(kind: ThemeKind): Record<string, string> {
     '--nd-accent-gradient-h': flat(accent),
     '--nd-accent-gradient-v': flat(accent),
     '--nd-accent-gradient-soft': flat(soft(accent, 16)),
+    // High contrast: computed by themeCss (black or white, whichever reads on the accent).
     '--nd-on-accent': vsVar(['button-foreground'], d.onAccent),
     '--nd-glow': `0 0 0 1px ${focus}`,
     '--nd-glow-violet': `0 0 0 1px ${focus}`,
@@ -201,9 +220,11 @@ export function themeCss(vars: VscodeVars, kind: ThemeKind): string {
   const decl = tokenDeclarations(kind)
   // rgba(var(--nd-accent-rgb), …) needs plain numbers: computed from the current values.
   const bg = colorOf(vars, ['editor-background'], d.bg)
-  const accent = colorOf(vars, ['button-background'], d.accent)
+  const accent = colorOf(vars, ACCENT_VARS[isHighContrast(kind) ? 'hc' : 'normal'], d.accent)
   const violet = colorOf(vars, ['charts-purple'], '#b180d7')
-  decl['--nd-accent-rgb'] = rgbTriplet(parseColor(toHex(accent, bg))!)
+  const accentHex = parseColor(toHex(accent, bg))!
+  decl['--nd-accent-rgb'] = rgbTriplet(accentHex)
+  if (isHighContrast(kind)) decl['--nd-on-accent'] = readableOn(accentHex)
   decl['--nd-violet-rgb'] = rgbTriplet(parseColor(toHex(violet, bg))!)
   const body = Object.entries(decl)
     .map(([k, v]) => `  ${k}: ${v};`)
@@ -218,6 +239,7 @@ export function vuetifyColors(vars: VscodeVars, kind: ThemeKind): Record<string,
   const hex = (names: readonly string[], fallback: string): string =>
     toHex(colorOf(vars, names, fallback), bg)
   const surface = hex(['editorWidget-background', 'editor-background'], d.widget)
+  const primary = hex(ACCENT_VARS[isHighContrast(kind) ? 'hc' : 'normal'], d.accent)
   const fg = hex(['foreground'], d.fg)
   return {
     background: toHex(bg),
@@ -228,8 +250,10 @@ export function vuetifyColors(vars: VscodeVars, kind: ThemeKind): Record<string,
     'on-surface-variant': fg,
     'on-background': fg,
     'on-surface': fg,
-    primary: hex(['button-background'], d.accent),
-    'on-primary': hex(['button-foreground'], d.onAccent),
+    primary,
+    'on-primary': isHighContrast(kind)
+      ? readableOn(parseColor(primary)!)
+      : hex(['button-foreground'], d.onAccent),
     secondary: hex(['charts-purple'], '#b180d7'),
     'on-secondary': '#ffffff',
     accent: hex(['charts-purple'], '#b180d7'),

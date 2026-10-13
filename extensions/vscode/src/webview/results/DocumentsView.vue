@@ -49,17 +49,26 @@ const fields = computed(() => {
   return names.includes('_id') ? ['_id', ...names.filter((n) => n !== '_id')] : names
 })
 
+/**
+ * Cells show shell text, left-aligned like the desktop documents grid (an Int64 is
+ * NumberLong('…'), not a number to right-align). A field the document does not have is
+ * an empty cell; `null` is the stored value null.
+ */
 const columns = computed<QueryColumn[]>(() =>
   fields.value.map((name) => {
     const sample = parsed.value.find((d) => d[name] !== undefined)?.[name]
-    return { name, type: sample === undefined ? '' : bsonTypeOf(sample as EjsonValue) }
+    return {
+      name,
+      type: sample === undefined ? '' : `BSON ${bsonTypeOf(sample as EjsonValue)}`,
+      typeKind: 'text'
+    }
   })
 )
 
 const rows = computed<CellValue[][]>(() =>
   parsed.value.map((doc) =>
     fields.value.map((name) =>
-      doc[name] === undefined ? null : cellPreview(doc[name] as EjsonValue)
+      doc[name] === undefined ? '' : cellPreview(doc[name] as EjsonValue)
     )
   )
 )

@@ -35,6 +35,7 @@ watch(
 <template>
   <v-app class="vq-webview vq-connection">
     <ConnectionDialog
+      content-class="vq-connection-dialog"
       persistent
       :scrim="false"
       :no-click-animation="true"

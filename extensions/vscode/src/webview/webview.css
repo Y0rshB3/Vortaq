@@ -45,16 +45,10 @@ samp {
 }
 
 /*
- * Connection form: the desktop dialog fills the editor tab, from the top,
- * without the dimmed backdrop (the panel itself is the dialog).
+ * Connection form: the desktop dialog is the content of the editor tab, from the top and
+ * without the dimmed backdrop. Vuetify teleports the dialog to the body's overlay container,
+ * so it is matched by its content class rather than through the app root.
  */
-.vq-connection .v-dialog {
+.v-dialog:has(> .vq-connection-dialog) {
   align-items: flex-start;
-}
-.vq-connection .v-dialog > .v-overlay__content {
-  margin-top: 24px;
-  max-height: calc(100% - 48px);
-}
-.vq-connection .v-overlay__scrim {
-  display: none;
 }
