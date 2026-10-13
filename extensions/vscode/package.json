@@ -401,12 +401,14 @@
           "default": [
             "production"
           ],
-          "markdownDescription": "Entornos en los que cualquier escritura pide escribir el nombre de la conexión. Producción siempre la pide, aunque no esté en la lista."
+          "markdownDescription": "Entornos en los que cualquier escritura pide escribir el nombre de la conexión. Producción siempre la pide, aunque no esté en la lista. Solo se puede cambiar en los ajustes de usuario (no en los de un espacio de trabajo).",
+          "scope": "application"
         },
         "vortaq.confirmDestructive": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Pedir confirmación antes de borrar o eliminar (DROP, TRUNCATE, DELETE, borrar filas) en cualquier conexión."
+          "markdownDescription": "Pedir confirmación antes de borrar o eliminar (DROP, TRUNCATE, DELETE, borrar filas) en cualquier conexión. Solo se puede cambiar en los ajustes de usuario.",
+          "scope": "application"
         },
         "vortaq.codeLens": {
           "type": "boolean",

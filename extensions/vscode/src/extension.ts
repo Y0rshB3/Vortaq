@@ -149,11 +149,18 @@ export async function activate(
   )
 
   /* ---------- connection form ---------- */
+  let sqliteNoticeShown = false
   const forms = new Map<string, ConnectionFormPanel>()
   const openForm = (
     editing: ConnectionConfig | null,
     engine: EngineId | null = null
   ): ConnectionFormPanel => {
+    if (sqliteProblem && !sqliteNoticeShown && !editing) {
+      sqliteNoticeShown = true
+      void vscode.window.showInformationMessage(
+        `SQLite no aparece en el formulario: ${sqliteProblem}`
+      )
+    }
     const key = editing?.id ?? `new:${Date.now()}`
     const existing = editing ? forms.get(key) : undefined
     if (existing && !existing.isDisposed) {
