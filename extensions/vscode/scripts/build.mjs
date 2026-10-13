@@ -289,9 +289,12 @@ function writeNotices(inputs, version) {
     const p = describePackage(dir)
     seen.set(`${p.name}@${p.version}`, p)
   }
-  // The icon font is shipped as a file, not imported by a bundle.
-  const mdi = describePackage(join(ROOT, 'node_modules/@mdi/font'))
-  seen.set(`${mdi.name}@${mdi.version}`, mdi)
+  // The icon font is shipped as a file, not imported by a bundle; `vue` itself only re-exports
+  // the @vue/* packages, so Rollup lists no module of it.
+  for (const name of ['@mdi/font', 'vue']) {
+    const p = describePackage(join(ROOT, 'node_modules', name))
+    seen.set(`${p.name}@${p.version}`, p)
+  }
   const packages = [...seen.values()].sort(
     (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version)
   )
