@@ -18,7 +18,7 @@ import {
   type LogEvent,
   type VortaqCore
 } from '@core'
-import { loadVaultKey } from './vault'
+import { followingCodec, loadVaultKey } from './vault'
 
 export interface ExtensionCore {
   core: VortaqCore
@@ -48,7 +48,8 @@ export async function createExtensionCore(
 ): Promise<ExtensionCore> {
   const dataDir = context.globalStorageUri.fsPath
   mkdirSync(dataDir, { recursive: true })
-  const vault = await loadVaultKey(context.secrets)
+  const vault = followingCodec(await loadVaultKey(context.secrets), context.secrets)
+  context.subscriptions.push(vault)
   const sqliteProblem = sqliteRuntimeProblem()
   const core = createCore({
     dataDir,

@@ -140,12 +140,21 @@ export async function activate(
   context.subscriptions.push(
     sqlRunner.onDidChangeRunning(updateRunningContext),
     vscode.window.onDidChangeActiveTextEditor(updateRunningContext),
-    vscode.workspace.onDidCloseTextDocument((doc) => {
-      if (!isSqlDocument(doc)) return
-      const uri = doc.uri.toString()
-      void sqlRunner.closeSession(uri)
-      targets.closed(uri)
-    })
+    // A document's server session (PostgreSQL/SQLite) ends when its last tab closes. Closing a
+    // text document is not the same event (it also fires on a language change, and a model may
+    // outlive its tabs).
+    vscode.window.tabGroups.onDidChangeTabs((event) => {
+      for (const tab of event.closed) {
+        if (!(tab.input instanceof vscode.TabInputText)) continue
+        const uri = tab.input.uri.toString()
+        if (openTabUris().has(uri)) continue
+        void sqlRunner.closeSession(uri)
+        targets.closed(uri)
+      }
+    }),
+    // Another editor window changed the connections (each window runs its own core on the
+    // same profile; the stores re-read the files): refresh this window's tree.
+    watchProfile(context.globalStorageUri, () => service.refreshAll())
   )
 
   /* ---------- connection form ---------- */
@@ -448,6 +457,39 @@ export async function activate(
     openConnectionForm: (editing) => openForm(editing),
     readDesktopImport,
     importConnections
+  }
+}
+
+/** URIs shown in a text tab of any editor group. */
+function openTabUris(): Set<string> {
+  const uris = new Set<string>()
+  for (const group of vscode.window.tabGroups.all)
+    for (const tab of group.tabs)
+      if (tab.input instanceof vscode.TabInputText) uris.add(tab.input.uri.toString())
+  return uris
+}
+
+/** Calls `onChange` when connections.json or credentials.json of the profile changes on disk. */
+function watchProfile(storage: vscode.Uri, onChange: () => void): vscode.Disposable {
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(storage, '{connections,credentials}.json')
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const fire = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(onChange, 150)
+  }
+  const subscriptions = [
+    watcher.onDidChange(fire),
+    watcher.onDidCreate(fire),
+    watcher.onDidDelete(fire)
+  ]
+  return {
+    dispose: () => {
+      clearTimeout(timer)
+      for (const s of subscriptions) s.dispose()
+      watcher.dispose()
+    }
   }
 }
 

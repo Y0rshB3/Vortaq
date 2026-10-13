@@ -16,6 +16,8 @@ export interface SecretVault {
 }
 
 export interface VaultKey {
+  /** The key as stored (base64): kept in memory only, never written elsewhere or logged. */
+  key: string
   codec: SecretCodec
   /** True when the key was created now (first run, or SecretStorage lost the old one). */
   created: boolean
@@ -31,8 +33,45 @@ const validKey = (value: string | undefined): value is string =>
  */
 export async function loadVaultKey(secrets: SecretVault): Promise<VaultKey> {
   const stored = await secrets.get(VAULT_KEY_SECRET)
-  if (validKey(stored)) return { codec: keyCodec(stored), created: false }
-  const key = newVaultKey()
-  await secrets.store(VAULT_KEY_SECRET, key)
-  return { codec: keyCodec(key), created: true }
+  if (validKey(stored)) return { key: stored, codec: keyCodec(stored), created: false }
+  await secrets.store(VAULT_KEY_SECRET, newVaultKey())
+  // Two editor windows starting together may both create a key: the one SecretStorage kept
+  // is the one every window uses (vaultCodec follows later changes).
+  const kept = await secrets.get(VAULT_KEY_SECRET)
+  if (!validKey(kept))
+    throw new Error('No se pudo guardar la clave en el almacén seguro del editor.')
+  return { key: kept, codec: keyCodec(kept), created: true }
+}
+
+/** The part of vscode.SecretStorage's change event this module uses. */
+export interface SecretChanges {
+  onDidChange(listener: (event: { key: string }) => unknown): { dispose(): void }
+}
+
+/**
+ * A codec that follows the key in SecretStorage: when another editor window
+ * replaces it (two windows created one at the same time), this window switches
+ * to the kept key instead of writing values the others cannot read.
+ */
+export function followingCodec(
+  initial: VaultKey,
+  secrets: SecretVault & SecretChanges
+): { codec: SecretCodec; dispose(): void } {
+  let key = initial.key
+  let current = initial.codec
+  const subscription = secrets.onDidChange(async (event) => {
+    if (event.key !== VAULT_KEY_SECRET) return
+    const next = await secrets.get(VAULT_KEY_SECRET)
+    if (validKey(next) && next !== key) {
+      key = next
+      current = keyCodec(next)
+    }
+  })
+  return {
+    codec: {
+      encrypt: (plain) => current.encrypt(plain),
+      decrypt: (cipher) => current.decrypt(cipher)
+    },
+    dispose: () => subscription.dispose()
+  }
 }

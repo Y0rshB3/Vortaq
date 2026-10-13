@@ -13,6 +13,9 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import type { ConnectionInput, QueryStatementResult } from '@core'
+import { CredentialStore, plainCodec } from '@main/credentials/store'
+import { setJsonStoreReload } from '@main/storage/jsonStore'
+import { ConnectionsRepo } from '@main/storage/repos'
 import type { VortaqTestApi } from '../../src/extension'
 import type { Prompter } from '../../src/host/guard'
 import type { ResultsPanel } from '../../src/host/panels/results'
@@ -214,6 +217,50 @@ test('imports the desktop connections without passwords', async () => {
   cleanup.push(() => api.connections.remove(imported.id))
   assert.equal(await api.core.invoke('connections:hasPassword', imported.id), false)
   assert.equal(imported.backupDir, '')
+})
+
+test('keeps the connections another editor window saves on the same profile', async () => {
+  // Every editor window runs its own extension host and core on the same globalStorage folder.
+  // A second store over the same files plays the other window (its own module copy).
+  setJsonStoreReload(true)
+  const other = new ConnectionsRepo(api.core.context.userDataPath)
+  const fromOther = other.save(
+    input({
+      name: `IT otra ventana ${process.pid}`,
+      engine: 'mysql',
+      host: '127.0.0.1',
+      port: 3306,
+      username: 'root'
+    })
+  )
+  cleanup.push(() => api.connections.remove(fromOther.id))
+  assert.ok((await api.core.invoke('connections:list')).some((c) => c.id === fromOther.id))
+  const roots = await api.tree.getChildren()
+  assert.ok(roots.some((n) => n.kind === 'connection' && n.connectionId === fromOther.id))
+  // This window saves one, then the other window writes again: neither is lost.
+  const here = await api.core.invoke(
+    'connections:save',
+    input({
+      name: `IT esta ventana ${process.pid}`,
+      engine: 'mysql',
+      host: '127.0.0.1',
+      port: 3306,
+      username: 'root'
+    })
+  )
+  cleanup.push(() => api.connections.remove(here.id))
+  other.save({ ...fromOther, name: `${fromOther.name} (editada)` })
+  const names = (await api.core.invoke('connections:list')).map((c) => c.name)
+  assert.ok(names.includes(`IT esta ventana ${process.pid}`))
+  assert.ok(names.includes(`IT otra ventana ${process.pid} (editada)`))
+  // A password saved here survives a credential write of the other window.
+  await api.core.invoke('connections:setPassword', here.id, 'secreta')
+  new CredentialStore(api.core.context.userDataPath, plainCodec, 'vaultKey').set(
+    'ssh',
+    fromOther.id,
+    null
+  )
+  assert.equal(await api.core.invoke('connections:hasPassword', here.id), true)
 })
 
 /* ---------- MySQL ---------- */

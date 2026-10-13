@@ -2,8 +2,8 @@
  * Connections of the extension's own profile, on top of the core channels.
  * Opening asks for a password the vault does not have yet (imported
  * connections, a reset vault key): it is stored through the core's
- * CredentialStore, encrypted with the vault key, or kept only until the
- * connection closes when the connection does not save passwords.
+ * CredentialStore, encrypted with the vault key, or kept in memory only until
+ * the connection closes when the connection does not save passwords.
  */
 import * as vscode from 'vscode'
 import {
@@ -19,7 +19,7 @@ export class ConnectionService implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<string | undefined>()
   /** Fires with a connection id (its state changed) or undefined (the list changed). */
   readonly onDidChange = this.changed.event
-  /** Passwords typed for connections that do not save them: removed when they close. */
+  /** Connections with in-memory passwords (they do not save them): forgotten when they close. */
   private readonly ephemeral = new Map<string, Set<'password' | 'ssh'>>()
 
   constructor(
@@ -40,8 +40,11 @@ export class ConnectionService implements vscode.Disposable {
     return this.core.connections.isOpen(id)
   }
 
-  /** The list changed (saved, imported, deleted). */
+  /** The list changed (saved, imported, deleted, or rewritten by another editor window). */
   refreshAll(): void {
+    // A save that changed the endpoint closes the pool without an event: forget its
+    // in-memory passwords like any other close.
+    for (const id of [...this.ephemeral.keys()]) if (!this.isOpen(id)) this.forgetEphemeral(id)
     this.changed.fire(undefined)
   }
 
@@ -152,34 +155,44 @@ export class ConnectionService implements vscode.Disposable {
     })
   }
 
+  /**
+   * Stores a typed secret: encrypted in credentials.json when the connection saves passwords,
+   * otherwise in memory only (CredentialStore.setTransient) until the connection closes, so
+   * it never reaches the disk, not even when the editor crashes.
+   */
   private async storeSecret(
     connection: ConnectionConfig,
     kind: 'password' | 'ssh',
     value: string
   ): Promise<void> {
     if (!value) return
-    if (kind === 'password') await this.core.invoke('connections:setPassword', connection.id, value)
-    else await this.core.invoke('connections:setSshPassword', connection.id, value)
     const saves = kind === 'password' ? connection.savePassword : connection.ssh.savePassword
     if (!saves) {
+      this.core.context.credentials.setTransient(
+        kind === 'password' ? DB_PASSWORD : 'ssh',
+        connection.id,
+        value
+      )
       const kinds = this.ephemeral.get(connection.id) ?? new Set()
       kinds.add(kind)
       this.ephemeral.set(connection.id, kinds)
+      return
     }
+    if (kind === 'password') await this.core.invoke('connections:setPassword', connection.id, value)
+    else await this.core.invoke('connections:setSshPassword', connection.id, value)
   }
 
-  /** Removes the passwords typed for a connection that does not save them. */
+  /** Forgets the in-memory passwords of a connection that does not save them. */
   private forgetEphemeral(id: string): void {
     const kinds = this.ephemeral.get(id)
     if (!kinds) return
     this.ephemeral.delete(id)
-    for (const kind of kinds) {
-      try {
-        this.core.context.credentials.set(kind === 'password' ? DB_PASSWORD : 'ssh', id, null)
-      } catch {
-        /* nothing stored */
-      }
-    }
+    for (const kind of kinds)
+      this.core.context.credentials.setTransient(
+        kind === 'password' ? DB_PASSWORD : 'ssh',
+        id,
+        null
+      )
   }
 
   dispose(): void {
