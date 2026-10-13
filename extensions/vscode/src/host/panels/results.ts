@@ -33,6 +33,8 @@ export class ResultsPanel {
   readonly panel: vscode.WebviewPanel
   private ready = false
   private disposed = false
+  /** The webview holds unapplied row edits. */
+  dirty = false
 
   constructor(
     readonly key: string,
@@ -115,6 +117,9 @@ export class ResultsPanel {
             this.state = { ...this.state, settings: this.deps.settings() }
             this.post({ type: 'init', state: this.state })
             return
+          case 'dirty':
+            this.dirty = message.dirty
+            return
           case 'stop':
             this.deps.onStop(this.key)
             return
@@ -167,6 +172,26 @@ export class ResultsPanels implements vscode.Disposable {
 
   get(key: string): ResultsPanel | undefined {
     return this.panels.get(key)
+  }
+
+  /**
+   * Before a new run replaces the results of `key`: true when there is nothing to lose or
+   * the user chose to discard the unapplied edits.
+   */
+  async mayReplace(key: string): Promise<boolean> {
+    const panel = this.panels.get(key)
+    if (!panel || panel.isDisposed || !panel.dirty) return true
+    const discard = 'Descartar y ejecutar'
+    const answer = await vscode.window.showWarningMessage(
+      'Cambios sin aplicar',
+      {
+        modal: true,
+        detail:
+          'Hay cambios sin aplicar en los resultados. Si vuelves a ejecutar la consulta se descartarán.'
+      },
+      discard
+    )
+    return answer === discard
   }
 
   /** The panel of `key`, created with `initial` when it does not exist (or was closed). */

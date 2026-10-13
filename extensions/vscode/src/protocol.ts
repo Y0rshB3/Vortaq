@@ -33,6 +33,8 @@ export type WebviewMessage =
   | { type: 'clipboard'; text: string; label?: string }
   | { type: 'close' }
   | { type: 'stop' }
+  /** The results webview holds unapplied row edits (or no longer does). */
+  | { type: 'dirty'; dirty: boolean }
 
 export type HostMessage<State = unknown> =
   | { type: 'init'; state: State }
@@ -106,6 +108,8 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
       const request = confirmPayload(raw.request)
       return request ? { type: 'confirm', id: raw.id, request } : null
     }
+    case 'dirty':
+      return typeof raw.dirty === 'boolean' ? { type: 'dirty', dirty: raw.dirty } : null
     case 'notify':
       if (!NOTIFY_LEVELS.includes(raw.level as NotifyLevel) || !shortText(raw.message)) return null
       return { type: 'notify', level: raw.level as NotifyLevel, message: raw.message }

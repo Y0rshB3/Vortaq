@@ -51,6 +51,12 @@ watch(
   { immediate: true }
 )
 
+// The host asks before a new run replaces results with unapplied edits.
+watch(
+  () => Object.values(pendingEdits.value).some(Boolean),
+  (dirty) => props.host.post({ type: 'dirty', dirty })
+)
+
 const activeSet = computed(() => resultSets.value.find((rs) => rs.key === tab.value) ?? null)
 
 function copy(format: CopyFormat): void {

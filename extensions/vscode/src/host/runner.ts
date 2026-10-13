@@ -121,6 +121,7 @@ export class SqlRunner implements vscode.Disposable {
     picked: RunTarget,
     editor?: vscode.TextEditor
   ): Promise<QueryStatementResult[] | null> {
+    if (!(await this.results.mayReplace(`doc:${uri}`))) return null
     const decision = await this.guard.checkSql(
       connection,
       picked.sql,
@@ -266,6 +267,7 @@ export class SqlRunner implements vscode.Disposable {
     const sql = `SELECT * FROM ${dialect.qualified(namespace, node.name)} LIMIT ${limit}`
     const where = [node.database, node.schema].filter(Boolean).join('.')
     const key = `data:${connection.id}:${where}:${node.name}`
+    if (!(await this.results.mayReplace(key))) return null
     const panel = this.results.open(
       key,
       this.state(connection, `${node.name} · ${connection.name}`, where, true, false)

@@ -17,6 +17,11 @@ function options(overrides: Partial<BridgeOptions> = {}) {
 describe('webview messages', () => {
   it('accepts only well-formed messages of the known types', () => {
     expect(parseWebviewMessage({ type: 'ready' })).toEqual({ type: 'ready' })
+    expect(parseWebviewMessage({ type: 'dirty', dirty: true })).toEqual({
+      type: 'dirty',
+      dirty: true
+    })
+    expect(parseWebviewMessage({ type: 'dirty', dirty: 'yes' })).toBeNull()
     expect(
       parseWebviewMessage({ type: 'invoke', id: 3, channel: 'db:tables', args: ['c', 'db'] })
     ).toEqual({
