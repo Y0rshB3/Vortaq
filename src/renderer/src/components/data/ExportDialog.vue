@@ -259,7 +259,7 @@ function setFormat(value: ExportFormat): void {
 </script>
 
 <template>
-  <v-dialog v-model="open" max-width="600" scrollable>
+  <v-dialog v-model="open" max-width="680" scrollable>
     <v-card data-test="export-dialog">
       <DialogHeader icon="mdi-file-export-outline" title="Exportar" :subtitle="baseName" />
       <v-card-text class="export-dialog__body">
@@ -396,9 +396,7 @@ function setFormat(value: ExportFormat): void {
               v-if="showNull"
               v-model="form.nullText"
               label="Texto para NULL"
-              :placeholder="
-                format === 'markdown' || format === 'html' ? 'vacío' : 'vacío (campo vacío)'
-              "
+              placeholder="vacío"
               hide-details
               class="export-dialog__mono"
               data-test="export-null"

@@ -24,7 +24,12 @@ defineExpose({ show })
 
 <template>
   <v-menu v-model="open" :target="position" location="bottom start" :close-on-content-click="true">
-    <v-list density="compact" min-width="220" class="context-menu" data-test="context-menu">
+    <v-list
+      density="compact"
+      :min-width="actions.some((a) => a.hint) ? 270 : 220"
+      class="context-menu"
+      data-test="context-menu"
+    >
       <template v-for="item in actions" :key="item.key">
         <v-divider v-if="item.divider" class="context-menu__divider" />
         <v-menu

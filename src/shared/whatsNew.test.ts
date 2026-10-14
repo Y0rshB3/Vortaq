@@ -125,6 +125,15 @@ describe('WHATS_NEW (curated list)', () => {
     expect(entry?.tour?.[0].target).toBe('toolbar-automation')
   })
 
+  it('2.0.2 announces copy and export of results with one tour step on Nueva consulta', () => {
+    const entry = whatsNewFor('2.0.2')
+    expect(entry?.highlights.join(' ')).toMatch(/Copiar como/)
+    expect(entry?.highlights.join(' ')).toMatch(/Excel/)
+    expect(entry?.highlights.join(' ')).toMatch(/solo lectura/)
+    expect(entry?.tour?.map((s) => s.target)).toEqual(['toolbar-query'])
+    expect(versions(whatsNewBetween('2.0.1', '2.0.2'))).toEqual(['2.0.2'])
+  })
+
   it('0.1.8 announces connections without a password', () => {
     expect(whatsNewFor('0.1.8')?.highlights).toEqual([
       'Conexiones sin contraseña: para proxies, túneles o certificados (Autenticación › Sin contraseña)'

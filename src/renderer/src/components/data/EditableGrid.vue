@@ -543,7 +543,7 @@ function copyItems(): MenuAction[] {
     {
       key: 'copy-as',
       label: 'Copiar como',
-      icon: 'mdi-content-copy',
+      icon: 'mdi-code-braces',
       children: formats
         .filter((f) => f !== 'update' || canUpdate)
         .map((f) => ({

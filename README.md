@@ -108,6 +108,10 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
   ([Importar desde otros gestores](#importar-desde-otros-gestores)).
 - **Exportar a `.sql`**: copias en SQL plano compatibles con `mysql` y otros gestores, también como formato de
   los pasos de copia de la automatización ([Exportar a .sql](#exportar-a-sql)).
+- **Copiar y exportar resultados**: selecciona celdas, filas o columnas enteras (también en resultados de varias
+  tablas) y cópialas como texto tabulado, CSV, JSON, `INSERT`, `UPDATE`, lista para `IN` o Markdown; exporta lo
+  cargado o el **resultado completo** (se vuelve a ejecutar en una sesión de solo lectura, sin límite de filas) a
+  CSV, Excel (`.xlsx`), JSON, SQL, Markdown, HTML o TXT ([Copiar y exportar resultados](#copiar-y-exportar-resultados)).
 - **Protección de producción**: toda escritura sobre una conexión marcada como Producción pide escribir su
   nombre. En **Ajustes › Seguridad** puedes extenderlo a Staging, Local u Otro.
 - **Confirmación antes de borrar en cualquier conexión**: DROP, TRUNCATE, DELETE y eliminar filas, tablas,
@@ -776,6 +780,9 @@ En macOS se usa `Cmd`; en Windows y Linux, `Ctrl`.
 | `Cmd/Ctrl+R` o `Cmd/Ctrl+Enter` | Ejecuta la consulta de la pestaña activa                              |
 | `Cmd/Ctrl+S`                    | Guarda (consulta, diseño de tabla, objeto DDL o cambios en los datos) |
 | `Cmd/Ctrl+W`                    | Cierra la pestaña activa (pregunta si hay cambios sin guardar)        |
+| `Cmd/Ctrl+C` (en la rejilla)    | Copia la selección como texto tabulado (se pega en hojas de cálculo)  |
+| `Shift+Cmd/Ctrl+C` (rejilla)    | Copia la selección con la fila de encabezados                         |
+| `Cmd/Ctrl+A` (en la rejilla)    | Selecciona todas las celdas del resultado                             |
 | `Shift+Cmd/Ctrl+W`              | Cierra la ventana                                                     |
 | `Shift+Alt+Cmd/Ctrl+R`          | Recarga la ventana (desarrollo)                                       |
 | `Alt+Cmd/Ctrl+I`                | Herramientas de desarrollo (desarrollo)                               |
@@ -1097,12 +1104,48 @@ Al editar una celda `DATE`, `DATETIME`, `TIMESTAMP`, `TIME` o `YEAR` el editor s
 - Arrastra el borde derecho de una cabecera para cambiar el ancho de la columna (mínimo 48 px); doble clic en el
   borde la ajusta al contenido visible (máximo 600 px). Los anchos se recuerdan por tabla (también al paginar,
   refrescar o volver a abrirla). Editar una celda no cambia el ancho de su columna.
-- El botón **Texto** (vista de datos y resultados de consulta de una tabla) abre un panel inferior redimensionable
+- Para ordenar, usa la flecha que aparece en la cabecera al pasar el ratón (o el menú del botón derecho:
+  **Ordenar ascendente**, **Ordenar descendente**, **Quitar orden**); un clic en la cabecera selecciona la columna.
+- El botón **Texto** (vista de datos y resultados de consulta) abre un panel inferior redimensionable
   con el valor completo de la celda seleccionada: columna, tipo y tamaño; JSON formateado y coloreado; binarios
   en hexadecimal; `NULL` como estado. Sigue a la celda activa también con las flechas.
 - Si la rejilla es editable, el panel también: el cambio queda pendiente como en la celda (Aplicar, Descartar,
   `Cmd/Ctrl+S`). **Formatear JSON** guarda el JSON con sangría; si no, se guarda exactamente lo que escribes.
   **NULL** solo aparece si la columna admite `NULL`. Las confirmaciones de producción no cambian.
+
+### Copiar y exportar resultados
+
+En la vista de datos y en todos los resultados de consulta (también los de solo lectura que leen de varias
+tablas) se puede seleccionar como en una hoja de cálculo:
+
+- **Celdas**: clic, `Shift`+clic o arrastrar para un rectángulo; `Shift`+flechas lo amplía. **Filas**: clic en el
+  número de fila (`Shift` para un rango, `Cmd/Ctrl` para añadir). **Columnas**: clic en la cabecera (`Shift` y
+  `Cmd/Ctrl` igual). **Todo**: `Cmd/Ctrl+A` o clic en `#`. `Esc` vuelve a la celda activa.
+- **Eliminar** sigue trabajando solo con las filas elegidas en la columna `#` (o la fila de la celda activa):
+  seleccionar columnas o todo nunca marca filas para borrar.
+- `Cmd/Ctrl+C` copia la selección como texto tabulado, listo para pegar en Excel, Numbers o Google Sheets
+  (`NULL` queda como celda vacía). El botón derecho ofrece **Copiar**, **Copiar con encabezados** y **Copiar
+  como**: CSV, JSON, `INSERT` (con las comillas del motor y la tabla de origen cuando el resultado tiene una),
+  `UPDATE` (las columnas seleccionadas por la clave primaria, cuando se conoce), **Lista para IN** (cada valor una
+  vez; `NULL` se omite porque `IN` nunca lo encuentra, y el aviso lo dice) y Markdown. Los valores se copian tal
+  como se ven: fechas, decimales y enteros grandes no se reformatean.
+- **Exportar** (barra del resultado o menú del botón derecho) guarda un archivo **CSV** (separador coma, punto y
+  coma o tabulador, BOM opcional para Excel), **Excel `.xlsx`** (encabezado fijo; los números de más de 15
+  cifras se guardan como texto y ningún valor se convierte en fórmula), **JSON** (objetos o arreglos),
+  **SQL** (`INSERT` de una fila o en lotes), **Markdown**, **HTML** o **TXT** tabulado. Qué exportar:
+  - **Selección** o **Filas cargadas**: lo que ves en la rejilla (con los cambios aún sin aplicar).
+  - **Resultado completo**: vuelve a ejecutar la consulta (o el `SELECT` de la tabla con su filtro y su orden,
+    sin paginar) en una **sesión nueva de solo lectura** y escribe todas las filas en el archivo poco a poco, sin
+    límite. No ve los cambios sin confirmar de la pestaña. Solo se permite con una única sentencia de lectura
+    (`SELECT`, `WITH`, `SHOW`…); cualquier cosa que pueda escribir se rechaza, y aunque algo pasara el filtro la
+    sesión no puede escribir (`START TRANSACTION READ ONLY` en MySQL/MariaDB, `BEGIN READ ONLY` en PostgreSQL y
+    un proceso aparte que abre el archivo SQLite en solo lectura). Por eso no pide la confirmación de
+    producción. El progreso aparece en la tarjeta de operaciones con **Cancelar**, que detiene la consulta en el
+    servidor y borra el archivo a medias.
+- El archivo se escribe primero como `<archivo>.part` y solo toma su nombre al terminar. Excel admite hasta
+  1.048.576 filas y 16.384 columnas por hoja y 32.767 caracteres por celda: si te pasas, Vortaq lo dice (y sugiere
+  CSV) o recorta las celdas largas y avisa de cuántas.
+- MongoDB tiene su propia vista de documentos y no usa esta exportación.
 
 ## Asistente de IA
 
