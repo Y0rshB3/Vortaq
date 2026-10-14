@@ -13,10 +13,15 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB
 [![Descargas totales](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FY0rshB3%2FVortaq%2Fbadges%2Fdownloads-total.json)](https://github.com/Y0rshB3/Vortaq/releases)
 [![Licencia MIT](https://img.shields.io/badge/licencia-MIT-22c55e)](LICENSE)
 [![Plataformas](https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-0ea5e9)](https://github.com/Y0rshB3/Vortaq/releases/latest)
+[![Extensión para editores](https://img.shields.io/github/v/release/Y0rshB3/Vortaq?filter=vscode-v%2A&label=extensi%C3%B3n%20para%20editores&color=0ea5e9&cacheSeconds=300)](#extensión-para-editores-vs-code-cursor-vscodium-windsurf)
 
 [**Descargar para macOS**](https://github.com/Y0rshB3/Vortaq/releases/latest) ·
 [**Windows**](https://github.com/Y0rshB3/Vortaq/releases/latest) ·
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
+
+Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.1.0/vortaq-0.1.0.vsix) ·
+[cómo instalarla](#instalar-la-extensión)
 
 <br />
 
@@ -1247,6 +1252,10 @@ la misma protección de producción) y trabaja con los cinco motores: MySQL, Mar
 MongoDB. Su código está en [`extensions/vscode`](extensions/vscode) y tiene su propia numeración de versiones
 (empieza en la 0.1.0).
 
+<p align="center">
+  <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
+</p>
+
 Qué hace en esta primera versión:
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
@@ -1271,16 +1280,21 @@ propias conexiones y contraseñas.
 
 Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en una más reciente).
 
-- **Desde el archivo `.vsix`** (hoy): descarga `vortaq-0.1.0.vsix` de la versión
-  [`vscode-v0.1.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.1.0) en GitHub
-  (`https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.1.0/vortaq-0.1.0.vsix`, cuando esté
-  publicada) y en el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
-  _Install from VSIX…_). Funciona igual en VS Code, Cursor, VSCodium y Windsurf. Desde la terminal:
+- **Desde el archivo `.vsix`**:
+  1. Descarga
+     [**`vortaq-0.1.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.1.0/vortaq-0.1.0.vsix)
+     (versión [`vscode-v0.1.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.1.0), con su
+     `SHA256SUMS.txt`).
+  2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
+     _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
+
+  O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.1.0.vsix
-  cursor --install-extension vortaq-0.1.0.vsix
-  codium --install-extension vortaq-0.1.0.vsix
+  code --install-extension vortaq-0.1.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.1.0.vsix     # Cursor
+  codium --install-extension vortaq-0.1.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.1.0.vsix   # Windsurf
   ```
 
 - **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
