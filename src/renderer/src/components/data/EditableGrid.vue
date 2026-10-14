@@ -321,7 +321,8 @@ function selectRow(event: MouseEvent, index: number): void {
 }
 
 function clickCell(event: MouseEvent, uid: string, col: number): void {
-  if (event.shiftKey) {
+  // Shift extends from the rectangle's anchor or the active cell; without either it is a plain click.
+  if (event.shiftKey && (sel.value.kind === 'cells' || active.value)) {
     applySelection(selectCellAt(sel.value, { uid, col }, { shift: true }, active.value))
     return
   }
