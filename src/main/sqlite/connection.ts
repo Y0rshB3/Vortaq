@@ -484,6 +484,32 @@ export class SqliteDriverConnection implements SqlDriverConnection<SqliteSession
     }
   }
 
+  /**
+   * A separate worker on the same file, opened read-only (`mode=ro` plus
+   * `query_only`) with the configured attachments and without the initial
+   * queries (they may write). «Exportar resultado completo» reads through it,
+   * so it never waits for, blocks or kills the query tabs' shared handle, and
+   * it sees only committed data. The caller closes it (kill() to cancel).
+   */
+  async openReader(): Promise<WorkerClient> {
+    if (this.closed)
+      throw new SqliteUserError('La conexión SQLite está cerrada.', 'E_SQLITE_CLOSED')
+    const client = new WorkerClient(this.options.spawner, () => undefined)
+    client.start()
+    try {
+      await client.call('open', {
+        ...this.openRequest(),
+        readOnly: true,
+        queryOnly: true,
+        initialStatements: []
+      })
+      return client
+    } catch (err) {
+      await client.kill().catch(() => undefined)
+      throw err
+    }
+  }
+
   /** Copies one database (main or an attachment) to a new file with VACUUM INTO (WAL content included). */
   async vacuumInto(targetPath: string, schema = 'main'): Promise<{ sizeBytes: number }> {
     return this.exclusive(async () => {

@@ -94,6 +94,7 @@ import type {
   AiTestResult
 } from './ai'
 import type { TourState } from './tour'
+import type { ExportQueryRequest, ExportResult, ExportRowsRequest } from './export/types'
 import type {
   BackupFormat,
   ImportConnectionsPreview,
@@ -611,6 +612,24 @@ export interface IpcInvokeMap {
   }
   'importers:cancel': { args: [operationId: string]; result: void }
 
+  /*
+   * Copy and export of results (src/main/export). The renderer picks the file with
+   * app:pickSaveFile; main writes `<file>.part` and renames it once complete.
+   */
+  /** «Exportar» of rows the renderer holds (loaded rows or the grid selection). */
+  'export:rows': { args: [request: ExportRowsRequest]; result: ExportResult }
+  /**
+   * «Exportar resultado completo»: re-runs one read-only statement (or the table view's
+   * SELECT without paging) in a new read-only session and streams every row to the file.
+   * Progress as event:progress (kind 'export'); refused for anything that may write.
+   */
+  'export:query': {
+    args: [operationId: string, request: ExportQueryRequest]
+    result: ExportResult
+  }
+  /** Stops a running export:query (server-side too) and deletes its partial file. */
+  'export:cancel': { args: [operationId: string]; result: void }
+
   /** Onboarding state; decides once per profile whether the welcome tour is due. */
   'tour:state': { args: []; result: TourState }
   /** The welcome tour was finished or skipped (also after a replay). */
@@ -806,6 +825,9 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'importers:previewSqlFolder',
   'importers:importSqlFolder',
   'importers:cancel',
+  'export:rows',
+  'export:query',
+  'export:cancel',
   'tour:state',
   'tour:markWelcomeDone',
   'ai:providers',

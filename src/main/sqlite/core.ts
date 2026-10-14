@@ -23,6 +23,8 @@ import type {
   AttachRequest,
   BatchResult,
   BatchStatement,
+  CursorOpenResult,
+  CursorReadResult,
   OpenRequest,
   OpenResult,
   QueryResult,
@@ -150,6 +152,9 @@ export class SqliteCore {
   private db: DatabaseSync | null = null
   /** Our own ATTACH statements bypass the authorizer (their path is checked first). */
   private internalAttach = false
+  /** Statements read in steps (export), by cursor id. */
+  private readonly cursors = new Map<number, Iterator<unknown[]>>()
+  private cursorSeq = 0
   private attachDenied = false
 
   open(req: OpenRequest): OpenResult {
@@ -331,6 +336,64 @@ export class SqliteCore {
     }
   }
 
+  /** Opens a statement that returns rows, read in steps with cursorRead (export). */
+  cursorOpen(sql: string): CursorOpenResult {
+    const stmt = this.prepare(sql)
+    const meta = stmt.columns()
+    if (meta.length === 0)
+      throw new SqliteCoreError('La consulta no devuelve filas.', 'E_SQLITE_NO_ROWS')
+    stmt.setReadBigInts(true)
+    stmt.setReturnArrays(true)
+    const iterator = (stmt.iterate() as Iterable<unknown[]>)[Symbol.iterator]()
+    const cursorId = ++this.cursorSeq
+    this.cursors.set(cursorId, iterator)
+    return {
+      cursorId,
+      columns: meta.map((c): WorkerColumn => ({
+        name: c.name,
+        column: c.column ?? null,
+        table: c.table ?? null,
+        database: c.database ?? null,
+        type: c.type ?? null
+      }))
+    }
+  }
+
+  cursorRead(cursorId: number, maxRows: number): CursorReadResult {
+    const iterator = this.cursors.get(cursorId)
+    if (!iterator) throw new SqliteCoreError('El cursor ya está cerrado.', 'E_SQLITE_STATE')
+    const rows: CellValue[][] = []
+    const storage: StorageClass[][] = []
+    const limit = Math.max(1, Math.floor(maxRows))
+    while (rows.length < limit) {
+      const next = iterator.next()
+      if (next.done) {
+        this.cursors.delete(cursorId)
+        return { rows, storage, done: true }
+      }
+      const values: CellValue[] = []
+      const classes: StorageClass[] = []
+      for (const v of next.value) {
+        const [value, cls] = normalizeValue(v)
+        values.push(value)
+        classes.push(cls)
+      }
+      rows.push(values)
+      storage.push(classes)
+    }
+    return { rows, storage, done: false }
+  }
+
+  cursorClose(cursorId: number): void {
+    const iterator = this.cursors.get(cursorId)
+    this.cursors.delete(cursorId)
+    try {
+      iterator?.return?.()
+    } catch {
+      /* already finished */
+    }
+  }
+
   /** Internal statement with bound parameters; rows as plain objects. */
   query(sql: string, params: unknown[] = []): QueryResult {
     const db = this.requireDb()
@@ -402,6 +465,7 @@ export class SqliteCore {
   }
 
   close(): void {
+    for (const id of [...this.cursors.keys()]) this.cursorClose(id)
     const db = this.db
     this.db = null
     if (db?.isOpen) {

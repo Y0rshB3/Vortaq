@@ -61,6 +61,19 @@ export function buildPgSelectSql(
   return sql
 }
 
+/** The table view's SELECT without LIMIT/OFFSET («Exportar resultado completo»). */
+export function buildPgExportSelectSql(
+  req: Omit<TableDataRequest, 'limit' | 'offset'>,
+  target: PgTableTarget,
+  columns: PgFilterColumn[] = []
+): string {
+  const full: TableDataRequest = { ...req, limit: 1, offset: 0 }
+  validate(full, target)
+  let sql = `SELECT * ${fromClause(target, buildPgWhere(full, columns))}`
+  if (req.orderBy) sql += ` ORDER BY ${quoteIdent(req.orderBy.column)} ${req.orderBy.direction}`
+  return sql
+}
+
 export function buildPgCountSql(
   req: TableDataRequest,
   target: PgTableTarget,

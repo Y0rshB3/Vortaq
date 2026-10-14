@@ -66,6 +66,19 @@ export interface RunResult {
   inTransaction: boolean
 }
 
+/** A statement opened for reading in steps (export): its columns and a cursor id. */
+export interface CursorOpenResult {
+  cursorId: number
+  columns: WorkerColumn[]
+}
+
+/** The next rows of a cursor; `done` once the statement has no more. */
+export interface CursorReadResult {
+  rows: CellValue[][]
+  storage: StorageClass[][]
+  done: boolean
+}
+
 export interface QueryResult {
   rows: Record<string, unknown>[]
   changes: number
@@ -96,6 +109,11 @@ export interface WorkerOps {
   batch: { args: [statements: BatchStatement[]]; result: BatchResult }
   /** VACUUM [schema] INTO a new file (refused when the target exists); schema defaults to main. */
   vacuumInto: { args: [targetPath: string, schema?: string]; result: { sizeBytes: number } }
+  /** Opens a statement that returns rows, to be read in steps (refused when it returns none). */
+  cursorOpen: { args: [sql: string]; result: CursorOpenResult }
+  /** Reads up to `maxRows` rows of an open cursor. */
+  cursorRead: { args: [cursorId: number, maxRows: number]; result: CursorReadResult }
+  cursorClose: { args: [cursorId: number]; result: null }
   /** Liveness check used by tests and the smoke run. */
   ping: { args: []; result: { pid: number } }
   close: { args: []; result: null }

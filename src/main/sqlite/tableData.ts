@@ -8,9 +8,9 @@ import { performance } from 'node:perf_hooks'
 import { quoteIdent } from '@shared/dialects/sqlite'
 import type { TableDataPage, TableDataRequest } from '@shared/types'
 import { MAX_ROWS_CAP } from '../db/query'
-import type { SqliteDriverConnection, SqliteSession } from './connection'
+import type { SqliteDriverConnection } from './connection'
 import { SqliteUserError } from './errors'
-import { listColumns, rowIdentity, type RowIdentity } from './introspect'
+import { listColumns, rowIdentity, type RowIdentity, type SqliteQueryable } from './introspect'
 import { describeColumns } from './query'
 import {
   buildSqliteFilterWhere,
@@ -69,6 +69,22 @@ export function buildSqliteSelectSql(
   return sql
 }
 
+/** The table view's SELECT without LIMIT/OFFSET («Exportar resultado completo»). */
+export function buildSqliteExportSelectSql(
+  req: Omit<TableDataRequest, 'limit' | 'offset'>,
+  target: SqliteTableTarget,
+  identity: RowIdentity,
+  columns: SqliteFilterColumn[] = []
+): string {
+  const full: TableDataRequest = { ...req, limit: 1, offset: 0 }
+  validate(full, target)
+  const rowid = rowidSelect(identity)
+  let sql = `SELECT ${rowid ? `${rowid}, ` : ''}* ${fromClause(target, buildSqliteWhere(full, columns))}`
+  if (req.orderBy)
+    sql += ` ORDER BY ${quoteIdent(req.orderBy.column, true)} ${req.orderBy.direction}`
+  return sql
+}
+
 export function buildSqliteCountSql(
   req: TableDataRequest,
   target: SqliteTableTarget,
@@ -78,8 +94,8 @@ export function buildSqliteCountSql(
   return `SELECT count(*) AS total ${fromClause(target, buildSqliteWhere(req, columns))}`
 }
 
-async function filterColumns(
-  session: SqliteSession,
+export async function filterColumns(
+  session: SqliteQueryable,
   target: SqliteTableTarget,
   req: Pick<TableDataRequest, 'filter'>
 ): Promise<SqliteFilterColumn[]> {

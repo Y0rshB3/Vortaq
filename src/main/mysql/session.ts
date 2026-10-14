@@ -182,6 +182,25 @@ export class PooledSession implements MysqlSession, StatementRunner {
     sql: string,
     params?: unknown[]
   ): Promise<{ columns: string[]; rows: Readable }> {
+    const { fields, rows } = await this.streamResult(sql, params)
+    return { columns: fields.map((f) => f.name), rows }
+  }
+
+  /** Server thread of this session's connection (for KILL QUERY from another session). */
+  get threadId(): number | null {
+    const id = (this.conn.connection as unknown as { threadId?: number | null }).threadId
+    return typeof id === 'number' ? id : null
+  }
+
+  /**
+   * Streams the rows of one statement as plain arrays with backpressure (mysql2
+   * pauses the socket while the consumer is behind), plus the result's field
+   * metadata ([] for a statement without a result set).
+   */
+  async streamResult(
+    sql: string,
+    params?: unknown[]
+  ): Promise<{ fields: FieldPacket[]; rows: Readable }> {
     this.assertOpen()
     this.dirty = true
     const core = this.core
@@ -193,12 +212,12 @@ export class PooledSession implements MysqlSession, StatementRunner {
     core.on('error', onConnError)
     source.once('close', () => core.removeListener('error', onConnError))
 
-    const columns = await new Promise<string[]>((resolve, reject) => {
+    const fields = await new Promise<FieldPacket[]>((resolve, reject) => {
       let settled = false
       q.once('fields', (fields: FieldPacket[] | undefined) => {
         if (settled) return
         settled = true
-        resolve(fields ? fields.map((f) => f.name) : [])
+        resolve(fields ?? [])
       })
       const failed = (err: Error): void => {
         if (settled) return
@@ -225,7 +244,12 @@ export class PooledSession implements MysqlSession, StatementRunner {
         if (Array.isArray(row)) yield row
       }
     }
-    return { columns, rows: Readable.from(mapped()) }
+    const rows = Readable.from(mapped())
+    // Destroying the mapped stream (cancel, a failed write) also stops reading the socket.
+    rows.once('close', () => {
+      if (!source.destroyed) source.destroy()
+    })
+    return { fields, rows }
   }
 
   async useSchema(schema: string | null): Promise<void> {
