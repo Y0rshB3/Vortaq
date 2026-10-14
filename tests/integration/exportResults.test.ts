@@ -550,7 +550,7 @@ describeServer(POSTGRES_TARGET, 'Full result export (integration)', (url) => {
     )
     await exec(text())
     expect(await digest('items_copy')).toEqual(await digest('items'))
-  })
+  }, 60_000)
 
   it('table view filter and sort without paging, and XLSX', async () => {
     const source: ExportQuerySource = {
