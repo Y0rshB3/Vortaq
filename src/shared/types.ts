@@ -1770,7 +1770,7 @@ export interface WhatsNewInfo {
 export interface ProgressEvent {
   /** Correlates with the invoke that started the operation. */
   operationId: string
-  kind: 'backup' | 'restore' | 'job' | 'import' | 'query'
+  kind: 'backup' | 'restore' | 'job' | 'import' | 'query' | 'export'
   phase: string
   current: number
   total: number | null

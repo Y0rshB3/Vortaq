@@ -103,6 +103,36 @@ async function explicitColumnsFor(
   return columns.some((c) => c.hidden) ? columns.map((c) => c.name) : undefined
 }
 
+/** «Exportar resultado completo» of the table view: its filter and sort, without paging. */
+export type TableExportRequest = Omit<TableDataRequest, 'limit' | 'offset'>
+
+/** The table view's SELECT without LIMIT/OFFSET (same WHERE and ORDER BY as the grid). */
+export function buildExportSelectSql(
+  req: TableExportRequest,
+  columns?: readonly string[],
+  explicitColumns?: readonly string[]
+): string {
+  const full: TableDataRequest = { ...req, limit: 1, offset: 0 }
+  validate(full)
+  let sql = explicitColumns?.length
+    ? `SELECT ${explicitColumns.map(escapeId).join(', ')} ${fromClause(full, columns)}`
+    : `SELECT * ${fromClause(full, columns)}`
+  if (req.orderBy) sql += ` ORDER BY ${escapeId(req.orderBy.column)} ${req.orderBy.direction}`
+  return sql
+}
+
+/** The export SELECT of a table view, reading the columns a filter or MariaDB needs. */
+export async function exportSelectSql(
+  session: FullSession,
+  req: TableExportRequest
+): Promise<string> {
+  const full: TableDataRequest = { ...req, limit: 1, offset: 0 }
+  validate(full)
+  const columnNames = await filterColumns(session, full)
+  const explicit = isMariaDbSession(session) ? await explicitColumnsFor(session, full) : undefined
+  return buildExportSelectSql(req, columnNames, explicit)
+}
+
 /** Loads one page of a table plus its primary key and (best effort) total row count. */
 export async function fetchTableData(
   session: FullSession,

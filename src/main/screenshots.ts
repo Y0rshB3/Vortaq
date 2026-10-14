@@ -2154,6 +2154,81 @@ const PACKAGE_STEPS: Step[] = [
 ]
 STEPS.push(...PACKAGE_STEPS)
 
+/**
+ * Copy and export of results (VORTAQ_SHOTS_ONLY=48): a read-only multi-table
+ * result of the seeded «Local Test» (shot_customers / shot_orders) with a
+ * column selected and «Copiar como» open, the export dialog, and a cell
+ * range. Needs scripts/seed-screenshots.mjs (synthetic data only).
+ */
+const JOIN_RESULT = `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      const c = H.local(S)
+      const sql = [
+        'SELECT c.id, c.name, c.email, o.id AS pedido, o.status, o.total',
+        'FROM shot_customers c',
+        'JOIN shot_orders o ON o.customer_id = c.id',
+        'ORDER BY o.id',
+        'LIMIT 40'
+      ].join('\\n')
+      S.workspace.openQuery(c.id, '${SCHEMA}', { sql, name: 'Pedidos por cliente' })
+      await H.sleep(900)
+      await H.click('[data-test="run"]', 10000)
+      await H.until(() => /Solo lectura/.test(H.$('[data-test="editability"]')?.textContent || ''), 15000)
+      await H.sleep(500)
+      const at = (el, type) => {
+        const r = el.getBoundingClientRect()
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: type === 'contextmenu' ? 2 : 0, clientX: r.left + 24, clientY: r.top + r.height / 2 }))
+      }`
+const CLOSE_RESULT = `
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await H.sleep(200)
+      const cancel = [...document.querySelectorAll('[data-test="export-dialog"] button')].find((b) => /Cancelar/.test(b.textContent || ''))
+      if (cancel) cancel.click()
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)`
+const EXPORT_STEPS: Step[] = [
+  {
+    name: '48a-grid-column-copy-as',
+    script: `${JOIN_RESULT}
+      const header = await H.waitFor('[data-test="header-status"]', 5000)
+      at(header, 'click')
+      await H.sleep(200)
+      at(header, 'contextmenu')
+      const copyAs = await H.waitFor('[data-test="menu-copy-as"]', 5000)
+      copyAs.click()
+      await H.waitFor('[data-test="menu-copy-insert"]', 5000)
+      await H.settle(S, 700)`,
+    cleanup: CLOSE_RESULT
+  },
+  {
+    name: '48b-export-dialog',
+    script: `${JOIN_RESULT}
+      at(await H.waitFor('[data-test="header-name"]', 5000), 'click')
+      const last = await H.waitFor('[data-test="header-email"]', 5000)
+      const r = last.getBoundingClientRect()
+      last.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true, clientX: r.left + 24, clientY: r.top + 10 }))
+      await H.sleep(200)
+      await H.click('[data-test="export"]', 5000)
+      await H.waitFor('[data-test="export-dialog"]', 5000)
+      await H.click('[data-test="export-format-xlsx"]', 5000)
+      const full = await H.waitFor('[data-test="export-scope-full"] input', 5000)
+      full.click()
+      await H.settle(S, 700)`,
+    cleanup: CLOSE_RESULT
+  },
+  {
+    name: '48c-join-readonly-selection',
+    script: `${JOIN_RESULT}
+      const from = await H.waitFor('[data-test="cell-2-1"]', 5000)
+      at(from, 'mousedown')
+      const to = await H.waitFor('[data-test="cell-8-4"]', 5000)
+      to.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+      await H.settle(S, 700)`,
+    cleanup: CLOSE_RESULT
+  }
+]
+STEPS.push(...EXPORT_STEPS)
+
 function wrap(body: string): string {
   return `(async () => { const S = window.__vortaqShots; const H = window.__ndShotHelpers; ${body}\n; return true })()`
 }

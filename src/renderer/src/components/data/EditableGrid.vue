@@ -1,8 +1,38 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import type { CopyFormat } from '@shared/export/types'
 import type { CellValue, ColumnInfo, QueryColumn, StorageClass } from '@shared/types'
+import ContextMenu from '@renderer/components/common/ContextMenu.vue'
+import type { MenuAction } from '@renderer/composables/useObjectActions'
+import { useNotify } from '@renderer/composables/useNotify'
 import { useColumnWidthsStore } from '@renderer/stores/columnWidths'
+import { isMac } from '@renderer/utils/platform'
 import { columnKindOf, type ColumnKind } from './columnKind'
+import {
+  COPY_FORMAT_LABELS,
+  DEFAULT_COPY_CONTEXT,
+  copyText,
+  regionData,
+  type CopyContext
+} from './gridCopy'
+import {
+  NO_SELECTION,
+  clickCell as selectCellAt,
+  clickColumn,
+  clickRow,
+  dragTo,
+  extendBy,
+  isSingleCell,
+  pruneSelection,
+  regionOf,
+  rowsForDeletion,
+  selectAll as selectEverything,
+  singleCell,
+  type CellRef,
+  type GridRegion,
+  type GridSelection,
+  type GridSelectionSnapshot
+} from './gridSelection'
 import { displayCell, isCellChanged, type ActiveCell, type EditableRow } from './rowEditing'
 import TemporalInput from './TemporalInput.vue'
 import { temporalSpec, type TemporalSpec } from './temporal'
@@ -30,11 +60,18 @@ const props = defineProps<{
    * (no date pickers that would reject a stored integer or real).
    */
   plainEditors?: boolean
+  /** Engine quoting, source table and key for «Copiar como» INSERT/UPDATE/IN. */
+  copy?: CopyContext | null
+  /** Offer «Exportar…» in the context menu (the parent opens its dialog). */
+  exportable?: boolean
 }>()
 
 const emit = defineEmits<{
-  sort: [column: string]
+  /** No direction: cycle ASC → DESC → none (the header arrow); otherwise set it. */
+  sort: [column: string, direction?: 'ASC' | 'DESC' | null]
   edit: [uid: string, col: number, value: CellValue]
+  /** «Exportar selección…» / «Exportar…» from the context menu. */
+  export: [scope: 'selection' | 'all']
 }>()
 
 const selected = defineModel<string[]>('selected', { default: () => [] })
@@ -151,7 +188,115 @@ const typed = ref(false)
 const inputRef = ref<HTMLInputElement[] | HTMLInputElement | null>(null)
 type TemporalEditor = InstanceType<typeof TemporalInput>
 const temporalRef = ref<TemporalEditor[] | TemporalEditor | null>(null)
-let lastClicked: number | null = null
+
+/* ---------- selection (gridSelection.ts) ---------- */
+
+const notify = useNotify()
+const sel = ref<GridSelection>(NO_SELECTION)
+const uids = computed(() => props.rows.map((r) => r.uid))
+const selRegion = computed(() => regionOf(sel.value, uids.value, props.columns.length))
+/** More than the active cell: cells, rows, columns or everything are highlighted. */
+const multi = computed(() => selRegion.value !== null && !isSingleCell(sel.value))
+const regionRows = computed(() => new Set(multi.value ? selRegion.value!.rows : []))
+const regionCols = computed(() => new Set(multi.value ? selRegion.value!.cols : []))
+const wholeColumns = computed(() => sel.value.kind === 'columns' || sel.value.kind === 'all')
+
+function inRegion(index: number, col: number): boolean {
+  return regionRows.value.has(index) && regionCols.value.has(col)
+}
+/** The full-row highlight: gutter rows, or the row of a plain active cell (as before). */
+function rowHighlighted(uid: string): boolean {
+  return selected.value.includes(uid) && (sel.value.kind === 'rows' || !multi.value)
+}
+
+/**
+ * Applies a selection and derives the rows «Eliminar» works on from it:
+ * gutter rows or the active cell's row, never a column or «Seleccionar todo».
+ */
+function applySelection(next: GridSelection): void {
+  sel.value = next
+  selected.value = rowsForDeletion(next, active.value)
+}
+
+/** The selected region, or the active cell alone; null when there is nothing. */
+function copyRegion(): GridRegion | null {
+  if (selRegion.value) return selRegion.value
+  const cell = active.value
+  if (!cell) return null
+  const row = uids.value.indexOf(cell.uid)
+  return row >= 0 ? { rows: [row], cols: [cell.col] } : null
+}
+
+/** Rows (by uid) and column indexes of the current selection, for «Exportar selección». */
+function selectionSnapshot(): GridSelectionSnapshot | null {
+  const region = copyRegion()
+  if (!region) return null
+  return { rowUids: region.rows.map((i) => uids.value[i]), cols: [...region.cols] }
+}
+
+// Rows replaced (new page, discard): forget what is gone.
+watch(uids, (list) => {
+  sel.value = pruneSelection(sel.value, list)
+})
+// The parent moved the active cell (apply error, new row, reload): select just that cell.
+watch(active, (cell) => {
+  if (!cell) {
+    if (sel.value.kind === 'cells') sel.value = NO_SELECTION
+    return
+  }
+  const s = sel.value
+  if (s.kind === 'cells' && s.anchor.uid === cell.uid && s.anchor.col === cell.col) return
+  sel.value = singleCell(cell)
+})
+
+/* ---------- copy ---------- */
+
+const copyContext = computed<CopyContext>(() => props.copy ?? DEFAULT_COPY_CONTEXT)
+/** When the last copy was made from the keyboard: the menu's copy event right after it stays quiet. */
+let lastKeyCopy = 0
+
+function selectionText(format: CopyFormat, header: boolean) {
+  const region = copyRegion()
+  if (!region) return null
+  const data = regionData(props.columns, props.rows, region, copyContext.value.sqlNames)
+  return copyText(
+    format,
+    data,
+    copyContext.value,
+    { header },
+    {
+      columns: props.columns,
+      rows: props.rows,
+      region
+    }
+  )
+}
+
+async function copySelection(format: CopyFormat, header = false): Promise<void> {
+  const out = selectionText(format, header)
+  if (!out) return
+  if (out.warning) {
+    notify.warning(out.warning)
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(out.text)
+    notify.success(out.message)
+  } catch {
+    notify.warning('No se pudo copiar al portapapeles')
+  }
+}
+
+/** Edit › Copiar (or Cmd/Ctrl+C handled by the menu): the selection as tab-separated text. */
+function onCopyEvent(event: ClipboardEvent): void {
+  const target = event.target as HTMLElement | null
+  if (editing.value || (target && /^(INPUT|TEXTAREA)$/.test(target.tagName))) return
+  const out = selectionText('tsv', false)
+  if (!out || out.warning || !event.clipboardData) return
+  event.preventDefault()
+  event.clipboardData.setData('text/plain', out.text)
+  if (Date.now() - lastKeyCopy > 500) notify.success(out.message)
+}
 
 function isEditing(uid: string, col: number): boolean {
   return editing.value?.uid === uid && editing.value.col === col
@@ -163,24 +308,57 @@ function isActive(uid: string, col: number): boolean {
 
 function selectRow(event: MouseEvent, index: number): void {
   const uid = props.rows[index].uid
-  if (event.shiftKey && lastClicked !== null) {
-    const [a, b] = [Math.min(lastClicked, index), Math.max(lastClicked, index)]
-    selected.value = props.rows.slice(a, b + 1).map((r) => r.uid)
-  } else if (event.metaKey || event.ctrlKey) {
-    selected.value = selected.value.includes(uid)
-      ? selected.value.filter((u) => u !== uid)
-      : [...selected.value, uid]
-  } else {
-    selected.value = [uid]
-  }
-  lastClicked = index
+  let base = sel.value
+  // Shift after a cell click extends from that cell's row, as before.
+  if (event.shiftKey && base.kind !== 'rows' && active.value)
+    base = { kind: 'rows', uids: [active.value.uid], anchor: active.value.uid }
+  applySelection(
+    clickRow(base, uid, uids.value, {
+      shift: event.shiftKey,
+      toggle: event.metaKey || event.ctrlKey
+    })
+  )
 }
 
-function clickCell(uid: string, col: number, index: number): void {
+function clickCell(event: MouseEvent, uid: string, col: number): void {
+  // Shift extends from the rectangle's anchor or the active cell; without either it is a plain click.
+  if (event.shiftKey && (sel.value.kind === 'cells' || active.value)) {
+    applySelection(selectCellAt(sel.value, { uid, col }, { shift: true }, active.value))
+    return
+  }
   active.value = { uid, col }
-  if (!selected.value.includes(uid)) selected.value = [uid]
-  lastClicked = index
+  applySelection(singleCell({ uid, col }))
 }
+
+function clickHeader(event: MouseEvent, col: number): void {
+  if (resizing.value) return
+  applySelection(
+    clickColumn(sel.value, col, { shift: event.shiftKey, toggle: event.metaKey || event.ctrlKey })
+  )
+  root.value?.focus()
+}
+
+function selectAll(): void {
+  applySelection(selectEverything())
+  root.value?.focus()
+}
+
+/* Drag over cells: a rectangle from the cell where the button went down. */
+let dragStart: CellRef | null = null
+function startDrag(event: MouseEvent, uid: string, col: number): void {
+  if (event.button !== 0 || event.shiftKey || isEditing(uid, col)) return
+  dragStart = { uid, col }
+  window.addEventListener('mouseup', endDrag, { once: true })
+}
+function dragOver(uid: string, col: number): void {
+  if (!dragStart) return
+  active.value = dragStart
+  applySelection(dragTo(dragStart, { uid, col }))
+}
+function endDrag(): void {
+  dragStart = null
+}
+onBeforeUnmount(() => window.removeEventListener('mouseup', endDrag))
 
 async function startEdit(uid: string, col: number): Promise<void> {
   const row = props.rows.find((r) => r.uid === uid)
@@ -264,7 +442,7 @@ function move(dRow: number, dCol: number): void {
   const rowIdx = Math.min(Math.max(idx + dRow, 0), props.rows.length - 1)
   const col = Math.min(Math.max(active.value.col + dCol, 0), props.columns.length - 1)
   active.value = { uid: props.rows[rowIdx].uid, col }
-  selected.value = [props.rows[rowIdx].uid]
+  applySelection(singleCell(active.value))
 }
 
 function onInputKey(event: KeyboardEvent): void {
@@ -289,14 +467,39 @@ function onInputKey(event: KeyboardEvent): void {
 }
 
 function onGridKey(event: KeyboardEvent): void {
-  if (editing.value || !active.value) return
+  if (editing.value) return
+  const mod = (event.metaKey || event.ctrlKey) && !event.altKey
+  const key = event.key.toLowerCase()
+  if (mod && key === 'c') {
+    // Cmd/Ctrl+C: tab-separated text (pastes into spreadsheets); with Shift, with headers.
+    event.preventDefault()
+    lastKeyCopy = Date.now()
+    void copySelection('tsv', event.shiftKey)
+    return
+  }
+  if (mod && key === 'a') {
+    event.preventDefault()
+    selectAll()
+    return
+  }
+  if (event.key === 'Escape' && multi.value) {
+    event.preventDefault()
+    applySelection(active.value ? singleCell(active.value) : NO_SELECTION)
+    return
+  }
+  if (!active.value) return
   const moves: Record<string, [number, number]> = {
     ArrowUp: [-1, 0],
     ArrowDown: [1, 0],
     ArrowLeft: [0, -1],
     ArrowRight: [0, 1]
   }
-  if (moves[event.key]) {
+  if (moves[event.key] && event.shiftKey) {
+    event.preventDefault()
+    applySelection(
+      extendBy(sel.value, ...moves[event.key], uids.value, props.columns.length, active.value)
+    )
+  } else if (moves[event.key]) {
     event.preventDefault()
     move(...moves[event.key])
   } else if (event.key === 'Enter' || event.key === 'F2') {
@@ -316,6 +519,133 @@ function ariaSort(column: string): 'ascending' | 'descending' | 'none' {
 }
 
 const root = ref<HTMLElement | null>(null)
+const menu = ref<InstanceType<typeof ContextMenu> | null>(null)
+
+const shortcut = (keys: string): string => (isMac() ? `⌘${keys}` : `Ctrl+${keys}`)
+
+function copyItems(): MenuAction[] {
+  const formats: CopyFormat[] = ['csv', 'json', 'insert', 'update', 'in', 'markdown']
+  const canUpdate = copyContext.value.keyColumns.length > 0
+  return [
+    {
+      key: 'copy',
+      label: 'Copiar',
+      icon: 'mdi-content-copy',
+      hint: shortcut('C'),
+      action: () => copySelection('tsv')
+    },
+    {
+      key: 'copy-header',
+      label: 'Copiar con encabezados',
+      icon: 'mdi-table-headers-eye',
+      hint: isMac() ? '⇧⌘C' : 'Ctrl+Mayús+C',
+      action: () => copySelection('tsv', true)
+    },
+    {
+      key: 'copy-as',
+      label: 'Copiar como',
+      icon: 'mdi-code-braces',
+      children: formats
+        .filter((f) => f !== 'update' || canUpdate)
+        .map((f) => ({
+          key: `copy-${f}`,
+          label: COPY_FORMAT_LABELS[f],
+          action: () => copySelection(f)
+        }))
+    }
+  ]
+}
+
+function exportItems(): MenuAction[] {
+  if (!props.exportable) return []
+  return [
+    { key: 'd-export', label: '', divider: true },
+    {
+      key: 'export-selection',
+      label: 'Exportar selección…',
+      icon: 'mdi-file-export-outline',
+      disabled: !copyRegion(),
+      action: () => emit('export', 'selection')
+    },
+    {
+      key: 'export-all',
+      label: 'Exportar…',
+      icon: 'mdi-file-export-outline',
+      action: () => emit('export', 'all')
+    }
+  ]
+}
+
+function openMenu(event: MouseEvent, extra: MenuAction[] = []): void {
+  menu.value?.show(event, [
+    ...copyItems(),
+    ...exportItems(),
+    { key: 'd-select', label: '', divider: true },
+    {
+      key: 'select-all',
+      label: 'Seleccionar todo',
+      icon: 'mdi-select-all',
+      hint: shortcut('A'),
+      action: selectAll
+    },
+    ...extra
+  ])
+}
+
+/** Right-click on a cell: outside the selection it selects that cell first. */
+function cellMenu(event: MouseEvent, uid: string, col: number, index: number): void {
+  if (editing.value) return
+  event.preventDefault()
+  if (!selRegion.value || !inRegionOrSingle(index, col)) {
+    active.value = { uid, col }
+    applySelection(singleCell({ uid, col }))
+  }
+  openMenu(event)
+}
+function inRegionOrSingle(index: number, col: number): boolean {
+  const region = selRegion.value
+  return !!region && region.rows.includes(index) && region.cols.includes(col)
+}
+
+function headerMenu(event: MouseEvent, col: number): void {
+  event.preventDefault()
+  if (!(wholeColumns.value && regionCols.value.has(col)))
+    applySelection(clickColumn(NO_SELECTION, col))
+  const name = props.columns[col].name
+  const sorted = props.sort?.column === name ? props.sort.direction : null
+  openMenu(event, [
+    { key: 'd-sort', label: '', divider: true },
+    {
+      key: 'sort-asc',
+      label: 'Ordenar ascendente',
+      icon: 'mdi-sort-ascending',
+      disabled: sorted === 'ASC',
+      action: () => emit('sort', name, 'ASC')
+    },
+    {
+      key: 'sort-desc',
+      label: 'Ordenar descendente',
+      icon: 'mdi-sort-descending',
+      disabled: sorted === 'DESC',
+      action: () => emit('sort', name, 'DESC')
+    },
+    {
+      key: 'sort-none',
+      label: 'Quitar orden',
+      icon: 'mdi-sort-variant-remove',
+      disabled: !sorted,
+      action: () => emit('sort', name, null)
+    }
+  ])
+}
+
+function gutterMenu(event: MouseEvent, index: number): void {
+  event.preventDefault()
+  const uid = props.rows[index].uid
+  if (!(sel.value.kind === 'rows' && sel.value.uids.includes(uid)) && sel.value.kind !== 'all')
+    applySelection(clickRow(NO_SELECTION, uid, uids.value))
+  openMenu(event)
+}
 
 /** Brings the failed row into view when an apply error points at it. */
 async function revealError(): Promise<void> {
@@ -328,7 +658,7 @@ async function revealError(): Promise<void> {
 }
 watch(() => [props.errorRow, props.errorCol], revealError)
 
-defineExpose({ startEdit, revealError, autoFit })
+defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
 </script>
 
 <template>
@@ -338,23 +668,44 @@ defineExpose({ startEdit, revealError, autoFit })
     tabindex="0"
     role="grid"
     :aria-rowcount="rows.length"
+    :aria-multiselectable="true"
     @keydown="onGridKey"
+    @copy="onCopyEvent"
   >
     <table>
       <thead>
         <tr>
-          <th class="col-index" scope="col">#</th>
+          <th
+            class="col-index"
+            scope="col"
+            title="Seleccionar todo"
+            :class="{ 'is-all': sel.kind === 'all' }"
+            data-test="select-all"
+            @click="selectAll"
+            @contextmenu.prevent="openMenu($event)"
+          >
+            #
+          </th>
           <th
             v-for="(col, c) in columns"
             :key="c"
             scope="col"
-            :class="[`kind-${kinds[c]}`, { 'is-sorted': !!sortIcon(col.name) }]"
+            :class="[
+              `kind-${kinds[c]}`,
+              {
+                'is-sorted': !!sortIcon(col.name),
+                'col-selected': wholeColumns && regionCols.has(c),
+                'col-in-range': !wholeColumns && regionCols.has(c)
+              }
+            ]"
             :aria-sort="ariaSort(col.name)"
+            :aria-selected="wholeColumns && regionCols.has(c)"
             :title="`${col.name} · ${col.type}`"
             :style="colStyles[c]"
             :data-col="c"
             :data-test="`header-${col.name}`"
-            @click="!resizing && emit('sort', col.name)"
+            @click="clickHeader($event, c)"
+            @contextmenu="headerMenu($event, c)"
           >
             <span class="header-cell">
               <v-icon
@@ -365,12 +716,23 @@ defineExpose({ startEdit, revealError, autoFit })
                 aria-label="Clave primaria"
               />
               <span class="header-cell__name">{{ col.name }}</span>
-              <v-icon
-                v-if="sortIcon(col.name)"
-                :icon="sortIcon(col.name)!"
-                size="13"
+              <button
+                type="button"
                 class="header-cell__sort"
-              />
+                :class="{ 'is-sorted': !!sortIcon(col.name) }"
+                :aria-label="
+                  sort?.column === col.name
+                    ? sort.direction === 'ASC'
+                      ? `Ordenado ascendente por ${col.name}: ordenar descendente`
+                      : `Ordenado descendente por ${col.name}: quitar orden`
+                    : `Ordenar por ${col.name}`
+                "
+                :title="sortIcon(col.name) ? 'Cambiar el orden' : 'Ordenar'"
+                :data-test="`sort-${col.name}`"
+                @click.stop="emit('sort', col.name)"
+              >
+                <v-icon :icon="sortIcon(col.name) ?? 'mdi-swap-vertical'" size="13" />
+              </button>
             </span>
             <span
               class="col-resizer"
@@ -390,14 +752,20 @@ defineExpose({ startEdit, revealError, autoFit })
           v-for="(row, index) in rows"
           :key="row.uid"
           :class="{
-            'row-selected': selected.includes(row.uid),
+            'row-selected': rowHighlighted(row.uid),
+            'row-target': selected.includes(row.uid) && !rowHighlighted(row.uid),
+            'row-in-range': regionRows.has(index) && sel.kind !== 'rows',
             'row-deleted': row.deleted,
             'row-new': !row.original,
             'row-error': !!errorRow && row.uid === errorRow
           }"
           :data-test="`row-${index}`"
         >
-          <td class="col-index" @click="selectRow($event, index)">
+          <td
+            class="col-index"
+            @click="selectRow($event, index)"
+            @contextmenu="gutterMenu($event, index)"
+          >
             {{ row.original ? (offset ?? 0) + index + 1 : '*' }}
           </td>
           <td
@@ -408,6 +776,7 @@ defineExpose({ startEdit, revealError, autoFit })
               {
                 'cell-changed': isCellChanged(row, c),
                 'cell-active': isActive(row.uid, c),
+                'cell-selected': inRegion(index, c),
                 'cell-null': row.values[c] === null,
                 'cell-editing': isEditing(row.uid, c),
                 'cell-locked': isLocked(row, c),
@@ -417,8 +786,11 @@ defineExpose({ startEdit, revealError, autoFit })
             :style="colStyles[c]"
             :data-col="c"
             :data-test="`cell-${index}-${c}`"
-            @click="clickCell(row.uid, c, index)"
+            @mousedown="startDrag($event, row.uid, c)"
+            @mouseenter="dragOver(row.uid, c)"
+            @click="clickCell($event, row.uid, c)"
             @dblclick="startEdit(row.uid, c)"
+            @contextmenu="cellMenu($event, row.uid, c, index)"
           >
             <!--
               The value stays in the flow (hidden while editing) so the column keeps
@@ -468,6 +840,7 @@ defineExpose({ startEdit, revealError, autoFit })
         </tr>
       </tbody>
     </table>
+    <ContextMenu ref="menu" />
   </div>
 </template>
 
@@ -618,7 +991,67 @@ th.is-sorted {
   opacity: 0.9;
 }
 .header-cell__sort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0;
+  border: none;
+  border-radius: var(--nd-radius-sm);
+  background: transparent;
+  color: var(--nd-text-muted);
+  cursor: pointer;
+  /* Visible when the column is sorted; on hover or keyboard focus otherwise. */
+  opacity: 0;
+  transition: opacity var(--nd-dur-fast) var(--nd-ease);
+}
+th:hover .header-cell__sort,
+.header-cell__sort:focus-visible,
+.header-cell__sort.is-sorted {
+  opacity: 1;
+}
+.header-cell__sort.is-sorted {
   color: var(--nd-accent);
+}
+.header-cell__sort:hover {
+  color: var(--nd-text);
+  background: var(--nd-hover);
+}
+.header-cell__sort:focus-visible {
+  outline: 1px solid var(--nd-accent);
+}
+
+/* ---- Selection (cells, whole columns, gutter rows) ---- */
+td {
+  /* Dragging selects cells, not text; the editor input keeps its own selection. */
+  user-select: none;
+}
+tbody tr td.cell-selected,
+tbody tr:hover td.cell-selected {
+  background: rgba(var(--nd-accent-rgb), 0.13);
+}
+th.col-selected {
+  color: var(--nd-accent);
+  background: color-mix(in srgb, var(--nd-bg-panel) 100%, var(--nd-accent) 14%);
+  box-shadow: inset 0 -2px 0 var(--nd-accent);
+}
+th.col-in-range {
+  color: var(--nd-text);
+  background: color-mix(in srgb, var(--nd-bg-panel) 100%, var(--nd-accent) 7%);
+}
+th.col-index.is-all {
+  color: var(--nd-accent);
+  background: color-mix(in srgb, var(--nd-bg-panel) 100%, var(--nd-accent) 14%);
+}
+tbody tr.row-in-range .col-index {
+  color: var(--nd-accent);
+  background: color-mix(in srgb, var(--nd-bg-panel) 100%, var(--nd-accent) 7%);
+}
+/* The row «Eliminar» works on when the highlight shows a wider selection. */
+tbody tr.row-target .col-index {
+  box-shadow: inset 2px 0 0 var(--nd-accent);
 }
 th.kind-number {
   text-align: right;

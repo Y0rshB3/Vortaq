@@ -9,7 +9,7 @@ import {
   shallowRef,
   watch
 } from 'vue'
-import type { QueryStatementResult, TransactionStatus } from '@shared/types'
+import type { QueryStatementResult, SchemaRef, TransactionStatus } from '@shared/types'
 import { mariadbDialect } from '@shared/dialects/mariadb'
 import { postgresqlDialect } from '@shared/dialects/postgresql'
 import { isAttachOrDetach, sqliteDialect } from '@shared/dialects/sqlite'
@@ -224,6 +224,10 @@ const totalMs = ref<number | null>(null)
 let runSeq = 0
 /** Bumped per run so every result set mounts a fresh EditableResult. */
 const runId = ref(0)
+/** Database/schema the current results ran in (MySQL database, PostgreSQL `{ database, schema }`). */
+const runContext = ref<SchemaRef | null>(null)
+/** The script of the last run (the full export refuses statements whose script changed the session). */
+const runScript = ref('')
 /** Result set keys whose grid holds unapplied row edits. */
 const pendingEdits = ref<Record<string, boolean>>({})
 
@@ -494,6 +498,14 @@ async function run(selectionOnly = false): Promise<void> {
   results.value = []
   pendingEdits.value = {}
   runId.value++
+  // Where the results ran: «Exportar resultado completo» runs their statement there again.
+  runContext.value = pg
+    ? { database: database.value ?? '', schema: schema.value ?? '' }
+    : lite
+      ? null
+      : schema.value
+  runScript.value = script
+
   totalMs.value = null
   const started = performance.now()
   try {
@@ -1260,6 +1272,9 @@ defineExpose({
               :rows="rs.set.rows"
               :truncated="rs.set.truncated"
               :storage="rs.storage"
+              :context="runContext"
+              :script="runScript"
+              exportable
               @dirty="setPendingEdits(rs.key, $event)"
             />
           </v-window-item>

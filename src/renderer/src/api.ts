@@ -36,6 +36,7 @@ import type {
   SqlExportOptions,
   SqlFolderImportRequest
 } from '@shared/importers'
+import type { ExportQueryRequest, ExportRowsRequest } from '@shared/export/types'
 import { errorMessage, useNotify } from './composables/useNotify'
 import { toPlain } from './utils/toPlain'
 
@@ -380,6 +381,14 @@ export const api = {
     importSqlFolder: (operationId: string, request: SqlFolderImportRequest) =>
       invokeSilent('importers:importSqlFolder', operationId, request),
     cancel: (operationId: string) => invoke('importers:cancel', operationId)
+  },
+  /** Copy/export of results: main writes the file chosen with app.pickSaveFile. */
+  exports: {
+    /** Silent: the export dialog shows the error next to its button. */
+    rows: (request: ExportRowsRequest) => invokeSilent('export:rows', request),
+    query: (operationId: string, request: ExportQueryRequest) =>
+      invokeSilent('export:query', operationId, request),
+    cancel: (operationId: string) => invoke('export:cancel', operationId)
   },
   /** AI assistant. Keys are only ever sent to main (setKey/test/listModels), never read back. */
   ai: {

@@ -1,5 +1,6 @@
+import { createReadStream } from 'node:fs'
 import { open, type FileHandle } from 'node:fs/promises'
-import { crc32 } from 'node:zlib'
+import { createDeflateRaw, crc32 } from 'node:zlib'
 import { VqbFormatError } from './errors'
 
 /**
@@ -11,6 +12,11 @@ import { VqbFormatError } from './errors'
  * CRC-32 and sizes (no data descriptors) and any unzip tool reads it. ZIP64 records are added only when an offset, the
  * central directory or the entry count needs them (archives > 4 GiB). A
  * single entry is never that big: data is split in ~5 MB chunks.
+ *
+ * `addFile` (used by the .xlsx export, never by .vqb) streams a file into a
+ * DEFLATE entry: the local header is written first with blank CRC/sizes and
+ * patched in place once the data is written, so it needs no data descriptor
+ * either and memory stays bounded however large the file is.
  *
  * Reader: the central directory at the end of the file lists every entry,
  * so finding manifest.json (written last) costs two small positioned reads
@@ -38,9 +44,17 @@ export interface ZipEntryInfo {
   name: string
   /** Offset of the entry's local header. */
   headerOffset: number
+  /** Uncompressed size. */
   size: number
   crc: number
+  /** 8 for `addFile` entries (DEFLATE); absent = 0 (stored). */
+  method?: number
+  /** Bytes stored in the archive when compressed; absent = `size`. */
+  compressedSize?: number
 }
+
+/** Thrown when a streamed entry would need ZIP64 sizes (4 GiB or more). */
+export const ZIP_ENTRY_TOO_LARGE = 'La entrada ZIP supera 4 GB'
 
 /** MS-DOS date/time fields of a Date (local time, 2-second resolution). */
 function dosDateTime(date: Date): { time: number; date: number } {
@@ -133,6 +147,82 @@ export class ZipWriter {
     return entry
   }
 
+  /**
+   * Appends the file at `sourcePath` as one DEFLATE entry, streamed (bounded
+   * memory). The local header is patched with the CRC-32 and sizes after the
+   * data. Throws ZIP_ENTRY_TOO_LARGE past 4 GiB (no ZIP64 sizes here).
+   */
+  async addFile(name: string, sourcePath: string): Promise<ZipEntryInfo> {
+    if (this.closed) throw new Error('El archivo ZIP ya está cerrado')
+    if (this.names.has(name)) throw new Error(`Entrada ZIP repetida: ${name}`)
+    const nameBytes = checkName(name)
+    const headerOffset = this.position
+    const header = Buffer.alloc(LOCAL_HEADER_SIZE)
+    header.writeUInt32LE(LOCAL_SIG, 0)
+    header.writeUInt16LE(20, 4) // version needed: 2.0 (deflate)
+    header.writeUInt16LE(FLAG_UTF8, 6)
+    header.writeUInt16LE(8, 8) // deflate
+    header.writeUInt16LE(this.stamp.time, 10)
+    header.writeUInt16LE(this.stamp.date, 12)
+    header.writeUInt16LE(nameBytes.length, 26)
+    header.writeUInt16LE(0, 28)
+    await this.write(Buffer.concat([header, nameBytes]))
+    let crc = 0
+    let size = 0
+    let compressed = 0
+    const deflate = createDeflateRaw({ level: 6 })
+    const source = createReadStream(sourcePath)
+    source.on('data', (chunk) => {
+      const data = chunk as Buffer
+      crc = crc32(data, crc) >>> 0
+      size += data.length
+    })
+    source.on('error', (err) => deflate.destroy(err))
+    source.pipe(deflate)
+    try {
+      for await (const chunk of deflate) {
+        const data = chunk as Buffer
+        compressed += data.length
+        if (compressed >= MAX32) throw new Error(ZIP_ENTRY_TOO_LARGE)
+        await this.write(data)
+      }
+    } finally {
+      // Also when a write fails: the source file must be closed before the caller deletes it.
+      source.destroy()
+      deflate.destroy()
+    }
+    if (size >= MAX32) throw new Error(ZIP_ENTRY_TOO_LARGE)
+    header.writeUInt32LE(crc, 14)
+    header.writeUInt32LE(compressed, 18)
+    header.writeUInt32LE(size, 22)
+    await this.writeAt(header, headerOffset)
+    const entry: ZipEntryInfo = {
+      name,
+      headerOffset,
+      size,
+      crc,
+      method: 8,
+      compressedSize: compressed
+    }
+    this.entries.push(entry)
+    this.names.add(name)
+    return entry
+  }
+
+  /** Overwrites bytes already written (the header of a streamed entry). */
+  private async writeAt(buffer: Buffer, position: number): Promise<void> {
+    let done = 0
+    while (done < buffer.length) {
+      const { bytesWritten } = await this.handle.write(
+        buffer,
+        done,
+        buffer.length - done,
+        position + done
+      )
+      done += bytesWritten
+    }
+  }
+
   /** Writes the central directory and the end records, then closes the file. */
   async finish(): Promise<number> {
     if (this.closed) throw new Error('El archivo ZIP ya está cerrado')
@@ -152,11 +242,11 @@ export class ZipWriter {
       h.writeUInt16LE((3 << 8) | 45, 4) // made by: Unix, spec 4.5
       h.writeUInt16LE(zip64Offset ? 45 : 20, 6)
       h.writeUInt16LE(FLAG_UTF8, 8)
-      h.writeUInt16LE(0, 10)
+      h.writeUInt16LE(e.method ?? 0, 10)
       h.writeUInt16LE(this.stamp.time, 12)
       h.writeUInt16LE(this.stamp.date, 14)
       h.writeUInt32LE(e.crc, 16)
-      h.writeUInt32LE(e.size, 20)
+      h.writeUInt32LE(e.compressedSize ?? e.size, 20)
       h.writeUInt32LE(e.size, 24)
       h.writeUInt16LE(nameBytes.length, 28)
       h.writeUInt16LE(extra.length, 30)

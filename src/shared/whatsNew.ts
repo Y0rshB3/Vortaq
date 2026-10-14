@@ -25,6 +25,24 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.0.2',
+    date: '2026-10-14',
+    highlights: [
+      'Selecciona celdas, filas o columnas enteras en los resultados y en la vista de datos: clic en la cabecera para la columna, Shift y Cmd/Ctrl para ampliar',
+      'Cmd/Ctrl+C copia la selección para pegarla en una hoja de cálculo; con el botón derecho, «Copiar como» CSV, JSON, INSERT, UPDATE, lista para IN o Markdown',
+      '«Exportar» a CSV, Excel, JSON, SQL, Markdown, HTML o TXT: la selección, las filas cargadas o el resultado completo, sin límite de filas',
+      'El resultado completo se vuelve a ejecutar en una sesión de solo lectura, con progreso y «Cancelar»',
+      'Los resultados de varias tablas también se pueden seleccionar, copiar y exportar; para ordenar, usa la flecha de la cabecera'
+    ],
+    tour: [
+      {
+        target: 'toolbar-query',
+        title: 'Copiar y exportar resultados',
+        text: 'Ejecuta una consulta: haz clic en la cabecera de una columna para seleccionarla y usa el botón derecho para «Copiar como» o «Exportar…». El botón «Exportar» de la barra del resultado también guarda el resultado completo.'
+      }
+    ]
+  },
+  {
     version: '2.0.1',
     date: '2026-10-08',
     highlights: [

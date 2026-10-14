@@ -8,6 +8,11 @@ import { useValuePanelPref } from '@renderer/components/data/useValuePanelPref'
 import EmptyState from '@renderer/components/common/EmptyState.vue'
 import ApplyErrorBanner from '@renderer/components/data/ApplyErrorBanner.vue'
 import EditableGrid from '@renderer/components/data/EditableGrid.vue'
+import ExportDialog from '@renderer/components/data/ExportDialog.vue'
+import type { CopyContext, ExportScope } from '@renderer/components/data/gridCopy'
+import type { GridSelectionSnapshot } from '@renderer/components/data/gridSelection'
+import type { SqlDialectId } from '@shared/dialects/types'
+import type { ExportQuerySource } from '@shared/export/types'
 import RowEditActions from '@renderer/components/data/RowEditActions.vue'
 import TableFilterPanel from '@renderer/components/data/filter/TableFilterPanel.vue'
 import { NO_FILTER, useTableFilter } from '@renderer/components/data/filter/useTableFilter'
@@ -203,9 +208,10 @@ async function goToPage(target: number): Promise<void> {
   await load()
 }
 
-async function toggleSort(column: string): Promise<void> {
+async function toggleSort(column: string, direction?: 'ASC' | 'DESC' | null): Promise<void> {
   if (!(await discardGuard())) return
-  if (sort.value?.column !== column) sort.value = { column, direction: 'ASC' }
+  if (direction !== undefined) sort.value = direction ? { column, direction } : null
+  else if (sort.value?.column !== column) sort.value = { column, direction: 'ASC' }
   else if (sort.value.direction === 'ASC') sort.value = { column, direction: 'DESC' }
   else sort.value = null
   page.value = 1
@@ -275,6 +281,46 @@ async function applyChanges(): Promise<void> {
 
 const grid = ref<InstanceType<typeof EditableGrid> | null>(null)
 
+/* ---------- copy and export ---------- */
+
+const dialectId = computed<SqlDialectId>(() => {
+  const engine = connections.get(props.tab.connectionId ?? '')?.engine
+  return engine === 'postgresql' || engine === 'sqlite' || engine === 'mariadb' ? engine : 'mysql'
+})
+const copyContext = computed<CopyContext>(() => ({
+  dialect: dialectId.value,
+  table: props.tab.objectName ?? null,
+  keyColumns: primaryKey.value
+}))
+/** The table's SELECT with the applied filter and sort, without paging. */
+const fullSource = computed<ExportQuerySource | null>(() =>
+  props.tab.connectionId && props.tab.schema && props.tab.objectName
+    ? {
+        kind: 'table',
+        request: {
+          schema: refOf(props.tab),
+          table: props.tab.objectName,
+          orderBy: sort.value,
+          where: appliedFilter.value.where,
+          ...(appliedFilter.value.filter ? { filter: appliedFilter.value.filter } : {})
+        }
+      }
+    : null
+)
+const exportOpen = ref(false)
+const exportScope = ref<ExportScope>('loaded')
+const exportSelection = ref<GridSelectionSnapshot | null>(null)
+function openExport(scope?: 'selection' | 'all'): void {
+  exportSelection.value = grid.value?.selectionSnapshot() ?? null
+  exportScope.value = scope === 'selection' ? 'selection' : 'full'
+  exportOpen.value = true
+}
+const exportPartial = computed(() =>
+  pageCount.value !== null && pageCount.value > 1
+    ? `Solo la página ${page.value} de ${pageCount.value}. «Resultado completo» exporta todas las filas${filtered.value ? ' del filtro' : ''}.`
+    : null
+)
+
 /** "Ir a la fila": selects the row (and cell) whose change failed. */
 function locateApplyError(): void {
   const failure = applyError.value
@@ -342,6 +388,15 @@ defineExpose({ rows, applyChanges, load })
         data-test="value-toggle"
         @click="valuePref.open = !valuePref.open"
         >Texto</v-btn
+      >
+      <v-btn
+        prepend-icon="mdi-file-export-outline"
+        size="small"
+        :disabled="!columns.length"
+        title="Exportar a CSV, Excel, JSON, SQL, Markdown, HTML o TXT"
+        data-test="export"
+        @click="openExport()"
+        >Exportar</v-btn
       >
       <span class="nd-viewbar__sep" aria-hidden="true" />
       <RowEditActions
@@ -436,8 +491,11 @@ defineExpose({ rows, applyChanges, load })
           :width-key="widthKey"
           :plain-editors="isSqlite"
           :readonly="!!readOnlyNotice"
+          :copy="copyContext"
+          exportable
           @sort="toggleSort"
           @edit="editor.onEdit"
+          @export="openExport"
         />
         <EmptyState v-else-if="!loading" icon="mdi-table-off" title="Sin datos" />
       </div>
@@ -498,6 +556,19 @@ defineExpose({ rows, applyChanges, load })
         </div>
       </div>
     </div>
+    <ExportDialog
+      v-model="exportOpen"
+      :connection-id="tab.connectionId ?? null"
+      :columns="columns"
+      :rows="rows"
+      :selection="exportSelection"
+      :copy="copyContext"
+      :full-source="fullSource"
+      :base-name="tab.objectName ?? 'tabla'"
+      :scope="exportScope"
+      :partial="exportPartial"
+      :pending-edits="dirty"
+    />
   </div>
 </template>
 

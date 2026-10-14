@@ -30,6 +30,13 @@ function dispatch(core: SqliteCore, request: WorkerRequest): unknown {
       return core.batch(...(request.args as WorkerOps['batch']['args']))
     case 'vacuumInto':
       return core.vacuumInto(...(request.args as WorkerOps['vacuumInto']['args']))
+    case 'cursorOpen':
+      return core.cursorOpen(...(request.args as WorkerOps['cursorOpen']['args']))
+    case 'cursorRead':
+      return core.cursorRead(...(request.args as WorkerOps['cursorRead']['args']))
+    case 'cursorClose':
+      core.cursorClose(...(request.args as WorkerOps['cursorClose']['args']))
+      return null
     case 'ping':
       return { pid: process.pid }
     case 'close':

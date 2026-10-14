@@ -24,7 +24,8 @@ const KIND_ICONS: Record<ProgressEntry['kind'], string> = {
   restore: 'mdi-backup-restore',
   job: 'mdi-robot-outline',
   import: 'mdi-import',
-  query: 'mdi-database-search-outline'
+  query: 'mdi-database-search-outline',
+  export: 'mdi-file-export-outline'
 }
 
 /** Job name for automation runs, the operation kind otherwise. */
