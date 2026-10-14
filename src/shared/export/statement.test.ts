@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getDialect } from '../dialects'
 import type { SqlDialectId } from '../dialects/types'
-import { checkExportStatement, leadingWord } from './statement'
+import { checkExportResult, checkExportStatement, leadingWord } from './statement'
 
 const check = (id: SqlDialectId, sql: string) => checkExportStatement(getDialect(id), sql)
 
@@ -58,5 +58,41 @@ describe('checkExportStatement', () => {
     expect(leadingWord('mariadb', '/*M! SELECT */ 1')).toBe('SELECT')
     expect(leadingWord('postgresql', '/* a /* nested */ */ ((select 1))')).toBe('SELECT')
     expect(leadingWord('sqlite', '-- x\n  values (1)')).toBe('VALUES')
+  })
+})
+
+describe('checkExportResult', () => {
+  const result = (id: SqlDialectId, sql: string, script: string) =>
+    checkExportResult(getDialect(id), sql, script)
+
+  it('refuses MySQL/MariaDB user variables, which a new session does not have', () => {
+    for (const sql of ['SELECT @x', 'SELECT * FROM t WHERE id = @id', "SELECT @'v'"]) {
+      const r = check('mysql', sql)
+      expect(r.ok).toBe(false)
+      expect(!r.ok && r.reason).toMatch(/variables de sesión/)
+    }
+    expect(check('mariadb', 'SELECT * FROM t WHERE id = @id').ok).toBe(false)
+    // System variables, strings and comments are fine.
+    expect(check('mysql', "SELECT @@version, 'a@b.c' /* @x */ FROM t").ok).toBe(true)
+  })
+
+  it('refuses a statement whose script changes the session or the data elsewhere', () => {
+    for (const [id, sql, script] of [
+      ['mysql', 'SELECT * FROM t', 'USE other; SELECT * FROM t'],
+      ['mariadb', 'SELECT * FROM t', 'SET @@session.sql_mode = ""; SELECT * FROM t'],
+      ['postgresql', 'SELECT * FROM t', 'SET search_path = x; SELECT * FROM t'],
+      ['postgresql', 'SELECT * FROM t', "SELECT set_config('search_path', 'x', false); SELECT * FROM t"],
+      ['sqlite', 'SELECT * FROM t', 'CREATE TEMP TABLE t AS SELECT 1; SELECT * FROM t']
+    ] as const) {
+      const r = result(id, sql, script)
+      expect(r.ok, `${id}: ${script}`).toBe(false)
+      expect(!r.ok && r.reason).toMatch(/sesión nueva/)
+    }
+  })
+
+  it('accepts a statement run alone or next to other reads', () => {
+    expect(result('mysql', 'SELECT * FROM t', 'SELECT * FROM t').ok).toBe(true)
+    expect(result('postgresql', 'SELECT 2', 'SELECT 1; SELECT 2').ok).toBe(true)
+    expect(result('sqlite', 'SELECT 2', 'SELECT 1;\nSELECT 2;').ok).toBe(true)
   })
 })

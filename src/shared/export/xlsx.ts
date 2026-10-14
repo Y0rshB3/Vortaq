@@ -114,14 +114,21 @@ export function xlsxSheetFormatter(
   let rowNumber = 0
 
   const text = (value: string): string => {
-    let t = stripIllegalXml(value)
+    const clean = stripIllegalXml(value)
+    let t = protectExcelEscapes(clean)
     if (t.length > XLSX_MAX_CELL_CHARS) {
-      t = t.slice(0, XLSX_MAX_CELL_CHARS)
-      // Never leave half of a surrogate pair at the cut.
-      if (/[\uD800-\uDBFF]$/.test(t)) t = t.slice(0, -1)
+      // Cut the original text (so no `_x005F_` is split) until its protected form fits.
+      let keep = Math.min(clean.length, XLSX_MAX_CELL_CHARS)
+      do {
+        let cut = clean.slice(0, keep)
+        // Never leave half of a surrogate pair at the cut.
+        if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1)
+        t = protectExcelEscapes(cut)
+        keep -= Math.max(1, t.length - XLSX_MAX_CELL_CHARS)
+      } while (t.length > XLSX_MAX_CELL_CHARS)
       stats.truncatedCells++
     }
-    return xmlEscape(protectExcelEscapes(t))
+    return xmlEscape(t)
   }
   const stringCell = (ref: string, value: string, style = 0): string =>
     `<c r="${ref}"${style ? ` s="${style}"` : ''} t="inlineStr"><is><t xml:space="preserve">${text(value)}</t></is></c>`
@@ -145,7 +152,7 @@ export function xlsxSheetFormatter(
       }
       return out
     },
-    row: (values: readonly CellValue[], _storage?: RowStorage) => {
+    row: (values: readonly CellValue[], storage?: RowStorage) => {
       if (rowNumber >= XLSX_MAX_ROWS) throw new Error(XLSX_TOO_MANY_ROWS)
       rowNumber++
       stats.rows++
@@ -157,7 +164,10 @@ export function xlsxSheetFormatter(
           if (options.nullText) cells += stringCell(ref, options.nullText)
           continue
         }
-        const number = numeric[i] ? excelNumber(value) : null
+        // SQLite expression columns have no declared type: the cell's storage class decides.
+        const kind = storage?.[i]
+        const asNumber = kind === 'integer' || kind === 'real' || (numeric[i] && kind !== 'text')
+        const number = asNumber ? excelNumber(value) : null
         cells +=
           number !== null ? `<c r="${ref}"><v>${number}</v></c>` : stringCell(ref, cellText(value))
       }

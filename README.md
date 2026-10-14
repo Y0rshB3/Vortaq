@@ -1141,7 +1141,12 @@ tablas) se puede seleccionar como en una hoja de cálculo:
     sesión no puede escribir (`START TRANSACTION READ ONLY` en MySQL/MariaDB, `BEGIN READ ONLY` en PostgreSQL y
     un proceso aparte que abre el archivo SQLite en solo lectura). Por eso no pide la confirmación de
     producción. El progreso aparece en la tarjeta de operaciones con **Cancelar**, que detiene la consulta en el
-    servidor y borra el archivo a medias.
+    servidor y borra el archivo a medias. Se ejecuta en la base de datos (y el esquema) de la pestaña, así que no
+    se ofrece cuando otra sentencia del mismo script cambia la sesión o los datos (`USE`, `SET search_path`,
+    `CREATE TEMPORARY TABLE`, escrituras…) ni cuando la consulta usa variables de sesión `@…` de MySQL/MariaDB:
+    en esos casos exporta las filas cargadas o ejecuta la consulta sola.
+- Los `INSERT`/`UPDATE` copiados o exportados para MySQL/MariaDB escapan con barra invertida (`\'`, `\\`): si el
+  servidor de destino usa `NO_BACKSLASH_ESCAPES`, exporta en CSV o JSON.
 - El archivo se escribe primero como `<archivo>.part` y solo toma su nombre al terminar. Excel admite hasta
   1.048.576 filas y 16.384 columnas por hoja y 32.767 caracteres por celda: si te pasas, Vortaq lo dice (y sugiere
   CSV) o recorta las celdas largas y avisa de cuántas.

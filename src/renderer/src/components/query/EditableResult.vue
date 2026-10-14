@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { getDialect } from '@shared/dialects'
 import type { SqlDialectId } from '@shared/dialects/types'
-import { checkExportStatement } from '@shared/export/statement'
+import { checkExportResult } from '@shared/export/statement'
 import type { ExportQuerySource } from '@shared/export/types'
 import type {
   CellValue,
@@ -54,6 +54,11 @@ const props = defineProps<{
    * so «Exportar resultado completo» runs it again in the same place.
    */
   context?: SchemaRef | null
+  /**
+   * The whole script of the run: «Exportar resultado completo» re-runs only
+   * `sql`, so it is refused when another statement changed the session or data.
+   */
+  script?: string | null
   /**
    * Offer «Exportar» (button, menu, dialog). Off unless the host can save
    * files and answers the export:* channels (the desktop query view).
@@ -231,7 +236,7 @@ const copyContext = computed<CopyContext>(() => ({
   ...(sourceTable.value ? { sqlNames: payloadColumns(props.columns).map((c) => c.name) } : {})
 }))
 const statementCheck = computed(() =>
-  engine === 'mongodb' ? null : checkExportStatement(getDialect(dialectId), props.sql)
+  engine === 'mongodb' ? null : checkExportResult(getDialect(dialectId), props.sql, props.script)
 )
 const fullSource = computed<ExportQuerySource | null>(() =>
   statementCheck.value?.ok

@@ -226,6 +226,8 @@ let runSeq = 0
 const runId = ref(0)
 /** Database/schema the current results ran in (MySQL database, PostgreSQL `{ database, schema }`). */
 const runContext = ref<SchemaRef | null>(null)
+/** The script of the last run (the full export refuses statements whose script changed the session). */
+const runScript = ref('')
 /** Result set keys whose grid holds unapplied row edits. */
 const pendingEdits = ref<Record<string, boolean>>({})
 
@@ -502,6 +504,7 @@ async function run(selectionOnly = false): Promise<void> {
     : lite
       ? null
       : schema.value
+  runScript.value = script
 
   totalMs.value = null
   const started = performance.now()
@@ -1270,6 +1273,7 @@ defineExpose({
               :truncated="rs.set.truncated"
               :storage="rs.storage"
               :context="runContext"
+              :script="runScript"
               exportable
               @dirty="setPendingEdits(rs.key, $event)"
             />

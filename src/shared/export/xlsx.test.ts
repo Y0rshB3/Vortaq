@@ -119,6 +119,33 @@ describe('worksheet XML', () => {
     expect(sheet.stats.truncatedCells).toBe(1)
   })
 
+  it('the cut keeps the escaped text within the limit and never splits an escape', () => {
+    const sheet = xlsxSheetFormatter([cols[3]], { header: false, nullText: '' })
+    // Each `_x0041_` grows by 6 characters once protected (`_x005F_x0041_`).
+    const value = '_x0041_'.repeat(Math.ceil(XLSX_MAX_CELL_CHARS / 7))
+    const doc = parse(formatRows(sheet, [[value]]))
+    const raw = doc.getElementsByTagNameNS(NS, 'c')[0].textContent ?? ''
+    expect(raw.length).toBeLessThanOrEqual(XLSX_MAX_CELL_CHARS)
+    expect(raw.replace(/_x005F_x0041_/g, '')).toMatch(/^(_x0041?|_x00?|_x0?|_x?|_?)$/)
+    expect(sheet.stats.truncatedCells).toBe(1)
+  })
+
+  it('SQLite cells without a declared type are numbers by their storage class', () => {
+    const sheet = xlsxSheetFormatter(
+      [{ name: 'count(*)' }, { name: 'a+b' }, { name: 'code', type: 'INTEGER', typeKind: 'integer' }],
+      { header: false, nullText: '' }
+    )
+    const doc = parse(formatRows(sheet, [[3, 1.5, '00123']], [['integer', 'real', 'text']]))
+    const cells = doc.getElementsByTagNameNS(NS, 'c')
+    expect(cells[0].getAttribute('t')).toBeNull()
+    expect(cells[0].textContent).toBe('3')
+    expect(cells[1].getAttribute('t')).toBeNull()
+    expect(cells[1].textContent).toBe('1.5')
+    // Text stored in an INTEGER column stays text.
+    expect(cells[2].getAttribute('t')).toBe('inlineStr')
+    expect(cells[2].textContent).toBe('00123')
+  })
+
   it('refuses rows past Excel limit', () => {
     const sheet = xlsxSheetFormatter([cols[0]], { header: true, nullText: '' })
     sheet.begin()

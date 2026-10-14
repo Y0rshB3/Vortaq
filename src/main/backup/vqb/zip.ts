@@ -179,15 +179,17 @@ export class ZipWriter {
     })
     source.on('error', (err) => deflate.destroy(err))
     source.pipe(deflate)
-    for await (const chunk of deflate) {
-      const data = chunk as Buffer
-      compressed += data.length
-      if (compressed >= MAX32) {
-        source.destroy()
-        deflate.destroy()
-        throw new Error(ZIP_ENTRY_TOO_LARGE)
+    try {
+      for await (const chunk of deflate) {
+        const data = chunk as Buffer
+        compressed += data.length
+        if (compressed >= MAX32) throw new Error(ZIP_ENTRY_TOO_LARGE)
+        await this.write(data)
       }
-      await this.write(data)
+    } finally {
+      // Also when a write fails: the source file must be closed before the caller deletes it.
+      source.destroy()
+      deflate.destroy()
     }
     if (size >= MAX32) throw new Error(ZIP_ENTRY_TOO_LARGE)
     header.writeUInt32LE(crc, 14)

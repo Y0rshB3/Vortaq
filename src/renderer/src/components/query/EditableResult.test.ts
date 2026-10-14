@@ -163,6 +163,20 @@ describe('EditableResult: read-only multi-table results', () => {
     expect(document.body.querySelector('[data-test="menu-export-all"]')).toBeNull()
   })
 
+  it('a statement whose script changed the database (USE) cannot be exported in full', async () => {
+    const w = await mount()
+    await w.setProps({ script: `USE otra; ${SQL}` })
+    await w.get('[data-test="export"]').trigger('click')
+    await flushPromises()
+    const full = document.body.querySelector<HTMLInputElement>(
+      '[data-test="export-scope-full"] input'
+    )!
+    expect(full.disabled).toBe(true)
+    expect(document.body.querySelector('[data-test="export-dialog"]')!.textContent).toMatch(
+      /sesión nueva/
+    )
+  })
+
   it('a script that may write cannot be exported in full', async () => {
     const pinia = setupDom()
     useConnectionsStore().items = [
