@@ -27,6 +27,10 @@ export interface MenuAction {
   danger?: boolean
   divider?: boolean
   action?: () => void | Promise<void>
+  /** Submenu (opens on hover); the item itself has no action. */
+  children?: MenuAction[]
+  /** Keyboard shortcut shown at the right («⌘C»). */
+  hint?: string
 }
 
 export function objectTypeOf(node: TreeNode): ObjectType | null {

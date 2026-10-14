@@ -244,4 +244,61 @@ describe('TableDataView', () => {
     expect(wrapper.text()).toContain('No se pudieron cargar los datos')
     expect(wrapper.text()).toContain('ER_BAD_FIELD_ERROR')
   })
+
+  it('«Exportar» runs the table SELECT again with its sort, without paging; columns never feed «Eliminar»', async () => {
+    const pinia = setupDom()
+    const invoke = mockBridge({
+      'db:tableData': () => structuredClone(page),
+      'app:pickSaveFile': () => '/tmp/x/items.csv',
+      'export:query': () => ({
+        filePath: '/tmp/x/items.csv',
+        rows: 2,
+        bytes: 1,
+        durationMs: 1,
+        truncatedCells: 0
+      })
+    })
+    const tab = openTab({
+      kind: 'tableData',
+      title: 't',
+      connectionId: 'c1',
+      schema: 'shop',
+      objectName: 'items',
+      objectType: 'table'
+    })
+    wrapper = await mountView(TableDataView, tab, pinia)
+    // Sorting moved to the header arrow (and the header menu).
+    await wrapper.get('[data-test="sort-name"]').trigger('click')
+    await flushPromises()
+    expect(invoke).toHaveBeenLastCalledWith(
+      'db:tableData',
+      'c1',
+      expect.objectContaining({ orderBy: { column: 'name', direction: 'ASC' } })
+    )
+    // A header click selects the column: «Eliminar» stays disabled.
+    await wrapper.get('[data-test="row-0"] td').trigger('click')
+    expect(wrapper.get('[data-test="delete-rows"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="header-name"]').trigger('click')
+    expect(wrapper.get('[data-test="delete-rows"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-test="export"]').trigger('click')
+    await flushPromises()
+    // The table view offers the whole table by default.
+    expect(
+      (document.body.querySelector('[data-test="export-scope-full"] input') as HTMLInputElement)
+        .checked
+    ).toBe(true)
+    document.body.querySelector<HTMLElement>('[data-test="export-run"]')!.click()
+    await flushPromises()
+    const call = invoke.mock.calls.find((c) => c[0] === 'export:query')!
+    expect(call[2]).toMatchObject({
+      connectionId: 'c1',
+      source: {
+        kind: 'table',
+        request: { schema: 'shop', table: 'items', orderBy: { column: 'name', direction: 'ASC' } }
+      },
+      options: { format: 'csv', table: 'items' }
+    })
+    expect((call[2] as { source: { request: object } }).source.request).not.toHaveProperty('limit')
+  })
 })

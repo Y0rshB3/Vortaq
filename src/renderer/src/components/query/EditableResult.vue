@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { getDialect } from '@shared/dialects'
+import type { SqlDialectId } from '@shared/dialects/types'
+import { checkExportStatement } from '@shared/export/statement'
+import type { ExportQuerySource } from '@shared/export/types'
 import type {
   CellValue,
   ColumnInfo,
   QueryColumn,
+  SchemaRef,
   StorageClass,
   TableStructure
 } from '@shared/types'
@@ -11,9 +16,11 @@ import CellValuePanel from '@renderer/components/data/CellValuePanel.vue'
 import { isCellChanged } from '@renderer/components/data/rowEditing'
 import { useValuePanelPref } from '@renderer/components/data/useValuePanelPref'
 import { invokeSilent } from '@renderer/api'
-import ResultGrid from '@renderer/components/common/ResultGrid.vue'
 import ApplyErrorBanner from '@renderer/components/data/ApplyErrorBanner.vue'
 import EditableGrid from '@renderer/components/data/EditableGrid.vue'
+import ExportDialog from '@renderer/components/data/ExportDialog.vue'
+import type { CopyContext, ExportScope } from '@renderer/components/data/gridCopy'
+import type { GridSelectionSnapshot } from '@renderer/components/data/gridSelection'
 import RowEditActions from '@renderer/components/data/RowEditActions.vue'
 import { commitRows, sortRows } from '@renderer/components/data/rowEditing'
 import { isApplyShortcut, useRowEditor } from '@renderer/components/data/useRowEditor'
@@ -29,9 +36,9 @@ import {
 /**
  * One query result set. When its statement is a plain SELECT of exactly one
  * base table and the result carries its whole primary key it can be edited
- * like the table data view (Navicat behaviour); otherwise it stays read-only
- * and says why. Edits are written by key, so a truncated result is still
- * safe to edit.
+ * like the table data view; otherwise it stays read-only and says why. Edits
+ * are written by key, so a truncated result is still safe to edit. Every
+ * result (multi-table ones too) can be selected, copied and exported.
  */
 const props = defineProps<{
   connectionId: string
@@ -42,6 +49,16 @@ const props = defineProps<{
   truncated: boolean
   /** SQLite: storage class of each cell (edits keep it). */
   storage?: StorageClass[][]
+  /**
+   * Where the statement ran (MySQL database, PostgreSQL `{ database, schema }`),
+   * so «Exportar resultado completo» runs it again in the same place.
+   */
+  context?: SchemaRef | null
+  /**
+   * Offer «Exportar» (button, menu, dialog). Off unless the host can save
+   * files and answers the export:* channels (the desktop query view).
+   */
+  exportable?: boolean
 }>()
 
 const emit = defineEmits<{ dirty: [value: boolean] }>()
@@ -56,6 +73,8 @@ editor.reset(props.rows, props.storage)
  * skipped) and every call addresses `{ database, schema }`.
  */
 const engine = useConnectionsStore().get(props.connectionId)?.engine
+const dialectId: SqlDialectId =
+  engine === 'postgresql' || engine === 'sqlite' || engine === 'mariadb' ? engine : 'mysql'
 const isPg = engine === 'postgresql'
 /** SQLite: parsed with the SQLite lexer, keyed by the rowid the driver marked in the result. */
 const isLite = engine === 'sqlite'
@@ -136,10 +155,11 @@ async function checkEditability(): Promise<void> {
 const sort = ref<{ column: string; direction: 'ASC' | 'DESC' } | null>(null)
 const initialOrder = new Map(gridRows.value.map((r, i) => [r.uid, i]))
 
-function toggleSort(column: string): void {
+function toggleSort(column: string, direction?: 'ASC' | 'DESC' | null): void {
   const col = props.columns.findIndex((c) => c.name === column)
   if (col < 0) return
-  if (sort.value?.column !== column) sort.value = { column, direction: 'ASC' }
+  if (direction !== undefined) sort.value = direction ? { column, direction } : null
+  else if (sort.value?.column !== column) sort.value = { column, direction: 'ASC' }
   else if (sort.value.direction === 'ASC') sort.value = { column, direction: 'DESC' }
   else sort.value = null
   gridRows.value = sort.value
@@ -194,6 +214,42 @@ function onKeydown(event: KeyboardEvent): void {
   void applyChanges()
 }
 
+/* ---------- copy and export ---------- */
+
+/** The one source table of the result (multi-table results have none). */
+const sourceTable = computed<string | null>(() => {
+  if (editability.value?.editable) return editability.value.table
+  if (source.ok) return source.source.table
+  const tables = new Set(props.columns.map((c) => c.table ?? ''))
+  return tables.size === 1 && !tables.has('') ? [...tables][0] : null
+})
+const copyContext = computed<CopyContext>(() => ({
+  dialect: dialectId,
+  table: sourceTable.value,
+  keyColumns: keyColumns.value,
+  // The source table's real names when the result renamed columns with AS.
+  ...(sourceTable.value ? { sqlNames: payloadColumns(props.columns).map((c) => c.name) } : {})
+}))
+const statementCheck = computed(() =>
+  engine === 'mongodb' ? null : checkExportStatement(getDialect(dialectId), props.sql)
+)
+const fullSource = computed<ExportQuerySource | null>(() =>
+  statementCheck.value?.ok
+    ? { kind: 'statement', sql: props.sql, ...(props.context ? { context: props.context } : {}) }
+    : null
+)
+const fullReason = computed(() =>
+  statementCheck.value && !statementCheck.value.ok ? statementCheck.value.reason : null
+)
+const exportOpen = ref(false)
+const exportScope = ref<ExportScope>('loaded')
+const exportSelection = ref<GridSelectionSnapshot | null>(null)
+function openExport(scope?: 'selection' | 'all'): void {
+  exportSelection.value = grid.value?.selectionSnapshot() ?? null
+  exportScope.value = scope === 'selection' ? 'selection' : 'loaded'
+  exportOpen.value = true
+}
+
 watch(dirty, (value) => emit('dirty', value))
 onMounted(checkEditability)
 
@@ -241,20 +297,27 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
         <v-icon icon="mdi-lock-outline" size="13" aria-hidden="true" />
         <span class="editable-result__chip-text">Solo lectura · {{ readOnlyReason }}</span>
       </span>
-      <template v-if="source.ok">
-        <span class="nd-viewbar__sep" aria-hidden="true" />
-        <v-btn
-          prepend-icon="mdi-text-box-outline"
-          size="small"
-          :class="{ 'is-active': valuePref.open }"
-          class="editable-result__toggle"
-          :aria-pressed="valuePref.open"
-          title="Mostrar el valor completo de la celda seleccionada"
-          data-test="value-toggle"
-          @click="valuePref.open = !valuePref.open"
-          >Texto</v-btn
-        >
-      </template>
+      <span class="nd-viewbar__sep" aria-hidden="true" />
+      <v-btn
+        prepend-icon="mdi-text-box-outline"
+        size="small"
+        :class="{ 'is-active': valuePref.open }"
+        class="editable-result__toggle"
+        :aria-pressed="valuePref.open"
+        title="Mostrar el valor completo de la celda seleccionada"
+        data-test="value-toggle"
+        @click="valuePref.open = !valuePref.open"
+        >Texto</v-btn
+      >
+      <v-btn
+        v-if="exportable"
+        prepend-icon="mdi-file-export-outline"
+        size="small"
+        title="Exportar a CSV, Excel, JSON, SQL, Markdown, HTML o TXT"
+        data-test="export"
+        @click="openExport()"
+        >Exportar</v-btn
+      >
       <template v-if="editable">
         <span class="nd-viewbar__sep" aria-hidden="true" />
         <RowEditActions
@@ -282,32 +345,32 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
 
     <div
       class="editable-result__grid"
-      :style="source.ok && valuePref.open ? { minHeight: 'min(160px, 70%)' } : undefined"
+      :style="valuePref.open ? { minHeight: 'min(160px, 70%)' } : undefined"
       data-test="grid-area"
     >
-      <ResultGrid v-if="!source.ok" :columns="columns" :rows="props.rows" :truncated="truncated" />
-      <template v-else>
-        <EditableGrid
-          ref="grid"
-          v-model:selected="selected"
-          v-model:active="active"
-          :columns="columns"
-          :rows="gridRows"
-          :primary-key="keyColumns"
-          :sort="sort"
-          :readonly="!editable"
-          :error-row="applyError?.uid ?? null"
-          :error-col="applyError?.col ?? null"
-          :column-info="columnInfo"
-          :width-key="widthKey"
-          :plain-editors="isLite"
-          @sort="toggleSort"
-          @edit="editor.onEdit"
-        />
-      </template>
+      <EditableGrid
+        ref="grid"
+        v-model:selected="selected"
+        v-model:active="active"
+        :columns="columns"
+        :rows="gridRows"
+        :primary-key="keyColumns"
+        :sort="sort"
+        :readonly="!editable"
+        :error-row="applyError?.uid ?? null"
+        :error-col="applyError?.col ?? null"
+        :column-info="columnInfo"
+        :width-key="widthKey"
+        :plain-editors="isLite"
+        :copy="copyContext"
+        :exportable="exportable"
+        @sort="toggleSort"
+        @edit="editor.onEdit"
+        @export="openExport"
+      />
     </div>
     <CellValuePanel
-      v-if="source.ok && valuePref.open"
+      v-if="valuePref.open"
       :column="activeCell ? (columns[activeCell.col] ?? null) : null"
       :info="activeCell ? columnInfo[activeCell.col] : null"
       :value="activeCell?.value ?? null"
@@ -316,10 +379,29 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
       view="query"
       @edit="editFromPanel"
     />
-    <div v-if="source.ok" class="editable-result__footer" data-test="result-footer">
+    <div class="editable-result__footer" data-test="result-footer">
       <span class="nd-mono">{{ loadedCount }}</span> filas
       <span v-if="truncated" class="editable-result__truncated">· resultado truncado</span>
     </div>
+    <ExportDialog
+      v-if="exportable"
+      v-model="exportOpen"
+      :connection-id="connectionId"
+      :columns="columns"
+      :rows="gridRows"
+      :selection="exportSelection"
+      :copy="copyContext"
+      :full-source="fullSource"
+      :full-reason="fullReason"
+      :base-name="sourceTable ?? 'resultado'"
+      :scope="exportScope"
+      :partial="
+        truncated
+          ? 'El resultado está truncado: solo se exportan las filas cargadas. «Resultado completo» las incluye todas.'
+          : null
+      "
+      :pending-edits="dirty"
+    />
   </div>
 </template>
 
