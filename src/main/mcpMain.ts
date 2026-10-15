@@ -130,6 +130,12 @@ export async function runMcpMode(): Promise<void> {
   process.stdout.on('error', () => shutdown('stdout closed'))
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const)
     process.on(signal, () => shutdown(signal))
+  // Electron's own quit (its signal handling, the OS logging out) waits for the cleanup too.
+  app.on('will-quit', (event) => {
+    if (closing) return
+    event.preventDefault()
+    shutdown('quit')
+  })
   transport.onclose = () => shutdown('transport closed')
 
   await server.connect(transport)

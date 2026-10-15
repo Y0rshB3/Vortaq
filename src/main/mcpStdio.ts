@@ -2,8 +2,11 @@
  * First module index.ts loads. In MCP mode (`Vortaq --mcp`) stdout carries
  * only the JSON-RPC messages of the MCP transport: everything else that
  * writes to stdout (console.log, a library, a debug line) is sent to stderr
- * instead, before any other module runs. Normal starts are untouched.
+ * instead, before any other module runs. On macOS it also leaves the Dock
+ * right away (the icon shows for a moment while LaunchServices registers the
+ * app). Normal starts are untouched.
  */
+import { app } from 'electron'
 import { Writable } from 'node:stream'
 import { isMcpArgv } from '@shared/mcp'
 
@@ -12,6 +15,8 @@ export const MCP_MODE = isMcpArgv(process.argv)
 let transportOut: Writable | null = null
 
 if (MCP_MODE) {
+  // macOS: leave the Dock as soon as possible (LaunchServices shows the icon until then).
+  if (process.platform === 'darwin') app.dock?.hide()
   const stdoutWrite = process.stdout.write.bind(process.stdout) as (
     chunk: Uint8Array | string,
     callback: (err?: Error | null) => void
