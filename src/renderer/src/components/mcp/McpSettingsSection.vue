@@ -71,7 +71,9 @@ const rows = computed(() =>
 )
 const enabledCount = computed(() => rows.value.filter((r) => r.enabled).length)
 
-function levelItems(writeBlocked: boolean): { value: McpAccess; title: string; disabled: boolean }[] {
+function levelItems(
+  writeBlocked: boolean
+): { value: McpAccess; title: string; disabled: boolean }[] {
   return MCP_ACCESS_LEVELS.map((level) => ({
     value: level,
     title: MCP_ACCESS_LABELS[level],
@@ -119,7 +121,7 @@ onMounted(async () => {
       v-model="enabled"
       color="primary"
       label="Permitir que agentes usen Vortaq (MCP)"
-      hint="Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP pueden usar las conexiones que actives para agentes; Vortaq no les da la configuración de la conexión (contraseña, host, usuario, ruta)."
+      hint="Cualquier cliente MCP (Claude Code, Codex, Gemini CLI, Cursor, VS Code, OpenCode…) puede usar las conexiones que actives para agentes; Vortaq no les da la configuración de la conexión (contraseña, host, usuario, ruta)."
       persistent-hint
       density="compact"
       data-test="settings-mcp-enabled"
@@ -200,25 +202,32 @@ onMounted(async () => {
     </p>
 
     <div class="mcp-settings__head">Configurar un cliente</div>
+    <p class="settings-section__hint mcp-settings__intro" data-test="settings-mcp-clients-note">
+      Sirve con cualquier agente que admita servidores MCP locales (stdio), con el modelo que uses
+      en él: Claude, GPT, Gemini, GLM, Qwen… Si el tuyo no está en la lista, usa «Otro cliente». Las
+      apps web (ChatGPT, Gemini o claude.ai en el navegador) no pueden arrancar programas de tu
+      equipo.
+    </p>
     <div v-if="snippet" class="mcp-settings__client">
-      <v-btn-toggle
+      <v-chip-group
         v-model="client"
         mandatory
-        density="compact"
-        variant="outlined"
-        color="primary"
+        column
+        selected-class="mcp-settings__client--on"
         aria-label="Cliente MCP"
         data-test="settings-mcp-client"
         class="mcp-settings__clients"
       >
-        <v-btn
+        <v-chip
           v-for="s in snippets"
           :key="s.id"
           :value="s.id"
+          size="small"
+          variant="outlined"
           :data-test="`settings-mcp-client-${s.id}`"
-          >{{ s.label }}</v-btn
+          >{{ s.label }}</v-chip
         >
-      </v-btn-toggle>
+      </v-chip-group>
       <div class="mcp-settings__where">{{ snippet.where }}</div>
       <div class="mcp-settings__snippet">
         <pre class="nd-mono" data-test="settings-mcp-snippet">{{ snippet.text }}</pre>
@@ -344,8 +353,15 @@ onMounted(async () => {
   color: var(--nd-warning);
 }
 .mcp-settings__clients {
-  flex-wrap: wrap;
-  height: auto !important;
+  padding: 0;
+}
+.mcp-settings__clients .v-chip {
+  margin: 0 6px 6px 0;
+}
+.mcp-settings__clients .mcp-settings__client--on {
+  color: var(--nd-accent);
+  border-color: currentColor;
+  background: rgba(var(--nd-accent-rgb), 0.12);
 }
 .mcp-settings__where {
   margin: 8px 0 4px;

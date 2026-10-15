@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { VSelect } from 'vuetify/components'
-import type { AppSettings, ConnectionConfig, ConnectionMcpConfig, McpLaunchInfo } from '@shared/types'
+import type {
+  AppSettings,
+  ConnectionConfig,
+  ConnectionMcpConfig,
+  McpLaunchInfo
+} from '@shared/types'
 import { useConnectionsStore } from '@renderer/stores/connections'
 import { useSettingsStore } from '@renderer/stores/settings'
 import { useUiStore } from '@renderer/stores/ui'
@@ -202,6 +207,26 @@ describe('Ajustes › Agentes (MCP)', () => {
     expect(JSON.parse(snippet())).toEqual({
       servers: { vortaq: { type: 'stdio', command: LAUNCH.command, args: ['--mcp'] } }
     })
+    await w.get('[data-test="settings-mcp-client-codex"]').trigger('click')
+    expect(snippet()).toContain('[mcp_servers.vortaq]')
+    expect(snippet()).toContain(`command = "${LAUNCH.command}"`)
+    expect(w.text()).toContain('~/.codex/config.toml')
+    await w.get('[data-test="settings-mcp-client-gemini"]').trigger('click')
+    expect(JSON.parse(snippet())).toEqual({
+      mcpServers: { vortaq: { command: LAUNCH.command, args: ['--mcp'] } }
+    })
+    expect(w.text()).toContain('~/.gemini/settings.json')
+    await w.get('[data-test="settings-mcp-client-antigravity"]').trigger('click')
+    expect(w.text()).toContain('~/.gemini/config/mcp_config.json')
+    await w.get('[data-test="settings-mcp-client-opencode"]').trigger('click')
+    expect(JSON.parse(snippet())).toEqual({
+      mcp: { vortaq: { type: 'local', command: [LAUNCH.command, '--mcp'] } }
+    })
+    await w.get('[data-test="settings-mcp-client-other"]').trigger('click')
+    expect(snippet()).toContain(`Comando: ${LAUNCH.command}`)
+    expect(w.get('[data-test="settings-mcp-clients-note"]').text()).toContain(
+      'cualquier agente que admita servidores MCP locales'
+    )
     await w.get('[data-test="settings-mcp-copy"]').trigger('click')
     await settle()
     expect(writeText).toHaveBeenCalledWith(snippet())

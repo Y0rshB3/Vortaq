@@ -2231,7 +2231,7 @@ STEPS.push(...EXPORT_STEPS)
 
 /**
  * Agents (MCP) (VORTAQ_SHOTS_ONLY=49): Ajustes › Agentes (MCP) with the
- * connections available to agents and a client snippet, and the connection
+ * connections available to agents and client snippets (VS Code, Codex), and the connection
  * dialog's section with the three levels (a local connection, and production,
  * where «Lectura y escritura» is blocked). Needs scripts/seed-mcp-shots.mjs
  * (synthetic connections; nothing connects).
@@ -2262,6 +2262,16 @@ const MCP_STEPS: Step[] = [
       S.ui.settingsDialog = true
       const section = await H.waitFor('[data-test="settings-mcp"]', 8000)
       await H.click('[data-test="settings-mcp-client-vscode"]', 8000)
+      section.scrollIntoView({ block: 'end' })
+      await H.sleep(700)`,
+    cleanup: `S.ui.settingsDialog = false`
+  },
+  {
+    name: '49e-settings-mcp-codex',
+    script: `
+      S.ui.settingsDialog = true
+      const section = await H.waitFor('[data-test="settings-mcp"]', 8000)
+      await H.click('[data-test="settings-mcp-client-codex"]', 8000)
       section.scrollIntoView({ block: 'end' })
       await H.sleep(700)`,
     cleanup: `S.ui.settingsDialog = false`

@@ -127,8 +127,8 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
 - **Asistente de IA con tu propia clave** (Claude, OpenAI, Groq, Grok, GLM, Ollama o cualquier servidor
   compatible con OpenAI): pregunta sobre tu base de datos, genera SQL en el editor y explica consultas y
   errores. Solo se envía la estructura, nunca tus datos ([Asistente de IA](#asistente-de-ia)).
-- **Agentes (MCP)**: Claude Code, Claude Desktop, Cursor, VS Code u otro cliente MCP pueden usar las conexiones
-  que actives (solo estructura, lectura o lectura y escritura) sin que Vortaq les dé contraseñas, hosts, usuarios
+- **Agentes (MCP)**: Claude Code, Codex, Gemini CLI, Cursor, VS Code o cualquier otro cliente MCP pueden usar las
+  conexiones que actives (solo estructura, lectura o lectura y escritura) sin que Vortaq les dé contraseñas, hosts, usuarios
   ni rutas;
   nunca escriben en Producción ([Agentes (MCP)](#agentes-mcp)).
 - Tema oscuro y claro.
@@ -1254,9 +1254,13 @@ entorno.
 ## Agentes (MCP)
 
 Vortaq incluye un servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol) para que un agente
-de IA (Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP) use **tus conexiones guardadas** sin que
-Vortaq le dé nunca su configuración: ni la contraseña, ni el host, el puerto, el usuario, la configuración SSH, la
+de IA use **tus conexiones guardadas** sin que Vortaq le dé nunca su configuración: ni la contraseña, ni el host, el puerto, el usuario, la configuración SSH, la
 cadena de conexión o la ruta del archivo SQLite. El agente se refiere a cada conexión por su nombre.
+
+Sirve con **cualquier cliente que admita servidores MCP locales (stdio)** y con el modelo que uses en él (Claude,
+GPT, Gemini, GLM, Qwen…): Claude Code, Claude Desktop, Codex, Gemini CLI, Antigravity, Cursor, VS Code, OpenCode,
+Cline, Windsurf, Zed y otros. Las apps web (ChatGPT, Gemini o claude.ai en el navegador) solo se conectan a
+servidores remotos y no pueden arrancar un programa de tu equipo, así que no pueden usarlo.
 
 El cliente arranca Vortaq él mismo en modo MCP (`Vortaq --mcp`, sin ventana, comunicándose por la entrada y
 salida estándar). Funciona con la app abierta o cerrada; los cambios que hagas en la app (activar una conexión,
@@ -1353,6 +1357,37 @@ Ajustes muestra el comando con la ruta exacta de tu instalación. Rutas habitual
     }
   }
   ```
+
+- **Codex** (`~/.codex/config.toml`, en Windows `%USERPROFILE%\.codex\config.toml`; o `.codex/config.toml` de un
+  proyecto de confianza). `tool_timeout_sec` deja que una consulta use los 120 s que Vortaq permite (Codex corta a
+  los 60 s por defecto):
+
+  ```toml
+  [mcp_servers.vortaq]
+  command = "/Applications/Vortaq.app/Contents/MacOS/Vortaq"
+  args = ["--mcp"]
+  tool_timeout_sec = 130
+  ```
+
+- **Gemini CLI** (`~/.gemini/settings.json` o `.gemini/settings.json` del proyecto) y **Antigravity**
+  (`~/.gemini/config/mcp_config.json`, para la CLI y el editor, o `.agents/mcp_config.json` del proyecto): el
+  mismo JSON que Claude Desktop.
+
+- **OpenCode** (`opencode.json` del proyecto o `~/.config/opencode/opencode.json`):
+
+  ```json
+  {
+    "mcp": {
+      "vortaq": {
+        "type": "local",
+        "command": ["/Applications/Vortaq.app/Contents/MacOS/Vortaq", "--mcp"]
+      }
+    }
+  }
+  ```
+
+- **Otro cliente**: añade un servidor MCP local (stdio) con el ejecutable como comando y `--mcp` como argumento.
+  Muchos clientes aceptan el mismo JSON que Claude Desktop.
 
 En los archivos JSON escribe la ruta completa (las variables como `%LOCALAPPDATA%` no se expanden) y, en
 Windows, con las barras invertidas dobles. En Linux, si la AppImage falla al arrancar con un error de «SUID

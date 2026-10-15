@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   claudeCodeCommand,
   claudeDesktopConfig,
+  codexConfig,
   cursorConfig,
   effectiveMcpAccess,
+  genericClientInfo,
+  geminiConfig,
   isMcpArgv,
   isMcpEnabled,
   mcpClientSnippets,
@@ -11,6 +14,7 @@ import {
   mcpLaunchOf,
   MCP_WRITE_BLOCKED,
   normalizeMcpConfig,
+  opencodeConfig,
   vscodeConfig
 } from './mcp'
 
@@ -139,11 +143,67 @@ describe('MCP launch command and client snippets', () => {
     expect(mcpClientSnippets(win).map((s) => s.id)).toEqual([
       'claudeCode',
       'claudeDesktop',
+      'codex',
+      'gemini',
+      'antigravity',
       'cursor',
-      'vscode'
+      'vscode',
+      'opencode',
+      'other'
     ])
     expect(mcpClientSnippets(win)[1].where).toBe('%APPDATA%\\Claude\\claude_desktop_config.json')
     expect(isMcpArgv(['/x/Vortaq', '--mcp'])).toBe(true)
     expect(isMcpArgv(['/x/Electron', '/repo'])).toBe(false)
+  })
+
+  it('builds the Codex, Gemini, Antigravity, OpenCode and generic snippets', () => {
+    expect(codexConfig(mac)).toBe(
+      [
+        '[mcp_servers.vortaq]',
+        'command = "/Applications/Vortaq.app/Contents/MacOS/Vortaq"',
+        'args = ["--mcp"]',
+        'tool_timeout_sec = 130'
+      ].join('\n')
+    )
+    // TOML basic strings: backslashes and quotes escaped, control characters as \uXXXX.
+    expect(codexConfig(win)).toContain(
+      'command = "C:\\\\Users\\\\Ana\\\\AppData\\\\Local\\\\Programs\\\\Vortaq\\\\Vortaq.exe"'
+    )
+    expect(codexConfig({ ...mac, command: '/x/"a"\tb' })).toContain(
+      'command = "/x/\\"a\\"\\u0009b"'
+    )
+    expect(JSON.parse(geminiConfig(win))).toEqual({
+      mcpServers: { vortaq: { command: win.command, args: ['--mcp'] } }
+    })
+    expect(JSON.parse(opencodeConfig(mac))).toEqual({
+      mcp: { vortaq: { type: 'local', command: [mac.command, '--mcp'] } }
+    })
+    expect(genericClientInfo(mac)).toBe(
+      [
+        'Tipo: stdio (servidor local)',
+        'Comando: /Applications/Vortaq.app/Contents/MacOS/Vortaq',
+        'Argumentos: --mcp'
+      ].join('\n')
+    )
+    const dev = mcpLaunchOf({
+      execPath: '/r/Electron',
+      packaged: false,
+      appPath: '/my repo',
+      platform: 'linux'
+    })
+    expect(codexConfig(dev)).toContain('args = ["/my repo", "--mcp"]')
+    expect(JSON.parse(opencodeConfig(dev)).mcp.vortaq.command).toEqual([
+      '/r/Electron',
+      '/my repo',
+      '--mcp'
+    ])
+    expect(genericClientInfo(dev)).toContain('Argumentos: "/my repo" --mcp')
+    const where = (launch: typeof mac, id: string) =>
+      mcpClientSnippets(launch).find((s) => s.id === id)?.where
+    expect(where(win, 'codex')).toMatch(/^%USERPROFILE%\\\.codex\\config\.toml /)
+    expect(where(mac, 'codex')).toMatch(/^~\/\.codex\/config\.toml /)
+    expect(where(win, 'gemini')).toMatch(/^%USERPROFILE%\\\.gemini\\settings\.json /)
+    expect(where(mac, 'antigravity')).toMatch(/^~\/\.gemini\/config\/mcp_config\.json /)
+    expect(where(win, 'opencode')).toContain('%USERPROFILE%\\.config\\opencode\\opencode.json')
   })
 })
