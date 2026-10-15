@@ -11,7 +11,13 @@
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
-import type { ConnectionConfig, QueryExecuteOptions, QueryStatementResult, VortaqCore } from '@core'
+import type {
+  ConnectionConfig,
+  QueryExecuteOptions,
+  QueryStatementResult,
+  SchemaRef,
+  VortaqCore
+} from '@core'
 import type { ConnectionService } from './connections'
 import { sqlDialectOf, type WriteGuard } from './guard'
 import type { ResultsPanels } from './panels/results'
@@ -32,6 +38,21 @@ interface Running {
 
 const hasTabSession = (c: Pick<ConnectionConfig, 'engine'>): boolean =>
   c.engine === 'postgresql' || c.engine === 'sqlite'
+
+/**
+ * Where a document's statements run, so «Exportar › Resultado completo» reads
+ * in the same place (as the desktop query view): PostgreSQL `{ database,
+ * schema }`, MySQL/MariaDB the database, SQLite null (one file).
+ */
+export function runContext(
+  connection: Pick<ConnectionConfig, 'engine'>,
+  target: Pick<DocumentTarget, 'database' | 'schema'>
+): SchemaRef | null {
+  if (connection.engine === 'postgresql')
+    return { database: target.database ?? '', schema: target.schema ?? '' }
+  if (connection.engine === 'sqlite') return null
+  return target.database
+}
 
 export class SqlRunner implements vscode.Disposable {
   private readonly running = new Map<string, Running>()
@@ -157,10 +178,11 @@ export class SqlRunner implements vscode.Disposable {
     const name = uri.startsWith('untitled:')
       ? uri.slice('untitled:'.length)
       : vscode.Uri.parse(uri).path.split('/').pop()
-    const panel = this.results.open(
-      `doc:${uri}`,
-      this.state(connection, `Resultados · ${name}`, targetLabel(target), true)
-    )
+    const panel = this.results.open(`doc:${uri}`, {
+      ...this.state(connection, `Resultados · ${name}`, targetLabel(target), true),
+      script: picked.sql,
+      context: runContext(connection, target)
+    })
     const seq = ++this.seq
     const executionId = hasTabSession(connection) ? `exec-${randomUUID()}` : null
     const run: Running = { seq, connectionId: connection.id, executionId, started: Date.now() }
@@ -283,13 +305,20 @@ export class SqlRunner implements vscode.Disposable {
     const where = [node.database, node.schema].filter(Boolean).join('.')
     const key = `data:${connection.id}:${where}:${node.name}`
     if (!(await this.results.mayReplace(key))) return null
+    const schema = schemaRefOf(connection, node.database, node.schema)
+    // «Exportar › Resultado completo» reads the whole table, not these first rows.
     const panel = this.results.open(
       key,
-      this.state(connection, `${node.name} · ${connection.name}`, where, true, false)
+      {
+        ...this.state(connection, `${node.name} · ${connection.name}`, where, true, false),
+        script: sql,
+        context: connection.engine === 'sqlite' ? null : schema
+      },
+      { sql, schema, table: node.name }
     )
     const started = Date.now()
     const options: QueryExecuteOptions = { maxRows: limit }
-    options.schema = schemaRefOf(connection, node.database, node.schema)
+    options.schema = schema
     try {
       const out = await this.core.invoke('db:execute', connection.id, sql, options)
       panel.update({ running: false, canStop: false, results: out, totalMs: Date.now() - started })
@@ -375,6 +404,8 @@ export class SqlRunner implements vscode.Disposable {
       settings: this.webviewSettings(),
       running,
       results: [],
+      script: null,
+      context: null,
       totalMs: null,
       notice: null,
       documents: null,

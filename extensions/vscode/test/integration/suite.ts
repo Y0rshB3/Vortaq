@@ -9,10 +9,17 @@
  * No test framework: a small sequential runner with node:assert.
  */
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync
+} from 'node:fs'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
-import type { ConnectionInput, QueryStatementResult } from '@core'
+import type { ConnectionInput, ProgressEvent, QueryStatementResult } from '@core'
 import { CredentialStore, plainCodec } from '@main/credentials/store'
 import { setJsonStoreReload } from '@main/storage/jsonStore'
 import { ConnectionsRepo } from '@main/storage/repos'
@@ -189,6 +196,59 @@ async function webviewInvoke(
     sub.dispose()
   }
 }
+
+/**
+ * «Exportar» as the webview's ExportDialog plays it: app:pickSaveFile (the save dialog
+ * answers `file`), then `channel` with the chosen path. Returns the answer and the
+ * event:progress messages the panel posted meanwhile.
+ */
+async function exportFrom(
+  panel: ResultsPanel,
+  file: string,
+  channel: 'export:rows' | 'export:query',
+  args: (file: string) => unknown[]
+): Promise<{
+  answer: { ok: boolean; value?: unknown; message?: string }
+  events: ProgressEvent[]
+}> {
+  const operations = api.results.operations
+  const original = operations.showSaveDialog
+  const asked: vscode.SaveDialogOptions[] = []
+  operations.showSaveDialog = async (options) => {
+    asked.push(options)
+    return vscode.Uri.file(file)
+  }
+  const events: ProgressEvent[] = []
+  const sub = panel.onDidPost((m) => {
+    const message = m as { type: string; channel?: string; payload?: ProgressEvent }
+    if (message.type === 'event' && message.channel === 'event:progress')
+      events.push(message.payload!)
+  })
+  try {
+    const name = file.split(/[\\/]/).pop()!
+    const picked = await webviewInvoke(panel, 'app:pickSaveFile', ['Exportar resultado', name, []])
+    assert.ok(picked.ok, picked.message)
+    assert.equal(picked.value, file)
+    assert.equal(asked[0].defaultUri?.path.split('/').pop(), name)
+    return { answer: await webviewInvoke(panel, channel, args(file)), events }
+  } finally {
+    sub.dispose()
+    operations.showSaveDialog = original
+  }
+}
+
+/** A scratch folder for exported files. */
+function exportDir(): string {
+  const dir = join(scratch, 'exports')
+  mkdirSync(dir, { recursive: true })
+  return mkdtempSync(join(dir, 'run-'))
+}
+
+const noParts = (dir: string): void =>
+  assert.deepEqual(
+    readdirSync(dir).filter((f) => f.endsWith('.part')),
+    []
+  )
 
 /* ---------- activation ---------- */
 
@@ -467,6 +527,117 @@ test(
   'VORTAQ_TEST_MYSQL_URL'
 )
 
+test(
+  'exports a result from the results panel: rows, then the full result read-only on production',
+  async () => {
+    // Reading never asks for the connection name: a prompt would fail the test.
+    const prompter = answering(undefined)
+    api.setPrompter(prompter)
+    const editor = await sqlDocument('export', `SELECT id, name FROM item ORDER BY id;`, {
+      connectionId: mysqlProdId,
+      database: DB
+    })
+    const panel = await runAndWait(editor)
+    const dir = exportDir()
+    const csv = join(dir, 'item.csv')
+    const rowsRequest = (filePath: string) => ({
+      filePath,
+      columns: [{ name: 'id' }, { name: 'name' }],
+      rows: [[2, 'confirmado']],
+      options: { format: 'csv' }
+    })
+    // Without a file chosen in this panel's save dialog nothing is written.
+    const unchosen = await webviewInvoke(panel, 'export:rows', [rowsRequest(csv)])
+    assert.equal(unchosen.ok, false)
+    assert.equal(existsSync(csv), false)
+    const rows = await exportFrom(panel, csv, 'export:rows', (f) => [rowsRequest(f)])
+    assert.ok(rows.answer.ok, rows.answer.message)
+    assert.equal(readFileSync(csv, 'utf8'), 'id,name\r\n2,confirmado\r\n')
+
+    const xlsx = join(dir, 'item.xlsx')
+    const operationId = `export-it-${process.pid}`
+    const full = await exportFrom(panel, xlsx, 'export:query', (f) => [
+      operationId,
+      {
+        connectionId: mysqlProdId,
+        filePath: f,
+        source: { kind: 'statement', sql: 'SELECT id, name FROM item ORDER BY id', context: DB },
+        options: { format: 'xlsx', sheetName: 'item' }
+      }
+    ])
+    assert.ok(full.answer.ok, full.answer.message)
+    assert.equal((full.answer.value as { rows: number }).rows, 2)
+    assert.equal(readFileSync(xlsx).subarray(0, 2).toString(), 'PK')
+    assert.ok(full.events.length > 0, 'progress events reach the panel')
+    assert.ok(full.events.every((e) => e.operationId === operationId && e.kind === 'export'))
+    assert.equal(full.events[full.events.length - 1].done, true)
+    assert.deepEqual(prompter.prompts, [])
+    noParts(dir)
+
+    // Another connection, and a statement that may write, are refused; no file appears.
+    const other = await exportFrom(panel, join(dir, 'otra.csv'), 'export:query', (f) => [
+      `${operationId}-b`,
+      {
+        connectionId: mysqlId,
+        filePath: f,
+        source: { kind: 'statement', sql: 'SELECT 1' },
+        options: { format: 'csv' }
+      }
+    ])
+    assert.equal(other.answer.ok, false)
+    const write = await exportFrom(panel, join(dir, 'nunca.csv'), 'export:query', (f) => [
+      `${operationId}-c`,
+      {
+        connectionId: mysqlProdId,
+        filePath: f,
+        source: { kind: 'statement', sql: `SELECT * FROM item FOR UPDATE` },
+        options: { format: 'csv' }
+      }
+    ])
+    assert.equal(write.answer.ok, false)
+    assert.match(write.answer.message ?? '', /solo lectura/)
+    assert.deepEqual(readdirSync(dir).sort(), ['item.csv', 'item.xlsx'])
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
+test(
+  '«Ver datos»: «Resultado completo» exports the whole table, not the first rows',
+  async () => {
+    const config = vscode.workspace.getConfiguration('vortaq')
+    await config.update('maxRows', 1, vscode.ConfigurationTarget.Global)
+    try {
+      const node = { kind: 'table' as const, connectionId: mysqlId, database: DB, name: 'item' }
+      // The setting reaches the runner through a configuration event.
+      let sql = ''
+      for (const started = Date.now(); !sql;) {
+        const out = await api.runner.viewData(node)
+        if (out?.[0]?.resultSet?.rows.length === 1) sql = out[0].sql
+        else if (Date.now() - started > 20_000) throw new Error('«Ver datos» never showed one row')
+        else await new Promise((r) => setTimeout(r, 200))
+      }
+      const panel = api.results.get(`data:${mysqlId}:${DB}:item`)!
+      const dir = exportDir()
+      const csv = join(dir, 'item.csv')
+      const full = await exportFrom(panel, csv, 'export:query', (f) => [
+        `export-data-${process.pid}`,
+        {
+          connectionId: mysqlId,
+          filePath: f,
+          source: { kind: 'statement', sql, context: DB },
+          options: { format: 'csv' }
+        }
+      ])
+      assert.ok(full.answer.ok, full.answer.message)
+      assert.equal((full.answer.value as { rows: number }).rows, 2)
+      assert.equal(readFileSync(csv, 'utf8').trimEnd().split('\r\n').length, 3)
+    } finally {
+      await config.update('maxRows', undefined, vscode.ConfigurationTarget.Global)
+    }
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
 /* ---------- PostgreSQL ---------- */
 
 test(
@@ -625,6 +796,21 @@ test('runs a query on a SQLite file (or says why SQLite is unavailable)', async 
   assert.equal(panel.state.notice, null)
   const last = panel.state.results[panel.state.results.length - 1]
   assert.deepEqual(last.resultSet?.rows, [[1, 'hola', 'integer']])
+  // «Exportar › Resultado completo» reads the file again in a read-only reader.
+  const dir = exportDir()
+  const json = join(dir, 'nota.json')
+  const full = await exportFrom(panel, json, 'export:query', (f) => [
+    `export-sqlite-${process.pid}`,
+    {
+      connectionId: id,
+      filePath: f,
+      source: { kind: 'statement', sql: 'SELECT id, texto FROM nota' },
+      options: { format: 'json' }
+    }
+  ])
+  assert.ok(full.answer.ok, full.answer.message)
+  assert.deepEqual(JSON.parse(readFileSync(json, 'utf8')), [{ id: 1, texto: 'hola' }])
+  noParts(dir)
   await api.runner.closeSession(editor.document.uri.toString())
 })
 

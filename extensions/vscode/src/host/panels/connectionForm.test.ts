@@ -44,8 +44,16 @@ describe('connection form scope', () => {
   })
 
   it('the webviews never get settings, app, job or SQL-execution channels', () => {
-    for (const channels of [CONNECTION_FORM_CHANNELS, RESULTS_CHANNELS])
-      for (const channel of channels) expect(channel).toMatch(/^(connections|db|sqlite):/)
+    for (const channel of CONNECTION_FORM_CHANNELS)
+      expect(channel).toMatch(/^(connections|db|sqlite):/)
+    // Results: the grid's editability check and Aplicar, and «Exportar».
+    expect([...RESULTS_CHANNELS].sort()).toEqual([
+      'db:applyRowChanges',
+      'db:tableStructure',
+      'export:cancel',
+      'export:query',
+      'export:rows'
+    ])
     for (const forbidden of [
       'db:execute',
       'connections:delete',

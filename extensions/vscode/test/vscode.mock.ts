@@ -73,6 +73,12 @@ export enum ViewColumn {
   One = 1
 }
 
+export enum ProgressLocation {
+  SourceControl = 1,
+  Window = 10,
+  Notification = 15
+}
+
 export enum ExtensionMode {
   Production = 1,
   Development = 2,
@@ -117,7 +123,50 @@ export class MarkdownString {
   }
 }
 
+/** A webview panel that records what the host posts and lets a test play the webview. */
+export class FakeWebviewPanel {
+  readonly posted: unknown[] = []
+  private receiveListener: (message: unknown) => unknown = () => undefined
+  private disposeListener: () => void = () => undefined
+  title: string
+  iconPath: unknown
+  readonly webview = {
+    html: '',
+    cspSource: 'vscode-resource:',
+    asWebviewUri: (uri: Uri) => uri,
+    onDidReceiveMessage: (listener: (message: unknown) => unknown) => {
+      this.receiveListener = listener
+      return { dispose: () => undefined }
+    },
+    postMessage: async (message: unknown) => {
+      this.posted.push(message)
+      return true
+    }
+  }
+  constructor(
+    readonly viewType: string,
+    title: string
+  ) {
+    this.title = title
+  }
+  onDidDispose(listener: () => void): { dispose(): void } {
+    this.disposeListener = listener
+    return { dispose: () => undefined }
+  }
+  reveal(): void {}
+  dispose(): void {
+    this.disposeListener()
+  }
+  /** Plays the webview: a message as it would post it. */
+  fromWebview(message: unknown): unknown {
+    return this.receiveListener(message)
+  }
+}
+
 export const window = {
+  createWebviewPanel: vi.fn(
+    (viewType: string, title: string) => new FakeWebviewPanel(viewType, title)
+  ),
   showInputBox: vi.fn(),
   showWarningMessage: vi.fn(),
   showInformationMessage: vi.fn(),
@@ -125,6 +174,7 @@ export const window = {
   showQuickPick: vi.fn(),
   showOpenDialog: vi.fn(),
   showSaveDialog: vi.fn(),
+  withProgress: vi.fn(),
   setStatusBarMessage: vi.fn(),
   createStatusBarItem: vi.fn(() => ({ show: vi.fn(), hide: vi.fn(), dispose: vi.fn() })),
   onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
@@ -138,7 +188,8 @@ export const workspace = {
 }
 
 export const env = {
-  clipboard: { writeText: vi.fn() }
+  clipboard: { writeText: vi.fn() },
+  openExternal: vi.fn()
 }
 
 export const commands = {

@@ -2,21 +2,28 @@
  * Results panels: one webview per SQL document (reused by every run of that
  * document), per table opened with «Ver datos» and per collection opened with
  * «Ver documentos». The webview renders the desktop app's result components
- * (messages, editable result grid); its edits reach the core through the
- * bridge, limited to the panel's own connection, and every write is
- * confirmed by the WriteGuard.
+ * (messages, editable result grid, «Exportar»); its edits reach the core
+ * through the bridge, limited to the panel's own connection, and every write
+ * is confirmed by the WriteGuard. Exports write only the file chosen in the
+ * panel's save dialog (exports.ts).
  */
 import * as vscode from 'vscode'
+import type { ProgressEvent } from '@core'
 import type { HostMessage } from '../../protocol'
 import type { ResultsState, WebviewSettings } from '../../webviewState'
 import { confirmDetail, handleWebviewMessage } from '../webview/bridge'
 import { webviewHtml, webviewOptions } from '../webview/html'
 import type { WriteGuard } from '../guard'
+import { EXPORT_CHANNELS, ExportOperations, PanelExports, type ExportTable } from './exports'
 
-/** Core channels a results webview may call (EditableResult: editability check and Aplicar). */
+/**
+ * Core channels a results webview may call: EditableResult's editability check and
+ * Aplicar, and «Exportar» (export:rows, export:query, export:cancel).
+ */
 export const RESULTS_CHANNELS: ReadonlySet<string> = new Set([
   'db:tableStructure',
-  'db:applyRowChanges'
+  'db:applyRowChanges',
+  ...EXPORT_CHANNELS
 ])
 
 export interface ResultsDeps {
@@ -27,6 +34,8 @@ export interface ResultsDeps {
   onStop: (key: string) => void
   /** Called after the webview applied row changes (the tree may show new counts). */
   onApplied?: (key: string) => void
+  /** Running exports of every panel (shared, for event:progress); created when absent. */
+  operations?: ExportOperations
 }
 
 export class ResultsPanel {
@@ -35,6 +44,9 @@ export class ResultsPanel {
   private disposed = false
   /** The webview holds unapplied row edits. */
   dirty = false
+  /** «Ver datos»: the table its «Resultado completo» reads whole (host-side only). */
+  exportTable: ExportTable | null = null
+  readonly exports: PanelExports
 
   constructor(
     readonly key: string,
@@ -42,6 +54,13 @@ export class ResultsPanel {
     private readonly deps: ResultsDeps,
     onDispose: () => void
   ) {
+    this.exports = new PanelExports({
+      connectionId: () => this.state.connection.id,
+      table: () => this.exportTable,
+      invoke: deps.invoke,
+      postProgress: this.postProgress,
+      operations: deps.operations ?? new ExportOperations()
+    })
     this.panel = vscode.window.createWebviewPanel(
       'vortaq.results',
       state.title,
@@ -62,9 +81,14 @@ export class ResultsPanel {
     this.panel.webview.onDidReceiveMessage((raw) => this.receive(raw))
     this.panel.onDidDispose(() => {
       this.disposed = true
+      this.exports.dispose()
       onDispose()
     })
   }
+
+  /** An export's event:progress for the webview (operations strip, dialog). */
+  private readonly postProgress = (event: ProgressEvent): void =>
+    this.post({ type: 'event', channel: 'event:progress', payload: event })
 
   get isDisposed(): boolean {
     return this.disposed
@@ -99,15 +123,25 @@ export class ResultsPanel {
   receive(raw: unknown): Promise<void> {
     return handleWebviewMessage(raw, {
       channels: RESULTS_CHANNELS,
-      // Only the connection this panel shows.
-      scope: (_channel, args) =>
-        args[0] === this.state.connection.id
+      local: {
+        'app:pickSaveFile': (title, defaultName, filters) =>
+          this.exports.pickSaveFile(title, defaultName, filters)
+      },
+      scope: (channel, args) => {
+        if (channel === 'app:pickSaveFile') return null
+        if (EXPORT_CHANNELS.has(channel)) return this.exports.check(channel, args)
+        // Only the connection this panel shows.
+        return args[0] === this.state.connection.id
           ? null
-          : 'Esta vista solo trabaja con su propia conexión.',
+          : 'Esta vista solo trabaja con su propia conexión.'
+      },
       after: (channel) => {
         if (channel === 'db:applyRowChanges') this.deps.onApplied?.(this.key)
       },
-      invoke: this.deps.invoke,
+      invoke: (channel, args) =>
+        EXPORT_CHANNELS.has(channel)
+          ? this.exports.invoke(channel, args)
+          : this.deps.invoke(channel, args),
       prepare: (channel, args) => this.deps.guard.prepareWebviewCall(channel, args),
       post: (message) => this.post(message),
       onMessage: async (message) => {
@@ -167,8 +201,21 @@ export function showNotification(
 
 export class ResultsPanels implements vscode.Disposable {
   private readonly panels = new Map<string, ResultsPanel>()
+  private readonly deps: ResultsDeps & { operations: ExportOperations }
 
-  constructor(private readonly deps: ResultsDeps) {}
+  constructor(deps: ResultsDeps) {
+    this.deps = { ...deps, operations: deps.operations ?? new ExportOperations() }
+  }
+
+  /** Running exports of every panel (and the save dialog the integration suite replaces). */
+  get operations(): ExportOperations {
+    return this.deps.operations
+  }
+
+  /** The core's event:progress: an export's goes to the panel that started it. */
+  progress(event: ProgressEvent): boolean {
+    return this.deps.operations.dispatch(event)
+  }
 
   get(key: string): ResultsPanel | undefined {
     return this.panels.get(key)
@@ -194,15 +241,20 @@ export class ResultsPanels implements vscode.Disposable {
     return answer === discard
   }
 
-  /** The panel of `key`, created with `initial` when it does not exist (or was closed). */
-  open(key: string, initial: ResultsState): ResultsPanel {
+  /**
+   * The panel of `key`, created with `initial` when it does not exist (or was closed).
+   * `exportTable`: «Ver datos» panels, the table «Resultado completo» reads whole.
+   */
+  open(key: string, initial: ResultsState, exportTable: ExportTable | null = null): ResultsPanel {
     const existing = this.panels.get(key)
     if (existing && !existing.isDisposed) {
+      existing.exportTable = exportTable
       existing.update(initial)
       existing.reveal()
       return existing
     }
     const panel = new ResultsPanel(key, initial, this.deps, () => this.panels.delete(key))
+    panel.exportTable = exportTable
     this.panels.set(key, panel)
     return panel
   }

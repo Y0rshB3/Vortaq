@@ -20,6 +20,9 @@ describe('core boundary (src/core/index.ts bundled for Node)', () => {
       'src/main/sqlite/nodeSpawner.ts',
       'src/main/mongo/driver.ts',
       'src/main/backup/archive.ts',
+      'src/main/ipc/export.ts',
+      'src/main/export/service.ts',
+      'src/main/export/sources.ts',
       'src/main/credentials/keyCodec.ts',
       'src/shared/dialects/index.ts',
       'src/shared/typedConfirm.ts'
