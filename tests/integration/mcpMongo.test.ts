@@ -248,6 +248,39 @@ describeServer(MONGO_TARGET, 'MCP server', (url) => {
     ).toEqual(expect.arrayContaining(['people', 'slow']))
   })
 
+  it('explain and stats answers lose the server host; server stages and system databases are refused', async () => {
+    const explained = await h.ok('run_query', {
+      connection: 'Lectura',
+      database: DB,
+      sql: "db.people.find({ name: 'Luis' }).explain()"
+    })
+    const plan = JSON.stringify(explained.statements[0].value)
+    expect(plan).toMatch(/queryPlanner/)
+    expect(plan).not.toMatch(/serverInfo|"host"|57017/)
+    const stats = await h.ok('run_query', {
+      connection: 'Lectura',
+      database: DB,
+      sql: 'db.people.stats()'
+    })
+    expect(JSON.stringify(stats.statements[0].value)).not.toMatch(/"host"|57017/)
+    for (const sql of [
+      'db.people.aggregate([{ $indexStats: {} }])',
+      'db.people.aggregate([{ $collStats: { count: {} } }])',
+      "db.people.aggregate([{ $lookup: { from: 'x', pipeline: [{ $collStats: {} }], as: 'y' } }])"
+    ])
+      expect(await h.refused('run_query', { connection: 'Lectura', database: DB, sql })).toMatch(
+        /no están disponibles para agentes/
+      )
+    for (const [database, sql] of [
+      ['admin', 'db.system.users.find()'],
+      [DB, 'use local\ndb.startup_log.find()'],
+      ['config', 'db.getCollectionNames()']
+    ])
+      expect(await h.refused('run_query', { connection: 'Lectura', database, sql })).toMatch(
+        /bases de datos de sistema/
+      )
+  })
+
   it('a timeout kills the operation on the server (killOp)', async () => {
     const started = Date.now()
     expect(

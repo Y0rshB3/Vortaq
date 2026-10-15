@@ -175,7 +175,10 @@ describeServer(POSTGRES_TARGET, 'MCP server', (url) => {
     for (const sql of [
       'DELETE FROM pedidos',
       'SELECT 1; SELECT 2',
-      'SELECT * FROM pedidos FOR UPDATE'
+      'SELECT * FROM pedidos FOR UPDATE',
+      // SQL inside a string, run by the function: refused before anything runs.
+      "SELECT query_to_xml('select pg_terminate_backend(pg_backend_pid())', true, false, '')",
+      "SELECT pg_notify('canal', 'x')"
     ])
       expect(await h.refused('run_query', { connection: 'Lectura', schema: SCHEMA, sql })).toMatch(
         /run_query/

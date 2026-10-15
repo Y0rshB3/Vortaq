@@ -241,6 +241,20 @@ function suite(url: string, engine: 'mysql' | 'mariadb'): void {
     expect(failing.statements[0].error).toMatch(/foreign key/i)
   })
 
+  it('a timeout stops an execute_sql script: the rest never runs', async () => {
+    const before = await count('pedidos')
+    // KILL QUERY makes SLEEP return early without an error: the next statement must not start.
+    const r = await h.ok('execute_sql', {
+      connection: 'Escritura',
+      database: DB,
+      sql: 'SELECT SLEEP(5); INSERT INTO pedidos VALUES (77, 1, 1.00)',
+      timeout_seconds: 1
+    })
+    expect(r.timed_out).toBe(true)
+    expect(r.statements.at(-1).error ?? '').toMatch(/tiempo límite|interrupted/i)
+    expect(await count('pedidos')).toBe(before)
+  })
+
   it('explain_query returns the plan without running the statement', async () => {
     const r = await h.ok('explain_query', {
       connection: 'Lectura',

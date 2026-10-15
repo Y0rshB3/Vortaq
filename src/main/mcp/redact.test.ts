@@ -117,3 +117,33 @@ describe('MCP redactor', () => {
     )
   })
 })
+
+describe('MCP data scrubber (successful answers)', () => {
+  it('removes secrets, non-loopback hosts and full paths, and keeps users, URIs and loopback hosts', async () => {
+    const { dataScrubberFor } = await import('./redact')
+    const scrub = dataScrubberFor(
+      {
+        ...({} as ConnectionConfig),
+        host: 'db-ventas.interno.example',
+        username: 'app_rw',
+        ssh: { enabled: true, host: 'bastion.example.org' } as ConnectionConfig['ssh'],
+        sqlite: { filePath: '/Users/ana/datos/tienda.db', attached: [] } as never
+      },
+      ['S3cr3t-pass']
+    )
+    expect(scrub('db-ventas.interno.example')).toBe('[host]')
+    expect(scrub('via bastion.example.org')).toBe('via [host]')
+    expect(scrub('/Users/ana/datos/tienda.db')).toBe('[ruta]')
+    expect(scrub('the password is S3cr3t-pass')).toBe('the password is [secreto]')
+    // Ordinary data stays as it is.
+    expect(scrub('app_rw')).toBe('app_rw')
+    expect(scrub('https://example.com/x')).toBe('https://example.com/x')
+    expect(scrub('tienda.db')).toBe('tienda.db')
+    const local = dataScrubberFor({
+      ...({} as ConnectionConfig),
+      host: 'localhost',
+      username: 'root'
+    })
+    expect(local('smtp on localhost for root')).toBe('smtp on localhost for root')
+  })
+})

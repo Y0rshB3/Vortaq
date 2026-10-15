@@ -73,12 +73,43 @@ export function mcpCell(value: CellValue, column: ColumnTypeInfo, storage?: Stor
 }
 
 /** Strings cut inside a parsed document (MongoDB canonical Extended JSON). */
-export function cutStrings(value: unknown, depth = 0): unknown {
-  if (typeof value === 'string') return cutText(value)
+export function cutStrings(
+  value: unknown,
+  scrub: (text: string) => string = (t) => t,
+  depth = 0
+): unknown {
+  if (typeof value === 'string') return cutText(scrub(value))
   if (value === null || typeof value !== 'object' || depth > 100) return value
-  if (Array.isArray(value)) return value.map((v) => cutStrings(v, depth + 1))
+  if (Array.isArray(value)) return value.map((v) => cutStrings(v, scrub, depth + 1))
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, cutStrings(v, depth + 1)])
+    Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+      k,
+      cutStrings(v, scrub, depth + 1)
+    ])
+  )
+}
+
+/** A copy with `fn` applied to every string value (object keys stay as they are). */
+export function mapStrings(value: unknown, fn: (text: string) => string, depth = 0): unknown {
+  if (typeof value === 'string') return fn(value)
+  if (value === null || typeof value !== 'object' || depth > 100) return value
+  if (Array.isArray(value)) return value.map((v) => mapStrings(v, fn, depth + 1))
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+      k,
+      mapStrings(v, fn, depth + 1)
+    ])
+  )
+}
+
+/** A copy without the keys `drop` names, at any depth (server facts in explain/stats output). */
+export function withoutKeys(value: unknown, drop: ReadonlySet<string>, depth = 0): unknown {
+  if (value === null || typeof value !== 'object' || depth > 100) return value
+  if (Array.isArray(value)) return value.map((v) => withoutKeys(v, drop, depth + 1))
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([k]) => !drop.has(k))
+      .map(([k, v]) => [k, withoutKeys(v, drop, depth + 1)])
   )
 }
 
@@ -128,7 +159,11 @@ export function tableOut(
   columns: (ColumnTypeInfo & { name: string })[],
   rows: CellValue[][],
   limit: number,
-  options: { storage?: StorageClass[][]; moreRows?: boolean; budget?: ResponseBudget } = {}
+  options: {
+    storage?: StorageClass[][]
+    moreRows?: boolean
+    budget?: ResponseBudget
+  } = {}
 ): TableOut {
   const budget = options.budget ?? new ResponseBudget()
   const out: unknown[][] = []

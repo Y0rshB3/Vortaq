@@ -1284,11 +1284,12 @@ de IA (lo que el agente ve, lo ve el modelo que use). «Solo estructura» no env
 MongoDB, ni documentos, ni valores de `enum`/`pattern` del validador, ni las etapas de las vistas, ni los filtros
 de los índices parciales: solo nombres, claves de índices y rutas de campos con su tipo BSON). Vortaq nunca le
 envía al agente la contraseña, el host, el puerto, el usuario, el túnel SSH ni la ruta del archivo de la conexión:
-tampoco en los errores, de los que se borran antes de devolverlos (y en MongoDB rechaza `rs.status()`,
-`db.serverStatus()` y `db.currentOp()`, que describen el servidor). Aun así, en los niveles con lectura el agente
-puede consultar todo lo que el usuario de la base de datos puede leer, también funciones del servidor como el
-usuario actual o el nombre del host: elige «Solo estructura» si eso importa. El asistente de IA integrado no
-cambia: sigue enviando solo la estructura.
+los borra de los errores y quita la contraseña, el host (salvo `localhost`) y las rutas también de las respuestas
+(filas, documentos, planes de ejecución). En MongoDB rechaza además `rs.status()`, `db.serverStatus()`,
+`db.currentOp()`, las etapas que describen el servidor (`$collStats`, `$indexStats`, `$currentOp`…) y las bases de
+datos de sistema (`admin`, `local`, `config`). Aun así, en los niveles con lectura el agente puede consultar todo
+lo que el usuario de la base de datos puede leer, también funciones del servidor como el usuario actual: elige
+«Solo estructura» si eso importa. El asistente de IA integrado no cambia: sigue enviando solo la estructura.
 
 ### Configurar el cliente
 
@@ -1369,6 +1370,8 @@ sandbox», añade `"--no-sandbox"` a `args`. Desde la carpeta del código el com
 - `timeout_seconds`: 30 por defecto, 120 como máximo; al superarlo la consulta **se cancela en el servidor**
   (`KILL QUERY`, `pg_cancel_backend`, `killOp` o el proceso de SQLite).
 - Los textos largos se recortan a 2.000 caracteres (con una marca) y cada respuesta a unos 200 KB.
+- En SQLite, `execute_sql` rechaza `ATTACH`, `DETACH` y `VACUUM`: abrirían, copiarían o escribirían otros
+  archivos (las bases de datos adjuntas se configuran en la conexión).
 - Valores en JSON: enteros grandes y decimales como texto exacto, binarios como `{"type":"binary","hex":…}`,
   documentos de MongoDB en Extended JSON canónico.
 - Cada llamada deja una línea en `logs/mcp.log` del perfil (hora, herramienta, conexión, nivel, resultado,

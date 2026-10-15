@@ -222,7 +222,15 @@ const SIDE_EFFECT_FUNCTIONS = new Set([
   'pg_backup_stop',
   'pg_wal_replay_pause',
   'pg_wal_replay_resume',
-  'pg_log_backend_memory_contexts'
+  'pg_log_backend_memory_contexts',
+  // Run the SQL text they receive (a side effect inside the string is invisible here).
+  'query_to_xml',
+  'query_to_xmlschema',
+  'query_to_xml_and_xmlschema',
+  'cursor_to_xml',
+  'cursor_to_xmlschema',
+  // Wakes the session's listeners (and their jobs), also in a read-only transaction.
+  'pg_notify'
 ])
 
 const SIDE_EFFECT_PREFIXES = [

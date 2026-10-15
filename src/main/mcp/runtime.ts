@@ -21,7 +21,7 @@ import { typedConfirmEnvironments } from '../ipc/productionGuard'
 import { HandlerRegistry } from '../ipc/router'
 import { MAX_OPEN_SQLITE } from '../sqlite/driver'
 import { MCP_DISABLED, McpToolError, unknownConnection } from './access'
-import { redactorFor, type Redactor } from './redact'
+import { dataScrubberFor, redactorFor, type Redactor } from './redact'
 
 /** What list_connections shows of a connection: never host, port, user, path or databases. */
 export interface McpConnectionView {
@@ -41,6 +41,8 @@ export interface ResolvedConnection {
   /** Level saved in the connection. */
   requested: McpAccess
   redact: Redactor
+  /** For successful answers: secrets, non-loopback hosts and file paths only (redact.ts). */
+  scrub: Redactor
 }
 
 export interface McpRuntimeOptions {
@@ -130,11 +132,22 @@ export class McpRuntime {
     if (!config) throw new McpToolError(unknownConnection(wanted))
     const access = effectiveMcpAccess(config, environments) as McpAccess
     const requested = normalizeMcpConfig(config.mcp)?.access ?? access
-    return { config, access, requested, redact: this.redactorOf(config) }
+    const secrets = this.secretsOf(config)
+    return {
+      config,
+      access,
+      requested,
+      redact: redactorFor(config, secrets),
+      scrub: dataScrubberFor(config, secrets)
+    }
   }
 
   /** Redactor with the connection's settings and secrets (decrypted in memory only). */
   redactorOf(config: ConnectionConfig): Redactor {
+    return redactorFor(config, this.secretsOf(config))
+  }
+
+  private secretsOf(config: ConnectionConfig): string[] {
     const secrets: string[] = []
     for (const kind of SECRET_KINDS_TO_REDACT) {
       try {
@@ -144,7 +157,7 @@ export class McpRuntime {
         /* a secret that cannot be decrypted here cannot be echoed either */
       }
     }
-    return redactorFor(config, secrets)
+    return secrets
   }
 
   /**

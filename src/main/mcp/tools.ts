@@ -23,7 +23,8 @@ import {
   checkExportStatement,
   EXPORT_NOT_A_QUERY,
   EXPORT_ONE_STATEMENT,
-  EXPORT_SESSION_VARIABLES
+  EXPORT_SESSION_VARIABLES,
+  leadingWord
 } from '@shared/export/statement'
 import { analyzeMongoWrites, isObviousMongoWrite } from '@shared/mongo/classify'
 import type {
@@ -44,10 +45,12 @@ import { openRowSource, type RowSource } from '../export/sources'
 import { CANCELLED_EXPORT } from '../export/writer'
 import { assertScriptAllowed } from '../ipc/productionGuard'
 import { isMongoConnection } from '../mongo/connection'
-import { prepareMongoScript } from '../mongo/run'
+import { prepareMongoScript, type PreparedStatement } from '../mongo/run'
 import { MongoInputError, numberOf } from '../mongo/values'
 import { isMariaDbSession } from '../mysql/mariadb'
-import { executeScript as executeMysqlScript } from '../mysql/query'
+import { executeScript } from '../db/query'
+import { describeError as describeMysqlError } from '../mysql/errors'
+import { toStatementResult } from '../mysql/query'
 import type { PooledSession } from '../mysql/session'
 import { composeSearchPath, formatSearchPath } from '../postgres/client'
 import { isPgConnection } from '../postgres/connection'
@@ -57,6 +60,7 @@ import type { McpConnectionView, McpRuntime, ResolvedConnection } from './runtim
 import {
   cutStrings,
   cutText,
+  withoutKeys,
   MCP_LIMITS,
   MORE_ROWS_NOTE,
   resolveRowLimit,
@@ -600,20 +604,75 @@ const MONGO_SERVER_COMMANDS = new Set(['serverStatus', 'currentOp'])
 export const MONGO_SERVER_REFUSED =
   'rs.status(), db.serverStatus() y db.currentOp() no están disponibles para agentes: describen el servidor (hosts, clientes, operaciones de otras sesiones), no los datos.'
 
-/** Refuses the deployment commands (MONGO_SERVER_COMMANDS, rs.*) before anything runs. */
-function assertNoServerCommands(script: string): void {
-  let prepared
+/** Aggregation stages that describe the deployment (hosts, sessions, other clients) instead of data. */
+const MONGO_SERVER_STAGES = new Set([
+  '$collStats',
+  '$indexStats',
+  '$planCacheStats',
+  '$currentOp',
+  '$listSessions',
+  '$listLocalSessions',
+  '$shardedDataDistribution'
+])
+export const MONGO_STAGE_REFUSED =
+  'Las etapas $collStats, $indexStats, $planCacheStats, $currentOp y $listSessions no están disponibles para agentes: describen el servidor, no los datos. Usa getIndexes() o countDocuments().'
+export const MONGO_SYSTEM_REFUSED =
+  'Las bases de datos de sistema (admin, local, config) no están disponibles para agentes: guardan usuarios, la configuración del servidor y sus miembros.'
+
+/** Keys of explain/stats answers that name the server (host, port, connection string). */
+const SERVER_INFO_KEYS: ReadonlySet<string> = new Set(['serverInfo', 'host', 'connectionString'])
+
+function hasStage(value: unknown, depth = 0): boolean {
+  if (depth > 200) return true // fail closed
+  if (value === null || typeof value !== 'object' || ArrayBuffer.isView(value)) return false
+  if (Array.isArray(value)) return value.some((v) => hasStage(v, depth + 1))
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (MONGO_SERVER_STAGES.has(key)) return true
+    if (hasStage(v, depth + 1)) return true
+  }
+  return false
+}
+
+/** Parses a script (every argument) without running anything; input errors are refusals. */
+function prepareForAgent(script: string): PreparedStatement[] {
   try {
-    prepared = prepareMongoScript(script)
+    return prepareMongoScript(script)
   } catch (err) {
     if (err instanceof MongoInputError) throw new McpToolError(err.message)
     throw err
   }
+}
+
+/**
+ * Refuses, before anything runs, what describes the deployment rather than
+ * the data: rs.*, serverStatus/currentOp, server stages, and the system
+ * databases (users, replica set members, cluster configuration).
+ */
+function assertAgentScript(prepared: PreparedStatement[], startDatabase: string): void {
+  let current = startDatabase
   for (const p of prepared) {
     const s = p.statement
     if (s.type === 'rs' || (s.type === 'db' && MONGO_SERVER_COMMANDS.has(s.method)))
       throw new McpToolError(MONGO_SERVER_REFUSED)
+    if (s.type === 'use') current = s.database
+    const database = ('database' in s && s.database ? s.database : current) ?? current
+    if (s.type !== 'show' && MONGO_SYSTEM_DATABASES.has(database))
+      throw new McpToolError(MONGO_SYSTEM_REFUSED)
+    if (
+      s.type === 'collection' &&
+      (p.args.some(hasStage) || p.chain.some((c) => c.args.some(hasStage)))
+    )
+      throw new McpToolError(MONGO_STAGE_REFUSED)
   }
+}
+
+/** Statements whose answer describes the server (explain, stats): server keys are dropped. */
+function answersWithServerInfo(prepared: PreparedStatement[]): boolean[] {
+  return prepared.map(
+    (p) =>
+      p.statement.type === 'collection' &&
+      (p.statement.method === 'stats' || p.statement.explain !== null || p.explain !== undefined)
+  )
 }
 
 /** MongoDB: every statement must provably read (parsed, before anything runs). */
@@ -625,13 +684,7 @@ function assertMongoReads(script: string, canWrite: boolean): void {
     throw new McpToolError(
       `run_query solo ejecuta órdenes de lectura (find, aggregate sin $out/$merge, countDocuments, distinct, getIndexes…): ${analysis.reasons.join('; ') || 'la orden modifica datos'}.${write}`
     )
-  let prepared
-  try {
-    prepared = prepareMongoScript(script)
-  } catch (err) {
-    if (err instanceof MongoInputError) throw new McpToolError(err.message)
-    throw err
-  }
+  const prepared = prepareForAgent(script)
   if (prepared.some((p) => p.writes))
     throw new McpToolError(
       `run_query solo ejecuta órdenes de lectura: el script modifica datos.${write}`
@@ -650,11 +703,13 @@ function parseEjson(text: string): unknown {
 function mongoResultsOut(
   results: MongoCommandResult[],
   c: ResolvedConnection,
-  limit: number
+  limit: number,
+  /** Per statement (same order): its answer describes the server (explain, stats). */
+  serverInfo: boolean[] = []
 ): { statements: Record<string, unknown>[]; rows: number } {
   const budget = new ResponseBudget()
   let rows = 0
-  const statements = results.map((r) => {
+  const statements = results.map((r, i) => {
     const base: Record<string, unknown> = {
       statement: cutText(r.statement, 300),
       ...(r.database ? { database: r.database } : {}),
@@ -669,7 +724,7 @@ function mongoResultsOut(
         parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'v' in parsed
           ? (parsed as { v: unknown }).v
           : parsed
-      const cut = cutStrings(value)
+      const cut = cutStrings(serverInfo[i] ? withoutKeys(value, SERVER_INFO_KEYS) : value)
       return budget.take(cut)
         ? { ...base, value: cut }
         : { ...base, value: null, notes: [SIZE_NOTE] }
@@ -715,7 +770,8 @@ async function runMongo(
   if (!script.trim())
     throw new McpToolError('Falta la orden («sql»), con la sintaxis del shell de MongoDB.')
   if (!writes) assertMongoReads(script, c.access === 'write')
-  assertNoServerCommands(script)
+  const prepared = prepareForAgent(script)
+  assertAgentScript(prepared, mongoDatabase(c, args.database))
   const limit = resolveRowLimit(args.max_rows)
   const timeout = resolveTimeoutMs(args.timeout_seconds)
   const executionId = randomUUID()
@@ -740,7 +796,7 @@ async function runMongo(
   } finally {
     await closeMongoCursors(rt, id, results)
   }
-  const out = mongoResultsOut(results, c, limit)
+  const out = mongoResultsOut(results, c, limit, answersWithServerInfo(prepared))
   return { data: { statements: out.statements, max_rows: limit }, rows: out.rows }
 }
 
@@ -899,6 +955,19 @@ function statementOut(
   }
 }
 
+const SCRIPT_STOPPED = 'No se ejecutó: el script superó el tiempo límite.'
+
+/** SQLite statements an agent never runs, also at the write level: they reach other files. */
+const SQLITE_FILE_STATEMENTS = new Set(['ATTACH', 'DETACH', 'VACUUM'])
+export const SQLITE_FILE_REFUSED =
+  'ATTACH, DETACH y VACUUM no están disponibles para agentes: abren, copian o escriben otros archivos. Las bases de datos adjuntas se configuran en Vortaq (editar la conexión).'
+
+function assertNoSqliteFileStatements(sql: string): void {
+  for (const statement of getDialect('sqlite').splitStatements(sql))
+    if (SQLITE_FILE_STATEMENTS.has(leadingWord('sqlite', statement.sql)))
+      throw new McpToolError(SQLITE_FILE_REFUSED)
+}
+
 export async function executeSql(
   rt: McpRuntime,
   c: ResolvedConnection,
@@ -907,6 +976,7 @@ export async function executeSql(
   if (c.config.engine === 'mongodb') return runMongo(rt, c, args, true)
   const sql = typeof args.sql === 'string' ? args.sql : ''
   if (!sql.trim()) throw new McpToolError('Falta el SQL («sql»).')
+  if (c.config.engine === 'sqlite') assertNoSqliteFileStatements(sql)
   const limit = resolveRowLimit(args.max_rows)
   const timeout = resolveTimeoutMs(args.timeout_seconds)
   const id = c.config.id
@@ -924,17 +994,32 @@ export async function executeSql(
         const dialect =
           c.config.engine === 'mariadb' || isMariaDbSession(session) ? mariadbDialect : mysqlDialect
         const threadId = session.threadId
+        // KILL QUERY stops the statement running at that moment; `stopped` keeps the loop
+        // from starting the next one (a kill between two statements would be lost).
+        let stopped = false
         const run = await withTimeout(
           timeout,
           () =>
-            executeMysqlScript(
-              session,
+            executeScript(
+              {
+                useSchema: (schema) => session.useSchema(schema),
+                runStatement: (statement, maxRows) => {
+                  if (stopped) throw new McpToolError(SCRIPT_STOPPED, 'timeout')
+                  return session.runStatement(statement, maxRows)
+                },
+                toResult: toStatementResult,
+                describeError: (err) =>
+                  err instanceof McpToolError ? err.message : describeMysqlError(err)
+              },
+              dialect,
               sql,
               { schema: args.database?.trim() || null, maxRows: limit, stopOnError: true },
-              limit,
-              dialect
+              limit
             ),
-          () => killMysqlQuery(rt, id, threadId)
+          () => {
+            stopped = true
+            return killMysqlQuery(rt, id, threadId)
+          }
         )
         results = run.value
         timedOut = run.timedOut

@@ -12,7 +12,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { MCP_LIMITS } from './values'
+import { MCP_LIMITS, mapStrings } from './values'
 import { getLogger } from '../log'
 import { McpToolError, requireLevel, type McpOutcome, type McpToolName } from './access'
 import { redactGeneric } from './redact'
@@ -130,8 +130,14 @@ export function createMcpServer(rt: McpRuntime, options: McpServerOptions): McpS
       }
       const out = await run(resolved)
       rows = out.rows ?? null
+      // Secrets, non-loopback hosts and file paths of the connection never leave, not even
+      // inside rows or server answers (SELECT @@hostname, PRAGMA database_list, explain…).
       const data = resolved
-        ? { connection: resolved.config.name, engine: resolved.config.engine, ...out.data }
+        ? {
+            connection: resolved.config.name,
+            engine: resolved.config.engine,
+            ...(mapStrings(out.data, resolved.scrub) as Record<string, unknown>)
+          }
         : out.data
       return { content: [{ type: 'text', text: JSON.stringify(data) }] }
     } catch (err) {

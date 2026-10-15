@@ -43,7 +43,7 @@ function termPattern(term: Term): RegExp {
  * A path, its folder (it also reveals the user) and its file name (drivers
  * often quote just the name: "Archivo no encontrado: datos.db").
  */
-function pathVariants(path: string): string[] {
+function pathVariants(path: string, withName = true): string[] {
   const out = new Set<string>()
   const clean = path.trim()
   if (!clean) return []
@@ -52,7 +52,7 @@ function pathVariants(path: string): string[] {
   const dir = clean.replace(/[\\/][^\\/]*$/, '')
   if (dir && dir !== clean && dir.length > 1) out.add(dir)
   const file = clean.split(/[\\/]/).pop() ?? ''
-  if (file && file !== clean && file.length >= 3) out.add(file)
+  if (withName && file && file !== clean && file.length >= 3) out.add(file)
   return [...out]
 }
 
@@ -80,6 +80,39 @@ function termsOf(config: ConnectionConfig | null, secrets: readonly string[]): T
       for (const p of pathVariants(a.filePath)) add(p, PATH)
   }
   // Longest first: a path is replaced before the folder it contains.
+  return terms.sort((a, b) => b.value.length - a.value.length)
+}
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0'])
+
+/**
+ * What is removed from successful answers (rows, documents, values): the
+ * connection's secrets, its non-loopback hosts (also the SSH host and MongoDB
+ * members) and full file paths. Narrower than the error redactor on purpose:
+ * user names, URIs, IPs, loopback hosts and file names stay, because they are
+ * ordinary data in many tables and replacing them would change query results.
+ */
+function dataTermsOf(config: ConnectionConfig | null, secrets: readonly string[]): Term[] {
+  const terms: Term[] = []
+  const add = (value: string | undefined | null, replacement: string): void => {
+    const v = value?.trim()
+    if (v && v.length >= 3 && !LOOPBACK.has(v.toLowerCase())) terms.push({ value: v, replacement })
+  }
+  for (const s of secrets) add(s, SECRET)
+  if (config) {
+    add(config.host, HOST)
+    if (config.ssh?.enabled) add(config.ssh.host, HOST)
+    for (const m of config.mongo?.members ?? []) add(m.host, HOST)
+    const paths = [
+      config.sqlite?.filePath,
+      ...(config.sqlite?.attached ?? []).map((a) => a.filePath),
+      config.ssh?.privateKeyPath,
+      config.ssl?.caCertPath,
+      config.ssl?.clientCertPath,
+      config.ssl?.clientKeyPath
+    ]
+    for (const p of paths) for (const v of pathVariants(p ?? '', false)) add(v, PATH)
+  }
   return terms.sort((a, b) => b.value.length - a.value.length)
 }
 
@@ -145,6 +178,23 @@ export function redactorFor(
         .replace(new RegExp(`(\\[host\\]|\\[ip\\]|localhost):${p}(?!\\d)`, 'gi'), `$1:${PORT}`)
         .replace(new RegExp(`\\b(port|puerto)(\\s*[:=]?\\s*)${p}(?!\\d)`, 'gi'), `$1$2${PORT}`)
     }
+    return text
+  }
+}
+
+/**
+ * The scrubber of successful answers of one connection (see dataTermsOf):
+ * identity when there is nothing to remove.
+ */
+export function dataScrubberFor(
+  config: ConnectionConfig | null,
+  secrets: readonly string[] = []
+): Redactor {
+  const terms = dataTermsOf(config, secrets).map((t) => [termPattern(t), t.replacement] as const)
+  if (!terms.length) return (text) => text
+  return (input: string): string => {
+    let text = input
+    for (const [pattern, replacement] of terms) text = text.replace(pattern, replacement)
     return text
   }
 }

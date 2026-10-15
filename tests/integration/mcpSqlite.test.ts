@@ -156,6 +156,23 @@ describe('MCP server [SQLite, worker processes]', () => {
     ).toEqual([[3]])
   })
 
+  it('never reaches other files: ATTACH/VACUUM refused, file paths removed from answers', async () => {
+    for (const sql of [
+      `ATTACH '${join(files, 'aux.db')}' AS otro`,
+      `VACUUM INTO '${join(files, 'copia.db')}'`,
+      'SELECT 1; DETACH aux'
+    ])
+      expect(await h.refused('execute_sql', { connection: 'Escritura', sql })).toMatch(
+        /ATTACH, DETACH y VACUUM no están disponibles/
+      )
+    expect(existsSync(join(files, 'copia.db'))).toBe(false)
+    const list = await h.ok('run_query', { connection: 'Tienda', sql: 'PRAGMA database_list' })
+    const text = JSON.stringify(list)
+    expect(text).not.toContain(files)
+    expect(list.rows.map((r: unknown[]) => r[1])).toEqual(['main', 'aux'])
+    expect(text).toContain('[ruta]')
+  })
+
   it('a missing file is reported without its path or name', async () => {
     const message = await h.refused('list_tables', { connection: 'Perdida' })
     expect(message).toMatch(/no encontrado|not found|no existe/i)

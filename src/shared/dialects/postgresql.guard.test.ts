@@ -177,10 +177,14 @@ describe('PostgreSQL production guard corpus', () => {
       'lo_import',
       'pg_ls_dir',
       'pg_stat_reset_shared',
-      'dblink_exec'
+      'dblink_exec',
+      'query_to_xml',
+      'query_to_xml_and_xmlschema',
+      'cursor_to_xml',
+      'pg_notify'
     ])
       expect(isSideEffectFunction(fn), fn).toBe(true)
-    for (const fn of ['now', 'txid_current', 'pg_backend_pid', 'lower'])
+    for (const fn of ['now', 'txid_current', 'pg_backend_pid', 'lower', 'table_to_xml'])
       expect(isSideEffectFunction(fn), fn).toBe(false)
   })
 })
