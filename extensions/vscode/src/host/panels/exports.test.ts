@@ -151,8 +151,10 @@ describe('results panel exports: scope', () => {
     expect(h.exports.check('export:rows', [rows])).toBeNull()
     await h.exports.invoke('export:rows', [rows])
     expect(h.invoke).toHaveBeenCalledWith('export:rows', [rows])
-    // Used: a second write needs a new choice.
+    // Used: a second write needs a new choice, also when both passed the bridge's check.
     expect(h.exports.check('export:rows', [rows])).toBe(PICK_FIRST)
+    await expect(h.exports.invoke('export:rows', [rows])).rejects.toThrow(PICK_FIRST)
+    expect(h.invoke).toHaveBeenCalledTimes(1)
   })
 
   it('exports only its own connection and cancels only its own exports', async () => {

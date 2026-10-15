@@ -171,8 +171,10 @@ export class PanelExports {
     return null
   }
 
-  /** Runs an export:* call the scope check allowed. */
+  /** Runs an export:* call the scope check allowed (checked again: the guard step is async). */
   async invoke(channel: string, args: unknown[]): Promise<unknown> {
+    const refused = this.check(channel, args)
+    if (refused) throw new Error(refused)
     if (channel === 'export:rows') return this.rows(args[0] as ExportRowsRequest)
     if (channel === 'export:query')
       return this.query(args[0] as string, args[1] as ExportQueryRequest)
@@ -180,6 +182,7 @@ export class PanelExports {
     throw new Error('Esta vista no puede usar esa operación.')
   }
 
+  /** The chosen file is used: two calls cannot both write it. */
   private use(filePath: string): void {
     this.picked.delete(filePath)
     this.deps.operations.lastFolder = dirname(filePath)
