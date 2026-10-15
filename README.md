@@ -1745,6 +1745,7 @@ el registro es más detallado y se copia también en la terminal.
 | `npm run lint`                      | ESLint                                                                                                |
 | `npm run format`                    | Prettier                                                                                              |
 | `npm run build`                     | Compila a `out/`                                                                                      |
+| `npm run test:mcp-e2e`              | Tras `npm run build`: `Vortaq --mcp` con un perfil desechable (`--with-app`: con la app abierta)      |
 | `npm run dist[:mac/:win/:linux]`    | Instaladores en `release/`                                                                            |
 | `npm run screenshots`               | Capturas de todas las pantallas con un perfil y un MySQL desechables                                  |
 

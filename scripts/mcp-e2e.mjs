@@ -14,12 +14,22 @@
  *  2. a raw spawn checks every stdout byte is JSON-RPC and that the process
  *     exits by itself (code 0) once stdin closes;
  *  3. the profile files are unchanged and logs/mcp.log has one activity line
- *     per call, without SQL text.
+ *     per call, without SQL text;
+ *  4. with --with-app, the desktop app runs on the same profile meanwhile and a
+ *     level saved during the session applies on the next call.
  * Exit code 0 when everything passed.
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -267,6 +277,66 @@ function rawSession(profile) {
   })
 }
 
+/**
+ * `--with-app`: the desktop app runs on the same profile (it opens a window)
+ * while an agent uses `--mcp`; a level saved meanwhile applies on the next call.
+ */
+async function withDesktopApp(profile) {
+  const desktop = spawn(ELECTRON, [ROOT], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      VORTAQ_USER_DATA: profile,
+      VORTAQ_PLAIN_SECRETS: '1',
+      ELECTRON_RUN_AS_NODE: ''
+    },
+    stdio: 'ignore'
+  })
+  await new Promise((r) => setTimeout(r, 5000))
+  check('the desktop app is running on the profile', desktop.exitCode === null)
+  const transport = new StdioClientTransport({
+    command: ELECTRON,
+    args: [ROOT, '--mcp'],
+    env: serverEnv(profile),
+    stderr: 'pipe',
+    cwd: ROOT
+  })
+  const client = new Client({ name: 'vortaq-e2e-with-app', version: '1.0.0' })
+  try {
+    await client.connect(transport)
+    const first = await client.callTool({
+      name: 'run_query',
+      arguments: { connection: 'Tienda E2E', sql: 'SELECT COUNT(*) AS n FROM clientes' }
+    })
+    check(
+      'run_query works while the desktop app is open',
+      !first.isError && JSON.parse(first.content[0].text).rows?.[0]?.[0] === 2,
+      first.content?.[0]?.text
+    )
+    // The app saves «Solo estructura» for the connection (atomic replace, like JsonStore).
+    const file = join(profile, 'connections.json')
+    const doc = JSON.parse(readFileSync(file, 'utf8'))
+    doc.items[0].mcp = { enabled: true, access: 'structure' }
+    doc.items[0].updatedAt = new Date().toISOString()
+    writeFileSync(`${file}.e2e.tmp`, JSON.stringify(doc, null, 2))
+    renameSync(`${file}.e2e.tmp`, file)
+    const second = await client.callTool({
+      name: 'run_query',
+      arguments: { connection: 'Tienda E2E', sql: 'SELECT 1' }
+    })
+    check(
+      'a level saved while running applies on the next call',
+      second.isError === true && /Solo estructura/.test(second.content?.[0]?.text ?? ''),
+      second.content?.[0]?.text
+    )
+  } finally {
+    await client.close().catch(() => undefined)
+    check('the desktop app kept running', desktop.exitCode === null)
+    desktop.kill('SIGTERM')
+    await new Promise((r) => desktop.once('exit', r))
+  }
+}
+
 async function main() {
   if (!existsSync(join(ROOT, 'out', 'main', 'index.js'))) {
     console.error('Run `npm run build` first (out/main/index.js is missing).')
@@ -321,9 +391,10 @@ async function main() {
     check('the log has no SQL text or values', !/SELECT|DELETE|Ana|Luis/.test(log))
     check('stderr carries no SQL text', !/SELECT|DELETE FROM/.test(sdk.stderr + raw.err))
     check(
-      'the real profile was not used',
+      "Chromium's own data stayed out of the profile",
       !existsSync(join(profile, 'Local Storage')) && !existsSync(join(profile, 'Local State'))
     )
+    if (process.argv.includes('--with-app')) await withDesktopApp(profile)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
