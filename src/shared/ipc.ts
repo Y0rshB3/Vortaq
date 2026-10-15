@@ -10,6 +10,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   ConnectionInput,
+  ConnectionMcpConfig,
   ConnectionTestResult,
   DataTypeInfo,
   DatabaseInfo,
@@ -184,6 +185,16 @@ export interface IpcInvokeMap {
   'connections:get': { args: [id: string]; result: ConnectionConfig | null }
   'connections:save': { args: [input: ConnectionInput]; result: ConnectionConfig }
   'connections:delete': { args: [id: string]; result: void }
+  /**
+   * Ajustes › Agentes (MCP): changes only the connection's agents setting
+   * (`mcp` and `updatedAt`); the rest of the record and its passwords stay as
+   * they are. Refuses «Lectura y escritura» where the environment needs the
+   * typed confirmation.
+   */
+  'connections:setMcp': {
+    args: [id: string, mcp: ConnectionMcpConfig]
+    result: ConnectionConfig
+  }
   'connections:test': {
     args: [input: ConnectionInput, password: string | null, sshPassword: string | null]
     result: ConnectionTestResult
@@ -732,6 +743,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'connections:get',
   'connections:save',
   'connections:delete',
+  'connections:setMcp',
   'connections:test',
   'connections:setPassword',
   'connections:hasPassword',

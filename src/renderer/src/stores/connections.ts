@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type {
   ConnectionConfig,
   ConnectionInput,
+  ConnectionMcpConfig,
   ConnectionTestResult,
   ServerInfo
 } from '@shared/types'
@@ -114,6 +115,14 @@ export const useConnectionsStore = defineStore('connections', () => {
     return saved
   }
 
+  /** Ajustes › Agentes (MCP): saves only the connection's agents setting. */
+  async function setMcp(id: string, mcp: ConnectionMcpConfig): Promise<ConnectionConfig> {
+    const saved = await api.connections.setMcp(id, mcp)
+    const idx = items.value.findIndex((c) => c.id === saved.id)
+    if (idx >= 0) items.value.splice(idx, 1, saved)
+    return saved
+  }
+
   async function remove(id: string): Promise<void> {
     if (isOpen(id)) await api.connections.close(id).catch(() => undefined)
     await api.connections.delete(id)
@@ -157,6 +166,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     close,
     markClosed,
     save,
+    setMcp,
     remove,
     test,
     listenToClosedEvents

@@ -2,6 +2,7 @@ import type { IpcArgs, IpcChannel, IpcEventChannel, IpcEventMap, IpcResult } fro
 import type {
   BackupCreateOptions,
   ConnectionInput,
+  ConnectionMcpConfig,
   JobInput,
   EngineObjectType,
   MongoCreateCollectionOptions,
@@ -151,6 +152,7 @@ export const api = {
     get: (id: string) => invoke('connections:get', id),
     save: (input: ConnectionInput) => invoke('connections:save', input),
     delete: (id: string) => invoke('connections:delete', id),
+    setMcp: (id: string, mcp: ConnectionMcpConfig) => invoke('connections:setMcp', id, mcp),
     test: (input: ConnectionInput, password: string | null, sshPassword: string | null) =>
       invoke('connections:test', input, password, sshPassword),
     setPassword: (id: string, password: string | null) =>

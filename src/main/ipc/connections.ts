@@ -1,4 +1,5 @@
 import { connectionSaveError, engineAvailabilityError } from '@shared/connectionValidation'
+import { isMcpAccess, mcpConfigError } from '@shared/mcp'
 import type { ConnectionConfig, ConnectionInput } from '@shared/types'
 import type { AppContext } from '../context'
 import { DB_PASSWORD } from '../credentials/store'
@@ -55,6 +56,27 @@ export function registerConnectionsHandlers(ctx: AppContext, handle: HandleFn): 
     ) {
       await manager.close(saved.id)
     }
+    return saved
+  })
+
+  handle('connections:setMcp', (id, mcp) => {
+    if (
+      !mcp ||
+      typeof mcp !== 'object' ||
+      typeof mcp.enabled !== 'boolean' ||
+      !isMcpAccess(mcp.access)
+    )
+      throw new Error('Ajuste de agentes (MCP) no válido.')
+    const config = { enabled: mcp.enabled, access: mcp.access }
+    const existing = ctx.connections.get(id)
+    if (!existing) throw new Error('La conexión ya no existe.')
+    const problem = mcpConfigError(
+      { environment: existing.environment, mcp: config },
+      typedConfirmEnvironments(ctx)
+    )
+    if (problem) throw new Error(`«${existing.name}»: ${problem}`)
+    const saved = ctx.connections.setMcp(id, config)
+    if (!saved) throw new Error('La conexión ya no existe.')
     return saved
   })
 

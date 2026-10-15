@@ -1,27 +1,32 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ENGINES } from '@shared/engines'
 import {
-  effectiveMcpAccess,
-  isMcpEnabled,
+  DEFAULT_MCP_ACCESS,
   MCP_ACCESS_LABELS,
+  MCP_ACCESS_LEVELS,
   MCP_PRIVACY_NOTE,
   mcpClientSnippets,
+  mcpWriteBlocked,
   normalizeMcpConfig,
   type McpClientSnippet
 } from '@shared/mcp'
-import type { Environment, McpLaunchInfo } from '@shared/types'
+import type { ConnectionMcpConfig, Environment, McpAccess, McpLaunchInfo } from '@shared/types'
 import { api } from '@renderer/api'
 import { useNotify } from '@renderer/composables/useNotify'
 import { useConnectionsStore } from '@renderer/stores/connections'
 import { environmentLabel, environmentPillClass } from '@renderer/components/backups/backupHelpers'
 
 /**
- * Ajustes › Agentes (MCP): the global switch (saved with «Guardar»), the
- * connections available to agents with their effective level, the privacy
- * note and the configuration each MCP client needs to start `Vortaq --mcp`.
+ * Ajustes › Agentes (MCP): the global switch, every saved connection with its
+ * own switch and level (the same setting as Editar conexión › Agentes (MCP)),
+ * the privacy note and the configuration each MCP client needs to start
+ * `Vortaq --mcp`. Nothing is written here: the switch and the per-connection
+ * changes (`drafts`, keyed by connection id, only the ones that differ from
+ * what is saved) are saved by Ajustes' «Guardar».
  */
 const enabled = defineModel<boolean>('enabled', { required: true })
+const drafts = defineModel<Record<string, ConnectionMcpConfig>>('drafts', { required: true })
 const props = defineProps<{
   /** Environments that need the typed confirmation, as currently set in Ajustes. */
   typedEnvironments: readonly Environment[]
@@ -32,22 +37,61 @@ const notify = useNotify()
 const launch = ref<McpLaunchInfo | null>(null)
 const client = ref<McpClientSnippet['id']>('claudeCode')
 
-const exposed = computed(() =>
-  connections.items
-    .filter((c) => isMcpEnabled(c))
-    .map((c) => {
-      const access = effectiveMcpAccess(c, props.typedEnvironments) ?? 'read'
-      const requested = normalizeMcpConfig(c.mcp)?.access ?? access
-      return {
-        id: c.id,
-        name: c.name,
-        engine: ENGINES[c.engine]?.label ?? c.engine,
-        environment: c.environment,
-        level: MCP_ACCESS_LABELS[access],
-        blocked: requested === 'write' && access !== 'write'
-      }
-    })
+const OFF: ConnectionMcpConfig = { enabled: false, access: DEFAULT_MCP_ACCESS }
+
+function savedConfig(id: string): ConnectionMcpConfig {
+  return normalizeMcpConfig(connections.get(id)?.mcp) ?? OFF
+}
+
+/*
+ * Working copy of `drafts`: the model only reflects a change after the parent
+ * re-renders, so two changes in the same tick would otherwise lose the first.
+ */
+const staged = ref<Record<string, ConnectionMcpConfig>>({ ...drafts.value })
+watch(drafts, (value) => {
+  staged.value = { ...value }
+})
+
+const rows = computed(() =>
+  connections.sorted.map((c) => {
+    const config = staged.value[c.id] ?? savedConfig(c.id)
+    const writeBlocked = mcpWriteBlocked(c.environment, props.typedEnvironments)
+    return {
+      id: c.id,
+      name: c.name,
+      engine: ENGINES[c.engine]?.label ?? c.engine,
+      environment: c.environment,
+      enabled: config.enabled,
+      access: config.access,
+      writeBlocked,
+      /** Saved with «Lectura y escritura» where agents may only read. */
+      lowered: config.enabled && config.access === 'write' && writeBlocked
+    }
+  })
 )
+const enabledCount = computed(() => rows.value.filter((r) => r.enabled).length)
+
+function levelItems(writeBlocked: boolean): { value: McpAccess; title: string; disabled: boolean }[] {
+  return MCP_ACCESS_LEVELS.map((level) => ({
+    value: level,
+    title: MCP_ACCESS_LABELS[level],
+    disabled: level === 'write' && writeBlocked
+  }))
+}
+const levelItemProps = (item: { disabled: boolean }): { disabled: boolean } => ({
+  disabled: item.disabled
+})
+
+/** Stages a change; a value equal to the saved one drops the draft. */
+function change(id: string, patch: Partial<ConnectionMcpConfig>): void {
+  const saved = savedConfig(id)
+  const next = { ...(staged.value[id] ?? saved), ...patch }
+  const copy = { ...staged.value }
+  if (next.enabled === saved.enabled && next.access === saved.access) delete copy[id]
+  else copy[id] = next
+  staged.value = copy
+  drafts.value = { ...copy }
+}
 
 const snippets = computed(() => (launch.value ? mcpClientSnippets(launch.value) : []))
 const snippet = computed(() => snippets.value.find((s) => s.id === client.value) ?? null)
@@ -84,37 +128,76 @@ onMounted(async () => {
       <v-icon icon="mdi-shield-key-outline" size="14" aria-hidden="true" />{{ MCP_PRIVACY_NOTE }}
     </p>
 
-    <div class="mcp-settings__head">Conexiones disponibles para agentes</div>
-    <div v-if="!exposed.length" class="mcp-settings__empty" data-test="settings-mcp-none">
-      Ninguna. Actívalas una a una en editar conexión › Agentes (MCP).
+    <div class="mcp-settings__head">
+      Conexiones para agentes
+      <span v-if="rows.length" class="mcp-settings__count" data-test="settings-mcp-count"
+        >{{ enabledCount }} de {{ rows.length }} activadas</span
+      >
+    </div>
+    <p v-if="rows.length" class="settings-section__hint mcp-settings__intro">
+      Solo las que actives existen para el agente. También puedes cambiarlo en Editar conexión ›
+      Agentes (MCP). Se guarda con «Guardar».
+    </p>
+    <div v-if="!rows.length" class="mcp-settings__empty" data-test="settings-mcp-none">
+      Todavía no tienes conexiones guardadas.
     </div>
     <ul v-else class="mcp-settings__list" data-test="settings-mcp-connections">
       <li
-        v-for="c in exposed"
+        v-for="c in rows"
         :key="c.id"
         class="mcp-settings__item"
+        :class="{ 'mcp-settings__item--off': !c.enabled }"
         :data-test="`settings-mcp-conn-${c.id}`"
       >
-        <span class="mcp-settings__name nd-ellipsis">{{ c.name }}</span>
+        <v-switch
+          :model-value="c.enabled"
+          color="primary"
+          density="compact"
+          hide-details
+          inset
+          class="mcp-settings__switch"
+          :aria-label="`Disponible para agentes: ${c.name}`"
+          :data-test="`settings-mcp-switch-${c.id}`"
+          @update:model-value="change(c.id, { enabled: $event === true })"
+        />
+        <span class="mcp-settings__name nd-ellipsis" :title="c.name">{{ c.name }}</span>
         <span class="mcp-settings__engine">{{ c.engine }}</span>
         <span class="nd-pill" :class="environmentPillClass(c.environment)">{{
           environmentLabel(c.environment)
         }}</span>
-        <span class="mcp-settings__level" :class="{ 'mcp-settings__level--blocked': c.blocked }">
-          <v-icon
-            :icon="c.blocked ? 'mdi-pencil-lock-outline' : 'mdi-account-key-outline'"
-            size="14"
-            aria-hidden="true"
-          />{{ c.level }}
-          <v-tooltip
-            v-if="c.blocked"
-            activator="parent"
-            location="top"
-            text="Guardada con «Lectura y escritura», pero su entorno pide escribir el nombre: los agentes solo pueden leer."
-          />
-        </span>
+        <v-select
+          :model-value="c.access"
+          :items="levelItems(c.writeBlocked)"
+          :item-props="levelItemProps"
+          :disabled="!c.enabled"
+          density="compact"
+          variant="outlined"
+          hide-details
+          class="mcp-settings__level"
+          :class="{ 'mcp-settings__level--blocked': c.lowered }"
+          :aria-label="`Nivel para agentes: ${c.name}`"
+          :data-test="`settings-mcp-level-${c.id}`"
+          @update:model-value="change(c.id, { access: $event as McpAccess })"
+        >
+          <template v-if="c.lowered" #append-inner>
+            <v-icon icon="mdi-pencil-lock-outline" size="14" aria-hidden="true" />
+            <v-tooltip
+              activator="parent"
+              location="top"
+              text="Guardada con «Lectura y escritura», pero su entorno pide escribir el nombre: los agentes solo pueden leer."
+            />
+          </template>
+        </v-select>
       </li>
     </ul>
+    <p
+      v-if="rows.some((r) => r.writeBlocked)"
+      class="settings-section__hint"
+      data-test="settings-mcp-write-note"
+    >
+      En Producción y en los entornos de Seguridad que piden escribir el nombre, los agentes solo
+      pueden leer.
+    </p>
 
     <div class="mcp-settings__head">Configurar un cliente</div>
     <div v-if="snippet" class="mcp-settings__client">
@@ -219,15 +302,30 @@ onMounted(async () => {
   flex-direction: column;
   gap: 4px;
 }
+.mcp-settings__count {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: var(--nd-fs-xs);
+  color: var(--nd-text-muted);
+}
+.mcp-settings__intro {
+  margin: -2px 0 8px;
+}
 .mcp-settings__item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto 176px;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px;
+  padding: 2px 8px;
   border-radius: var(--nd-radius-control);
   border: 1px solid var(--nd-border);
   background: var(--nd-bg-input);
+}
+.mcp-settings__item--off .mcp-settings__name {
+  color: var(--nd-text-2);
+}
+.mcp-settings__switch {
+  flex: none;
 }
 .mcp-settings__name {
   color: var(--nd-text);
@@ -236,14 +334,13 @@ onMounted(async () => {
   font-size: var(--nd-fs-xs);
   color: var(--nd-text-muted);
 }
-.mcp-settings__level {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.mcp-settings__level :deep(.v-field__input) {
+  min-height: 30px;
+  padding-top: 4px;
+  padding-bottom: 4px;
   font-size: var(--nd-fs-dense);
-  color: var(--nd-accent);
 }
-.mcp-settings__level--blocked {
+.mcp-settings__level--blocked :deep(.v-field__append-inner .v-icon) {
   color: var(--nd-warning);
 }
 .mcp-settings__clients {

@@ -145,6 +145,15 @@ describe('WHATS_NEW (curated list)', () => {
     expect(versions(whatsNewBetween('2.0.2', '2.1.0'))).toEqual(['2.1.0'])
   })
 
+  it('2.1.1 announces the per-connection agents switches in Ajustes', () => {
+    const entry = whatsNewFor('2.1.1')
+    const text = entry?.highlights.join(' ') ?? ''
+    expect(text).toMatch(/Ajustes › Agentes \(MCP\) lista todas tus conexiones/)
+    expect(text).toMatch(/Producción «Lectura y escritura» sigue sin poder elegirse/)
+    expect(entry?.tour?.map((s) => s.target)).toEqual(['toolbar-settings'])
+    expect(versions(whatsNewBetween('2.1.0', '2.1.1'))).toEqual(['2.1.1'])
+  })
+
   it('0.1.8 announces connections without a password', () => {
     expect(whatsNewFor('0.1.8')?.highlights).toEqual([
       'Conexiones sin contraseña: para proxies, túneles o certificados (Autenticación › Sin contraseña)'

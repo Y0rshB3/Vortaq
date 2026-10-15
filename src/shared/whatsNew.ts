@@ -25,6 +25,21 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.1.1',
+    date: '2026-10-15',
+    highlights: [
+      'Ajustes › Agentes (MCP) lista todas tus conexiones: actívalas para agentes y elige su nivel ahí mismo, sin abrir cada una',
+      'Los cambios se aplican al pulsar «Guardar»; en Producción «Lectura y escritura» sigue sin poder elegirse'
+    ],
+    tour: [
+      {
+        target: 'toolbar-settings',
+        title: 'Permisos de agentes',
+        text: 'En Ajustes › Agentes (MCP) cada conexión tiene su interruptor y su nivel. Pulsa «Guardar» y el agente lo verá en su siguiente llamada.'
+      }
+    ]
+  },
+  {
     version: '2.1.0',
     date: '2026-10-14',
     highlights: [
