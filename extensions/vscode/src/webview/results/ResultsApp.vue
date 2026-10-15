@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import type { QueryStatementResult } from '@shared/types'
 import { environmentLabel, environmentPillClass } from '@renderer/components/backups/backupHelpers'
+import OperationProgress from '@renderer/components/backups/OperationProgress.vue'
 import EditableResult from '@renderer/components/query/EditableResult.vue'
 import QueryMessages from '@renderer/components/query/QueryMessages.vue'
+import { errorMessage, useNotify } from '@renderer/composables/useNotify'
+import { useProgressStore } from '@renderer/stores/progress'
 import { formatDuration, formatNumber } from '@renderer/utils/format'
 import type { ResultsState } from '../../webviewState'
 import type { WebviewHost } from '../bridge'
@@ -14,7 +17,9 @@ import DocumentsView from './DocumentsView.vue'
  * Results of a SQL document run, of «Ver datos» or of «Ver documentos». The
  * SQL results reuse the desktop query view's pieces: the Mensajes list and
  * one EditableResult per result set (editable when its statement reads one
- * table with its key; Aplicar goes through the host's guard).
+ * table with its key; Aplicar goes through the host's guard), with
+ * selection, «Copiar como» and «Exportar» (the host's save dialog writes the
+ * file; a full export reports its progress here and in VS Code).
  */
 const props = defineProps<{ host: WebviewHost<ResultsState>; initial: ResultsState }>()
 
@@ -78,6 +83,25 @@ function copy(format: CopyFormat): void {
 function stop(): void {
   props.host.post({ type: 'stop' })
 }
+
+/* «Exportar › Resultado completo»: event:progress from the host (the dialog reads it too). */
+const progress = useProgressStore()
+const stopListening = progress.listen()
+onBeforeUnmount(stopListening)
+const notify = useNotify()
+const exportsRunning = computed(() => progress.active.filter((op) => op.kind === 'export'))
+const cancelling = ref<Record<string, boolean>>({})
+async function cancelExport(operationId: string): Promise<void> {
+  cancelling.value = { ...cancelling.value, [operationId]: true }
+  try {
+    await progress.cancel(operationId)
+  } catch (err) {
+    notify.error(`No se pudo cancelar: ${errorMessage(err)}`)
+    const next = { ...cancelling.value }
+    delete next[operationId]
+    cancelling.value = next
+  }
+}
 </script>
 
 <template>
@@ -123,6 +147,16 @@ function stop(): void {
       >
     </div>
     <v-progress-linear v-if="state.running" indeterminate height="2" />
+    <div v-if="exportsRunning.length" class="vq-results__ops" data-test="results-exports">
+      <OperationProgress
+        v-for="op in exportsRunning"
+        :key="op.operationId"
+        :operation-id="op.operationId"
+        label="Exportando el resultado completo"
+        :cancelling="!!cancelling[op.operationId]"
+        @cancel="cancelExport(op.operationId)"
+      />
+    </div>
 
     <DocumentsView
       v-if="state.kind === 'documents'"
@@ -200,6 +234,9 @@ function stop(): void {
             :rows="rs.set.rows"
             :truncated="rs.set.truncated"
             :storage="rs.storage"
+            :context="state.context"
+            :script="state.script"
+            exportable
             @dirty="pendingEdits = { ...pendingEdits, [rs.key]: $event }"
           />
         </v-window-item>
@@ -248,6 +285,14 @@ function stop(): void {
   color: var(--nd-text-2);
   font-size: var(--nd-fs-small);
   white-space: nowrap;
+}
+.vq-results__ops {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--nd-hairline);
 }
 .vq-results__tabs {
   display: flex;

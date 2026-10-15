@@ -63,6 +63,44 @@ const PENDING_EDITS = `(async () => {
   return 'ok'
 })()`
 
+/** A rectangle of cells selected, then the grid's menu with «Copiar como» open. */
+const COPY_AS_MENU = `(async () => {
+  const frame = document.querySelector('iframe')
+  const doc = frame && frame.contentDocument
+  if (!doc || !doc.querySelector('[data-test="cell-1-1"]')) return 'skip'
+  const win = frame.contentWindow
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const cell = (r, c) => doc.querySelector('[data-test="cell-' + r + '-' + c + '"]')
+  const mouse = (el, type, init) => {
+    const box = el.getBoundingClientRect()
+    el.dispatchEvent(new win.MouseEvent(type, Object.assign({ bubbles: true, cancelable: true,
+      view: win, button: 0, clientX: box.left + 24, clientY: box.top + box.height / 2 }, init)))
+  }
+  mouse(cell(1, 1), 'click')
+  mouse(cell(4, 3), 'click', { shiftKey: true })
+  await sleep(250)
+  mouse(cell(2, 2), 'contextmenu', { button: 2 })
+  await sleep(500)
+  const item = doc.querySelector('[data-test="menu-copy-as"]')
+  if (!item) return 'no menu'
+  item.click()
+  await sleep(600)
+  return 'ok'
+})()`
+
+/** From the same menu, «Exportar selección…»: the export dialog over the results. */
+const EXPORT_DIALOG = `(async () => {
+  const frame = document.querySelector('iframe')
+  const doc = frame && frame.contentDocument
+  if (!doc || !doc.querySelector('[data-test="cell-1-1"]')) return 'skip'
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const item = doc.querySelector('[data-test="menu-export-selection"]')
+  if (!item) return 'no menu'
+  item.click()
+  await sleep(700)
+  return doc.querySelector('[data-test="export-dialog"]') ? 'ok' : 'no dialog'
+})()`
+
 function base(overrides: Partial<ConnectionInput>): ConnectionInput {
   return {
     name: '',
@@ -275,6 +313,21 @@ async function tour(
   await vscode.window.showTextDocument(editor.document, vscode.ViewColumn.One)
   await tidy()
   await step(`results-${suffix}`, PENDING_EDITS)
+
+  // Selection, «Copiar como» and «Exportar» on a fresh result.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+  const exportEditor = await sqlEditor(
+    'saldos.sql',
+    `-- Saldos por cliente\nSELECT id, nombre, ciudad, saldo\nFROM clientes\nORDER BY saldo DESC;\n`,
+    ids.local
+  )
+  exportEditor.selection = new vscode.Selection(2, 2, 2, 2)
+  await vscode.commands.executeCommand('vortaq.run')
+  await vscode.window.showTextDocument(exportEditor.document, vscode.ViewColumn.One)
+  await tidy()
+  await step(`copy-as-${suffix}`, COPY_AS_MENU)
+  await step(`export-dialog-${suffix}`, EXPORT_DIALOG)
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors')
 
   // Production confirmation: the typed-name prompt over a production document.
   const prodEditor = await sqlEditor(

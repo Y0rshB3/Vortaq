@@ -2,7 +2,7 @@
 
 Cliente de bases de datos para VS Code y los editores compatibles (Cursor, VSCodium, Windsurf).
 Conecta con **MySQL, MariaDB, PostgreSQL, SQLite y MongoDB**, ejecuta SQL desde tus archivos
-`.sql` y edita los resultados sin salir del editor. Es la extensión de
+`.sql`, edita los resultados y cópialos o expórtalos sin salir del editor. Es la extensión de
 [Vortaq](https://github.com/Y0rshB3/Vortaq), el cliente de bases de datos de escritorio de código
 abierto, y usa su mismo núcleo: los mismos controladores, el mismo análisis de SQL y la misma
 protección de las conexiones de producción.
@@ -32,7 +32,22 @@ macOS, Windows y Linux, con diseñador de tablas, copias de seguridad y automati
   - **Detener**: cancela la sentencia en PostgreSQL y SQLite; en MySQL y MariaDB descarta los
     resultados que lleguen después.
 - **Resultados** en un panel al lado del editor: un resultado por pestaña, la pestaña Mensajes con
-  cada sentencia, filas devueltas o afectadas y su tiempo, y **Copiar** como TSV, CSV o JSON.
+  cada sentencia, filas devueltas o afectadas y su tiempo, y **Copiar** todo el resultado como TSV,
+  CSV o JSON.
+- **Seleccionar y copiar** como en una hoja de cálculo: celdas (clic, `Shift`+clic, arrastrar,
+  `Shift`+flechas), filas (el número de fila), columnas (la cabecera) o todo (`Cmd/Ctrl+A`).
+  `Cmd/Ctrl+C` copia la selección como texto tabulado, listo para pegar en una hoja de cálculo; el
+  botón derecho ofrece **Copiar con encabezados** y **Copiar como** CSV, JSON, `INSERT`, `UPDATE`,
+  lista para `IN` o Markdown, con las comillas de cada motor.
+- **Exportar** (barra del resultado o botón derecho) a **CSV**, **Excel** (`.xlsx`), **JSON**,
+  **SQL** (`INSERT`), **Markdown**, **HTML** o **TXT**: la selección, las filas cargadas o el
+  **resultado completo**. El resultado completo vuelve a ejecutar la consulta en una sesión nueva de
+  **solo lectura**, sin límite de filas (en «Ver datos», toda la tabla); no ve los cambios sin
+  confirmar de tu documento, solo se ofrece para una única sentencia de lectura y por eso no pide la
+  confirmación de producción. Su progreso aparece en el panel y en una notificación, con
+  **Cancelar**. Eliges el archivo con el diálogo de guardar del editor; se escribe como
+  `<archivo>.part` y solo toma su nombre al terminar. Al acabar puedes **Abrir** el archivo o
+  **Mostrarlo en la carpeta**. (Los documentos de MongoDB no usan esta exportación.)
 - **Resultados editables.** Cuando la consulta lee una sola tabla e incluye su clave primaria,
   puedes editar celdas, añadir y borrar filas, poner `NULL` y pulsar **Aplicar** (o Descartar).
 - **Ver datos** de una tabla o vista y **Ver documentos** de una colección de MongoDB (como tabla o
@@ -59,7 +74,8 @@ también piden confirmación en el resto de conexiones.
   sin un llavero (gnome-keyring, KWallet…) el editor puede recurrir a un almacén más débil; configura
   uno si guardas contraseñas.
 - La extensión no envía tus datos a ningún sitio: solo se conecta a los servidores de base de datos
-  que configures (y a sus túneles SSH).
+  que configures (y a sus túneles SSH). Exportar escribe únicamente en el archivo que eliges en el
+  diálogo de guardar.
 - El registro («Vortaq» en el panel Salida) nunca incluye contraseñas ni datos de las filas.
 - Las conexiones de la extensión son independientes de las de Vortaq de escritorio: cada aplicación
   guarda las suyas.

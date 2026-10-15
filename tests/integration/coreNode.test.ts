@@ -6,15 +6,23 @@
  * and a SQLite file whose worker is a real child process (nodeSqliteSpawner),
  * each engine opens a connection, runs a query, introspects, applies one row
  * edit and sees the production guard refuse an unconfirmed write. Passwords go
- * through the vault-key codec into the core's own credentials.json.
+ * through the vault-key codec into the core's own credentials.json. The SQL
+ * engines also export a full result (export:query) to CSV/XLSX in a read-only
+ * session, as the editor extension's «Exportar» does.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type * as CoreModule from '../../src/core'
-import type { ConnectionInput, MongoCommandResult, QueryStatementResult } from '@shared/types'
+import type {
+  ConnectionInput,
+  MongoCommandResult,
+  ProgressEvent,
+  QueryStatementResult
+} from '@shared/types'
+import { unzip } from '@main/export/testing/unzip'
 import { bundleCore, bundleSqliteWorker, ROOT } from '../../scripts/core-bundle.mjs'
 import { describeServer, MONGO_TARGET, POSTGRES_TARGET, type ServerSpec } from './targets'
 
@@ -114,6 +122,13 @@ const okMongo = (results: MongoCommandResult[]): MongoCommandResult[] => {
 
 const CONFIRM = /necesita confirmación explícita/
 
+/** A scratch folder for exported files; `parts()` lists the `.part` files left in it. */
+function exportFolder(): { dir: string; parts: () => string[] } {
+  const dir = mkdtempSync(join(tmpdir(), 'vortaq-core-export-'))
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
+  return { dir, parts: () => readdirSync(dir).filter((f) => f.endsWith('.part')) }
+}
+
 /**
  * The editor extension's webviews receive results as JSON messages, not through Electron's
  * structured clone (docs/vscode-extension-design.md, 9.3): nothing may change on the way.
@@ -146,12 +161,20 @@ describe('core bundle loaded by plain Node', () => {
 
 describe('core bundle in plain Node [SQLite file, child-process worker]', () => {
   let core: VortaqCore
+  let lib: Core
   let id: string
   let prodId: string
+  const progress: ProgressEvent[] = []
 
   beforeAll(async () => {
-    const { workerPath, core: lib } = await loadBundle()
-    const created = await newCore({ sqliteSpawner: lib.nodeSqliteSpawner(workerPath) })
+    const { workerPath, core: loaded } = await loadBundle()
+    lib = loaded
+    const created = await newCore({
+      sqliteSpawner: lib.nodeSqliteSpawner(workerPath),
+      emit: (channel, payload) => {
+        if (channel === 'event:progress') progress.push(payload as ProgressEvent)
+      }
+    })
     core = created.core
     expect(lib.sqliteRuntimeProblem()).toBeNull()
     const file = join(created.profile, 'core-it.db')
@@ -240,6 +263,99 @@ describe('core bundle in plain Node [SQLite file, child-process worker]', () => 
     ).rejects.toThrow(CONFIRM)
     const [r] = ok(await core.invoke('db:execute', prodId, 'SELECT name FROM item'))
     expect(r.resultSet?.rows).toEqual([['dos']])
+  })
+
+  it('exports the full result to CSV and XLSX in a read-only reader, on production too', async () => {
+    const { dir, parts } = exportFolder()
+    ok(
+      await core.invoke(
+        'db:execute',
+        id,
+        `CREATE TABLE venta (id INTEGER PRIMARY KEY, cliente TEXT, total REAL, foto BLOB);
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2500)
+         INSERT INTO venta SELECT i, 'Cliente ' || i, i * 0.5, CASE WHEN i = 1 THEN x'00ff' END FROM n;`
+      )
+    )
+    const csv = join(dir, 'ventas.csv')
+    const result = await core.invoke('export:query', 'node-csv', {
+      connectionId: prodId,
+      filePath: csv,
+      source: { kind: 'statement', sql: 'SELECT id, cliente, total, foto FROM venta ORDER BY id' },
+      options: lib.defaultExportOptions({ format: 'csv', nullText: 'NULL' })
+    })
+    expect(result.rows).toBe(2500)
+    const lines = readFileSync(csv, 'utf8').trimEnd().split('\r\n')
+    expect(lines).toHaveLength(2501)
+    expect(lines.slice(0, 3)).toEqual([
+      'id,cliente,total,foto',
+      '1,Cliente 1,0.5,0x00FF',
+      '2,Cliente 2,1,NULL'
+    ])
+    expect(progress.filter((e) => e.operationId === 'node-csv').at(-1)).toMatchObject({
+      kind: 'export',
+      done: true,
+      current: 2500
+    })
+
+    const xlsx = join(dir, 'venta.xlsx')
+    const book = await core.invoke('export:query', 'node-xlsx', {
+      connectionId: id,
+      filePath: xlsx,
+      source: { kind: 'table', request: { schema: 'main', table: 'venta', orderBy: null } },
+      options: lib.defaultExportOptions({ format: 'xlsx', sheetName: 'venta' })
+    })
+    expect(book.rows).toBe(2500)
+    const sheet = unzip(xlsx).get('xl/worksheets/sheet1.xml')!.data.toString('utf8')
+    expect(sheet).toContain('Cliente 2500')
+    expect(parts()).toEqual([])
+  })
+
+  it('cancels a runaway full export by killing its reader, leaving no file', async () => {
+    const { dir, parts } = exportFolder()
+    const file = join(dir, 'infinito.csv')
+    const started = core.invoke('export:query', 'node-cancel', {
+      connectionId: id,
+      filePath: file,
+      source: {
+        kind: 'statement',
+        sql: 'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x FROM c'
+      },
+      options: lib.defaultExportOptions({ format: 'csv' })
+    })
+    const outcome = started.then(
+      () => null,
+      (err: Error) => err
+    )
+    // Cancel once rows are being written (the progress events arrive every 250 ms).
+    const deadline = Date.now() + 10_000
+    while (!progress.some((e) => e.operationId === 'node-cancel' && e.phase === 'rows')) {
+      if (Date.now() > deadline) throw new Error('the export never started writing rows')
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    await core.invoke('export:cancel', 'node-cancel')
+    const err = await outcome
+    expect(err?.message).toBe(lib.CANCELLED_EXPORT)
+    expect(existsSync(file)).toBe(false)
+    expect(parts()).toEqual([])
+    // The connection's own handle still works afterwards.
+    const [r] = ok(await core.invoke('db:execute', id, 'SELECT COUNT(*) FROM venta'))
+    expect(r.resultSet?.rows).toEqual([[2500]])
+  })
+
+  it('refuses a MongoDB connection before connecting', async () => {
+    const mongo = await core.invoke(
+      'connections:save',
+      baseInput({ engine: 'mongodb', host: '127.0.0.1', port: 1 })
+    )
+    const { dir } = exportFolder()
+    await expect(
+      core.invoke('export:query', 'node-mongo', {
+        connectionId: mongo.id,
+        filePath: join(dir, 'x.csv'),
+        source: { kind: 'statement', sql: 'SELECT 1' },
+        options: lib.defaultExportOptions()
+      })
+    ).rejects.toThrow(lib.EXPORT_MONGO_REFUSED)
   })
 })
 
@@ -337,6 +453,22 @@ describeServer(MYSQL84_TARGET, 'core bundle in plain Node', (url) => {
     expect(await read()).toEqual([['dos']])
     ok(await core.invoke('db:execute', prodId, update, { confirmProduction: true }))
     expect(await read()).toEqual([['tres']])
+  })
+
+  it('exports the full result in a new read-only session, in the run database', async () => {
+    const { dir, parts } = exportFolder()
+    const lib = (await loadBundle()).core
+    const file = join(dir, 'item.csv')
+    // Unqualified: the context (the database the result ran in) picks the table.
+    const result = await core.invoke('export:query', `mysql-${SUFFIX}`, {
+      connectionId: prodId,
+      filePath: file,
+      source: { kind: 'statement', sql: 'SELECT id, name FROM item ORDER BY id', context: DB },
+      options: lib.defaultExportOptions({ format: 'csv' })
+    })
+    expect(result.rows).toBe(1)
+    expect(readFileSync(file, 'utf8')).toBe('id,name\r\n1,tres\r\n')
+    expect(parts()).toEqual([])
   })
 })
 
@@ -448,6 +580,25 @@ describeServer(POSTGRES_TARGET, 'core bundle in plain Node', (url) => {
     ).rejects.toThrow(CONFIRM)
     const [r] = ok(await core.invoke('db:execute', prodId, `SELECT name FROM ${SCHEMA}.item`))
     expect(r.resultSet?.rows).toEqual([['dos']])
+  })
+
+  it('exports the full result in a new read-only session, with the run schema', async () => {
+    const { dir, parts } = exportFolder()
+    const lib = (await loadBundle()).core
+    const file = join(dir, 'item.json')
+    const result = await core.invoke('export:query', `pg-${SUFFIX}`, {
+      connectionId: prodId,
+      filePath: file,
+      source: {
+        kind: 'statement',
+        sql: 'SELECT id, name FROM item ORDER BY id',
+        context: { database, schema: SCHEMA }
+      },
+      options: lib.defaultExportOptions({ format: 'json' })
+    })
+    expect(result.rows).toBe(1)
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual([{ id: 1, name: 'dos' }])
+    expect(parts()).toEqual([])
   })
 })
 
