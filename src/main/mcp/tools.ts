@@ -74,11 +74,11 @@ export interface ToolOutput {
 }
 
 export interface QueryArgs {
-  database?: string
-  schema?: string
+  database?: string | null
+  schema?: string | null
   sql: string
-  max_rows?: number
-  timeout_seconds?: number
+  max_rows?: number | null
+  timeout_seconds?: number | null
 }
 
 const MYSQL_SYSTEM = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
@@ -112,15 +112,15 @@ export function listConnections(rt: McpRuntime): ToolOutput {
 
 /* ---------- namespaces ---------- */
 
-function pgDatabase(c: ResolvedConnection, database?: string): string {
+function pgDatabase(c: ResolvedConnection, database?: string | null): string {
   return database?.trim() || c.config.postgres?.initialDatabase || 'postgres'
 }
 
-function mongoDatabase(c: ResolvedConnection, database?: string): string {
+function mongoDatabase(c: ResolvedConnection, database?: string | null): string {
   return database?.trim() || c.config.mongo?.defaultDatabase || 'test'
 }
 
-function requireMysqlDatabase(database?: string): string {
+function requireMysqlDatabase(database?: string | null): string {
   const db = database?.trim()
   if (!db)
     throw new McpToolError('Falta «database»: usa list_databases para ver las bases de datos.')
@@ -138,7 +138,7 @@ async function mongoSource(rt: McpRuntime, id: string) {
 export async function listDatabases(
   rt: McpRuntime,
   c: ResolvedConnection,
-  args: { include_system?: boolean }
+  args: { include_system?: boolean | null }
 ): Promise<ToolOutput> {
   const id = c.config.id
   const system = args.include_system === true
@@ -236,7 +236,7 @@ async function sqlTables(
 export async function listTables(
   rt: McpRuntime,
   c: ResolvedConnection,
-  args: { database?: string; schema?: string }
+  args: { database?: string | null; schema?: string | null }
 ): Promise<ToolOutput> {
   const id = c.config.id
   const engine = c.config.engine
@@ -414,7 +414,7 @@ async function describeMongo(
 export async function describeTable(
   rt: McpRuntime,
   c: ResolvedConnection,
-  args: { database?: string; schema?: string; table: string }
+  args: { database?: string | null; schema?: string | null; table: string }
 ): Promise<ToolOutput> {
   const id = c.config.id
   const table = args.table?.trim()

@@ -65,19 +65,20 @@ const connection = z
   .string()
   .min(1)
   .describe('Connection id or exact name, as returned by list_connections.')
+// nullish: some clients send null for an optional argument they leave out.
 const database = z
   .string()
-  .optional()
+  .nullish()
   .describe(
     'MySQL/MariaDB/MongoDB database, PostgreSQL database (default: the connection\'s initial database) or SQLite attached alias (default "main").'
   )
-const schema = z.string().optional().describe('PostgreSQL schema (other engines ignore it).')
+const schema = z.string().nullish().describe('PostgreSQL schema (other engines ignore it).')
 const maxRows = z
   .number()
   .int()
   .min(1)
   .max(MCP_LIMITS.maxRows)
-  .optional()
+  .nullish()
   .describe(
     `Rows (or documents) to return, default ${MCP_LIMITS.defaultRows}, at most ${MCP_LIMITS.maxRows}.`
   )
@@ -85,7 +86,7 @@ const timeoutSeconds = z
   .number()
   .positive()
   .max(MCP_LIMITS.maxTimeoutSec)
-  .optional()
+  .nullish()
   .describe(
     `Seconds before the statement is cancelled on the server, default ${MCP_LIMITS.defaultTimeoutSec}, at most ${MCP_LIMITS.maxTimeoutSec}.`
   )
@@ -170,7 +171,7 @@ export function createMcpServer(rt: McpRuntime, options: McpServerOptions): McpS
         'User databases of a connection (PostgreSQL: databases with their schemas; SQLite: "main" and attached aliases). System databases only with include_system.',
       inputSchema: {
         connection,
-        include_system: z.boolean().optional().describe('Also list system databases/schemas.')
+        include_system: z.boolean().nullish().describe('Also list system databases/schemas.')
       },
       annotations: READ_ONLY
     },

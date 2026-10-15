@@ -237,6 +237,10 @@ describe('MCP server over the in-memory transport (SQLite)', () => {
     expect((await ok('list_databases', { connection: 'Tienda' })).databases).toEqual([
       { name: 'main' }
     ])
+    // Optional arguments sent as null (some clients do) mean «not given».
+    expect(
+      (await ok('list_tables', { connection: 'Tienda', database: null, schema: null })).database
+    ).toBe('main')
     const tables = (await ok('list_tables', { connection: 'Solo esquema' })).tables
     expect(tables).toEqual(
       expect.arrayContaining([
