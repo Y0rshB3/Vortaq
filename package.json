@@ -39,6 +39,7 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --project node",
     "test:integration:required": "node scripts/test-integration-required.mjs",
+    "test:mcp-e2e": "node scripts/mcp-e2e.mjs",
     "check": "npm run lint && npm run typecheck && npm run test",
     "ext:install": "npm ci --prefix extensions/vscode",
     "ext:build": "node extensions/vscode/scripts/build.mjs",
@@ -57,6 +58,7 @@
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@mdi/font": "^7.4.47",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@mongodb-js/shell-bson-parser": "^1.6.3",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
@@ -78,7 +80,8 @@
     "tar-stream": "^3.2.1",
     "vue": "^3.5.42",
     "vue-router": "^4.6.4",
-    "vuetify": "^3.13.4"
+    "vuetify": "^3.13.4",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
