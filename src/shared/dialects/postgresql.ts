@@ -486,6 +486,9 @@ function statementWrites(tokens: PgToken[]): string | null {
   return genericReason(tokens)
 }
 
+/** Reason given for a U&"…" identifier the lexer could not decode with certainty. */
+export const UNDECODABLE_IDENT = 'Identificador U&"…" que no se puede comprobar'
+
 export function analyzeWrites(script: string): WriteCheck {
   const reasons = new Set<string>()
   for (const { sql } of splitStatements(script)) {
@@ -493,6 +496,8 @@ export function analyzeWrites(script: string): WriteCheck {
     const reason = statementWrites(tokens)
     if (reason) reasons.add(reason)
     for (const fn of sideEffectCalls(tokens)) reasons.add(`Función con efectos: ${fn}`)
+    // Fail closed: a name that cannot be read could be any function.
+    if (tokens.some((t) => t.undecodable)) reasons.add(UNDECODABLE_IDENT)
   }
   return { writes: reasons.size > 0, reasons: [...reasons] }
 }
@@ -534,6 +539,7 @@ export function isObviousWrite(statement: string): boolean {
   // Anything that could switch off the read-only sessions of a guarded connection, or call a
   // function that bypasses them (set_config, pg_terminate_backend, dblink…), is refused unconfirmed.
   if (sideEffectCalls(tokens).length) return true
+  if (tokens.some((t) => t.undecodable)) return true
   if (w === 'DISCARD') return true
   if (w === 'BEGIN' || w === 'START') return tokens.some((t) => isWord(t, 'WRITE'))
   if (w === 'SET' || w === 'RESET') {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  UNDECODABLE_IDENT,
   analyzeDestructivePg,
   analyzeWrites,
   explainPgError,
@@ -111,11 +112,7 @@ const CORPUS: [string, string[], boolean][] = [
   ['SELECT pg_advisory_lock(1)', ['Función con efectos: pg_advisory_lock'], true],
   ['SELECT lo_unlink(1)', ['Función con efectos: lo_unlink'], true],
   ["SELECT pg_read_file('/etc/passwd')", ['Función con efectos: pg_read_file'], true],
-  [
-    "SELECT * FROM dblink('x', 'DELETE FROM t') AS r(a int)",
-    ['Función con efectos: dblink'],
-    true
-  ],
+  ["SELECT * FROM dblink('x', 'DELETE FROM t') AS r(a int)", ['Función con efectos: dblink'], true],
   ['SELECT pg_reload_conf()', ['Función con efectos: pg_reload_conf'], true],
   ['SET ROLE admin', ['SET ROLE'], true],
   ['SET SESSION AUTHORIZATION admin', ['SET SESSION AUTHORIZATION'], true],
@@ -282,5 +279,42 @@ describe('main denylist: statements that would lift the read-only safety net', (
     'RESET search_path'
   ])('still lets %s through', (sql) => {
     expect(isObviousWrite(sql)).toBe(false)
+  })
+})
+
+describe('side-effect functions under other spellings', () => {
+  const spellings = [
+    'SELECT U&"pg\\005fterminate\\005fbackend"(pid) FROM pg_stat_activity',
+    "SELECT U&\"\\0064blink_exec\"('x', 'DELETE FROM t')",
+    'SELECT U&"pg\\005fread\\005ffile"(\'/etc/passwd\')',
+    'SELECT U&"pg!005fterminate!005fbackend" UESCAPE \'!\' (1)',
+    'SELECT U&"pg!005fterminate!005fbackend" /* x */ UESCAPE /* y */ \'!\'(1)',
+    'SELECT pg_catalog.pg_terminate_backend(1)',
+    'SELECT "pg_catalog"."pg_terminate_backend"(1)',
+    'SELECT "pg_terminate_backend"(1)',
+    'SELECT pg_terminate_backend /* c */ (1)',
+    'SELECT pg_terminate_backend\n  -- c\n  (1)',
+    'SELECT PG_Terminate_Backend(1)',
+    'SELECT * FROM ROWS FROM (pg_catalog . pg_terminate_backend (1))'
+  ]
+
+  it('analyzeWrites and isObviousWrite flag every spelling', () => {
+    for (const sql of spellings) {
+      expect(analyzeWrites(sql).writes, sql).toBe(true)
+      expect(isObviousWrite(sql), sql).toBe(true)
+    }
+  })
+
+  it('an identifier that cannot be decoded is a write (fail closed)', () => {
+    for (const sql of ['SELECT U&"pg\\zz"(1)', 'SELECT U&"f" UESCAPE \'+\' (1)']) {
+      expect(analyzeWrites(sql).reasons, sql).toContain(UNDECODABLE_IDENT)
+      expect(isObviousWrite(sql), sql).toBe(true)
+    }
+  })
+
+  it('harmless U& names and strings stay reads', () => {
+    expect(analyzeWrites('SELECT U&"n\\0061me" FROM t').writes).toBe(false)
+    expect(analyzeWrites("SELECT U&'pg\\005fterminate\\005fbackend(1)' AS txt").writes).toBe(false)
+    expect(analyzeWrites("SELECT 'pg_terminate_backend(1)'").writes).toBe(false)
   })
 })

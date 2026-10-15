@@ -41,6 +41,12 @@ export interface PgToken {
   end: number
   /** 1-based line of the first character. */
   line: number
+  /**
+   * A U&"…" identifier whose escapes could not be decoded with certainty (bad
+   * escape, invalid UESCAPE character, lone surrogate…). Its value is the raw
+   * body; the guards count it as a possible write (fail closed).
+   */
+  undecodable?: true
 }
 
 const OP_CHARS = new Set('+-*/<>=~!@#%^&|`?'.split(''))
@@ -84,6 +90,106 @@ function endOfQuoted(src: string, open: number, quote: string, backslash: boolea
 function unquoteIdent(raw: string): string {
   const body = raw.endsWith('"') && raw.length >= 2 ? raw.slice(1, -1) : raw.slice(1)
   return body.replace(/""/g, '"')
+}
+
+/** End of the whitespace and comments that start at `from`. */
+function skipBlank(src: string, from: number): number {
+  let i = from
+  const n = src.length
+  while (i < n) {
+    const ch = src[i]
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v') {
+      i++
+    } else if (ch === '-' && src[i + 1] === '-') {
+      const eol = src.indexOf('\n', i)
+      i = eol < 0 ? n : eol
+    } else if (ch === '/' && src[i + 1] === '*') {
+      let depth = 1
+      let j = i + 2
+      while (j < n && depth > 0) {
+        if (src[j] === '/' && src[j + 1] === '*') {
+          depth++
+          j += 2
+        } else if (src[j] === '*' && src[j + 1] === '/') {
+          depth--
+          j += 2
+        } else j++
+      }
+      i = j
+    } else break
+  }
+  return i
+}
+
+/**
+ * The `UESCAPE 'c'` clause that may follow a U&'…' / U&"…" literal (with
+ * whitespace or comments around it). Null when there is none; `char` is null
+ * when the clause is there but its character is not a valid escape.
+ */
+function readUescape(src: string, from: number): { char: string | null; end: number } | null {
+  const at = skipBlank(src, from)
+  if (src.slice(at, at + 7).toUpperCase() !== 'UESCAPE' || isWordPart(src.charCodeAt(at + 7)))
+    return null
+  const q = skipBlank(src, at + 7)
+  if (src[q] !== "'") return { char: null, end: at + 7 }
+  const end = endOfQuoted(src, q, "'", false)
+  const body = src.slice(q + 1, end - 1).replace(/''/g, "'")
+  // One character that is not a hex digit, +, a quote or whitespace (the server's rule).
+  const valid = [...body].length === 1 && !/[0-9A-Fa-f+'"\s]/.test(body)
+  return { char: valid ? body : null, end }
+}
+
+const HEX4 = /^[0-9A-Fa-f]{4}$/
+const HEX6 = /^[0-9A-Fa-f]{6}$/
+
+/**
+ * Decodes the body of a U&"…" identifier (doubled quotes already undone):
+ * `<e>XXXX`, `<e>+XXXXXX`, `<e><e>` for the escape character itself, and
+ * surrogate pairs written as two escapes. Null when anything is not certain.
+ */
+export function decodeUnicodeEscapes(body: string, escape: string): string | null {
+  let out = ''
+  let pendingHigh: number | null = null
+  for (let i = 0; i < body.length;) {
+    const ch = body[i]
+    if (ch !== escape) {
+      if (pendingHigh !== null) return null
+      out += ch
+      i++
+      continue
+    }
+    if (body[i + 1] === escape) {
+      if (pendingHigh !== null) return null
+      out += escape
+      i += 2
+      continue
+    }
+    let cp: number
+    if (body[i + 1] === '+') {
+      const hex = body.slice(i + 2, i + 8)
+      if (!HEX6.test(hex)) return null
+      cp = parseInt(hex, 16)
+      i += 8
+    } else {
+      const hex = body.slice(i + 1, i + 5)
+      if (!HEX4.test(hex)) return null
+      cp = parseInt(hex, 16)
+      i += 5
+    }
+    if (cp >= 0xd800 && cp <= 0xdbff) {
+      if (pendingHigh !== null) return null
+      pendingHigh = cp
+      continue
+    }
+    if (cp >= 0xdc00 && cp <= 0xdfff) {
+      if (pendingHigh === null) return null
+      cp = 0x10000 + ((pendingHigh - 0xd800) << 10) + (cp - 0xdc00)
+      pendingHigh = null
+    } else if (pendingHigh !== null) return null
+    if (cp === 0 || cp > 0x10ffff) return null
+    out += String.fromCodePoint(cp)
+  }
+  return pendingHigh === null ? out : null
 }
 
 /** Tokenizes `src`. Whitespace is skipped; comments are kept as tokens. */
@@ -148,9 +254,19 @@ export function tokenizePg(src: string): PgToken[] {
       (src[i + 2] === "'" || src[i + 2] === '"')
     ) {
       const quote = src[i + 2]
-      const end = endOfQuoted(src, i + 2, quote, false)
+      const close = endOfQuoted(src, i + 2, quote, false)
+      // The optional UESCAPE clause belongs to the literal (comments may sit in between).
+      const uescape = readUescape(src, close)
+      const end = uescape?.end ?? close
       if (quote === "'") push('string', i, end, src.slice(i, end))
-      else push('ident', i, end, unquoteIdent(src.slice(i + 2, end)))
+      else {
+        const raw = unquoteIdent(src.slice(i + 2, close))
+        const decoded =
+          uescape && uescape.char === null ? null : decodeUnicodeEscapes(raw, uescape?.char ?? '\\')
+        push('ident', i, end, decoded ?? raw)
+        if (decoded === null || !src.slice(close - 1, close).includes('"'))
+          tokens[tokens.length - 1].undecodable = true
+      }
       i = end
       continue
     }

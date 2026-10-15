@@ -178,7 +178,11 @@ describeServer(POSTGRES_TARGET, 'MCP server', (url) => {
       'SELECT * FROM pedidos FOR UPDATE',
       // SQL inside a string, run by the function: refused before anything runs.
       "SELECT query_to_xml('select pg_terminate_backend(pg_backend_pid())', true, false, '')",
-      "SELECT pg_notify('canal', 'x')"
+      "SELECT pg_notify('canal', 'x')",
+      // The same function under a Unicode-escaped name: refused before anything runs.
+      'SELECT U&"pg\\005fterminate\\005fbackend"(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid()',
+      'SELECT U&"pg!005fterminate!005fbackend" UESCAPE \'!\' (pg_backend_pid())',
+      'SELECT U&"pg\\zz"(1)'
     ])
       expect(await h.refused('run_query', { connection: 'Lectura', schema: SCHEMA, sql })).toMatch(
         /run_query/
