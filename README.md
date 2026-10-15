@@ -1267,9 +1267,9 @@ El modo MCP solo **lee** tu perfil: nunca modifica `connections.json`, `settings
 
 1. **Ajustes › Agentes (MCP)**: activa «Permitir que agentes usen Vortaq (MCP)» (desactivado por defecto).
    Mientras esté apagado, el agente recibe un error que le dice dónde activarlo.
-2. En cada conexión que quieras ofrecer, **Editar conexión › Agentes (MCP)**: activa «Disponible para agentes
-   (MCP)» y elige el nivel. Una conexión sin activar **no existe** para el agente. Importar conexiones nunca las
-   activa.
+2. En la misma sección, **Conexiones para agentes** lista todas tus conexiones: activa las que quieras ofrecer,
+   elige el nivel de cada una y pulsa **Guardar**. También se cambia desde **Editar conexión › Agentes (MCP)**.
+   Una conexión sin activar **no existe** para el agente. Importar conexiones nunca las activa.
 3. Copia la configuración de tu cliente desde **Ajustes › Agentes (MCP)** (ya lleva la ruta real de tu
    ejecutable) y pégala donde indica.
 

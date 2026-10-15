@@ -4,6 +4,7 @@ import type {
   AppSettings,
   ConnectionConfig,
   ConnectionInput,
+  ConnectionMcpConfig,
   EngineId,
   Job,
   JobInput,
@@ -14,7 +15,7 @@ import {
   normalizeTypedConfirmEnvironments
 } from '@shared/typedConfirm'
 import { isEngineId, withEngineDefaults } from '@shared/engines'
-import { normalizeMcpConfig } from '@shared/mcp'
+import { DEFAULT_MCP_ACCESS, normalizeMcpConfig } from '@shared/mcp'
 import { JsonStore } from './jsonStore'
 import { newId, nowIso } from './ids'
 
@@ -103,6 +104,25 @@ export class ConnectionsRepo {
       d.items[idx] = promoted
     })
     return promoted
+  }
+  /**
+   * Replaces only the agents (MCP) setting of a saved connection (Ajustes ›
+   * Agentes (MCP)). Every other stored field is kept as written; credentials
+   * live elsewhere and are untouched. Returns the updated record, or null when
+   * the connection no longer exists. A malformed setting is stored as off.
+   */
+  setMcp(id: string, mcp: ConnectionMcpConfig): ConnectionConfig | null {
+    const config = normalizeMcpConfig(mcp) ?? { enabled: false, access: DEFAULT_MCP_ACCESS }
+    let updated: ConnectionConfig | null = null
+    this.store.update((d) => {
+      const idx = d.items.findIndex((c) => c.id === id)
+      if (idx < 0) return
+      updated = { ...d.items[idx], mcp: config, updatedAt: nowIso() }
+      d.items[idx] = updated
+    })
+    // Assigned inside the callback, which control-flow narrowing does not see.
+    const result = updated as ConnectionConfig | null
+    return result ? normalizeRecord(result) : null
   }
   delete(id: string): void {
     this.store.update((d) => {

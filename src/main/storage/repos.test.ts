@@ -75,6 +75,36 @@ describe('repos', () => {
     expect('mcp' in again.save(rest)).toBe(false)
   })
 
+  it('setMcp replaces only the agents setting and keeps the stored fields as written', () => {
+    const repo = new ConnectionsRepo(dir)
+    const saved = repo.save(connInput('Solo MCP'))
+    const file = join(dir, 'connections.json')
+    // A record written before engines existed: no `engine` field on disk.
+    const doc = JSON.parse(readFileSync(file, 'utf8'))
+    delete doc.items.find((c: { id: string }) => c.id === saved.id).engine
+    writeFileSync(file, JSON.stringify(doc))
+    const raw = (id: string) =>
+      JSON.parse(readFileSync(file, 'utf8')).items.find((c: { id: string }) => c.id === id)
+    const { updatedAt: _b, ...before } = raw(saved.id)
+
+    const fresh = new ConnectionsRepo(dir)
+    const on = fresh.setMcp(saved.id, { enabled: true, access: 'write' })
+    expect(on?.mcp).toEqual({ enabled: true, access: 'write' })
+    expect(on?.engine).toBe('mysql')
+    const { updatedAt: _a, mcp, ...after } = raw(saved.id)
+    expect(mcp).toEqual({ enabled: true, access: 'write' })
+    expect(after).toEqual(before)
+    expect('engine' in after).toBe(false)
+
+    // Malformed input is stored as off; an unknown id changes nothing.
+    expect(fresh.setMcp(saved.id, { enabled: true, access: 'root' } as never)?.mcp).toEqual({
+      enabled: false,
+      access: 'read'
+    })
+    expect(fresh.setMcp('missing', { enabled: true, access: 'read' })).toBeNull()
+    expect(fresh.list()).toHaveLength(1)
+  })
+
   it('recovers from a corrupt file by moving it aside', () => {
     const path = join(dir, 'broken.json')
     new JsonStore(path, () => ({ a: 1 })).save()

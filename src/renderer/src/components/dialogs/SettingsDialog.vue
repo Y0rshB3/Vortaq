@@ -6,8 +6,10 @@ import {
   MANDATORY_TYPED_ENVIRONMENTS,
   normalizeTypedConfirmEnvironments
 } from '@shared/typedConfirm'
-import type { AppSettings, Environment } from '@shared/types'
+import { mcpConfigError } from '@shared/mcp'
+import type { AppSettings, ConnectionMcpConfig, Environment } from '@shared/types'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
+import { useConnectionsStore } from '@renderer/stores/connections'
 import { useSettingsStore } from '@renderer/stores/settings'
 import { useUiStore } from '@renderer/stores/ui'
 import { useUpdatesStore } from '@renderer/stores/updates'
@@ -22,12 +24,15 @@ import McpSettingsSection from '@renderer/components/mcp/McpSettingsSection.vue'
 
 const ui = useUiStore()
 const settingsStore = useSettingsStore()
+const connections = useConnectionsStore()
 const theme = useTheme()
 const notify = useNotify()
 const updates = useUpdatesStore()
 const tour = useTourStore()
 
 const form = ref<AppSettings>({ ...settingsStore.settings })
+/** Ajustes › Agentes (MCP): per-connection changes not saved yet, by connection id. */
+const mcpDrafts = ref<Record<string, ConnectionMcpConfig>>({})
 
 const saving = ref(false)
 
@@ -50,6 +55,7 @@ watch(
   (value) => {
     if (!value) return
     form.value = { ...settingsStore.settings }
+    mcpDrafts.value = {}
     error.value = ''
     void updates.loadAppVersion()
   },
@@ -83,6 +89,16 @@ async function save(): Promise<void> {
     error.value = 'El máximo de tokens de la IA debe estar entre 256 y 128000.'
     return
   }
+  for (const [id, mcp] of Object.entries(mcpDrafts.value)) {
+    const connection = connections.get(id)
+    const problem = connection
+      ? mcpConfigError({ environment: connection.environment, mcp }, typedEnvironments.value)
+      : null
+    if (problem) {
+      error.value = `«${connection?.name}»: ${problem}`
+      return
+    }
+  }
   saving.value = true
   error.value = ''
   try {
@@ -93,6 +109,13 @@ async function save(): Promise<void> {
       typedConfirmEnvironments: typedEnvironments.value
     })
     theme.change(settingsStore.themeName)
+    // Saved one by one: a failure keeps Ajustes open with the rest still staged.
+    for (const [id, mcp] of Object.entries(mcpDrafts.value)) {
+      if (connections.get(id)) await connections.setMcp(id, mcp)
+      const rest = { ...mcpDrafts.value }
+      delete rest[id]
+      mcpDrafts.value = rest
+    }
     notify.success('Ajustes guardados')
     open.value = false
   } catch (err) {
@@ -251,6 +274,7 @@ async function save(): Promise<void> {
 
         <McpSettingsSection
           v-model:enabled="form.mcpEnabled"
+          v-model:drafts="mcpDrafts"
           :typed-environments="typedEnvironments"
         />
 

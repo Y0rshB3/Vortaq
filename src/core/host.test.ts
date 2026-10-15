@@ -117,6 +117,53 @@ describe('createCore (Node host, no Electron)', () => {
     expect(core.context.credentials.get('ssh', saved.id)).toBeNull()
   })
 
+  it('connections:setMcp changes only the agents setting', async () => {
+    const stored = (id: string) =>
+      JSON.parse(readFileSync(join(dir, 'profile', 'connections.json'), 'utf8')).items.find(
+        (c: { id: string }) => c.id === id
+      )
+    const saved = await core.invoke(
+      'connections:save',
+      sqliteInput(join(dir, 'mcp.db'), { name: 'Core MCP' })
+    )
+    await core.invoke('connections:setSshPassword', saved.id, 'kept-secret-value')
+    const { updatedAt: _before, ...before } = stored(saved.id)
+    const on = await core.invoke('connections:setMcp', saved.id, {
+      enabled: true,
+      access: 'structure'
+    })
+    expect(on.mcp).toEqual({ enabled: true, access: 'structure' })
+    const { updatedAt: _after, mcp, ...after } = stored(saved.id)
+    expect(mcp).toEqual({ enabled: true, access: 'structure' })
+    expect(after).toEqual(before)
+    expect(core.context.credentials.get('ssh', saved.id)).toBe('kept-secret-value')
+
+    // Production never gets «Lectura y escritura»; nothing is written.
+    const prod = await core.invoke(
+      'connections:save',
+      sqliteInput(join(dir, 'mcp.db'), { name: 'Core MCP prod', environment: 'production' })
+    )
+    await expect(
+      core.invoke('connections:setMcp', prod.id, { enabled: true, access: 'write' })
+    ).rejects.toThrow(/«Core MCP prod».*Lectura y escritura/)
+    expect(stored(prod.id).mcp).toBeUndefined()
+    await core.invoke('connections:setMcp', prod.id, { enabled: true, access: 'read' })
+    expect(stored(prod.id).mcp).toEqual({ enabled: true, access: 'read' })
+
+    await expect(
+      core.invoke('connections:setMcp', saved.id, { enabled: 'yes', access: 'read' } as never)
+    ).rejects.toThrow(/no válido/)
+    await expect(
+      core.invoke('connections:setMcp', saved.id, { enabled: true, access: 'root' } as never)
+    ).rejects.toThrow(/no válido/)
+    await expect(
+      core.invoke('connections:setMcp', 'missing-id', { enabled: true, access: 'read' })
+    ).rejects.toThrow(/ya no existe/)
+    expect(stored(saved.id).mcp).toEqual({ enabled: true, access: 'structure' })
+    await core.invoke('connections:delete', saved.id)
+    await core.invoke('connections:delete', prod.id)
+  })
+
   it('runs SQL, edits a row and refuses an unconfirmed write on production', async () => {
     const file = join(dir, 'core.db')
     await core.invoke('sqlite:createFile', file)
