@@ -86,7 +86,7 @@ describe('Ajustes › Agentes (MCP)', () => {
     expect(ventas).not.toMatch(/escritura/)
     expect(list.text()).not.toMatch(/Privada|Sin ajuste/)
     expect(w.get('[data-test="settings-mcp-privacy"]').text()).toMatch(
-      /se envían a su proveedor de IA.*«Solo estructura» no envía/
+      /nunca envía la configuración de la conexión.*CURRENT_USER.*«Solo estructura» no se envía ningún resultado/
     )
   })
 

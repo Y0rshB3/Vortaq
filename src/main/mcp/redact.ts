@@ -31,9 +31,9 @@ interface Term {
  * boundaries; shorter ones only when quoted ('a', "a", `a`), so a one-letter
  * user does not turn every "a" of a message into a placeholder.
  */
-function termPattern(term: Term): RegExp {
+function termPattern(term: Term, minBare = 3): RegExp {
   const v = escapeRegExp(term.value)
-  if (term.value.length < 3) return new RegExp(`(['"\`])${v}\\1`, 'gi')
+  if (term.value.length < minBare) return new RegExp(`(['"\`])${v}\\1`, 'gi')
   const before = /^\w/.test(term.value) ? '(?<![\\w])' : ''
   const after = /\w$/.test(term.value) ? '(?![\\w])' : ''
   return new RegExp(`${before}${v}${after}`, 'gi')
@@ -120,6 +120,19 @@ function dataTermsOf(config: ConnectionConfig | null, secrets: readonly string[]
 const GENERIC: [RegExp, string][] = [
   // URIs (mongodb://user:pass@host, postgres://…, file:///…, ssh://…)
   [/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"<>()]+/gi, URI],
+  // Host names after network error codes (DNS, refused, unreachable…), with an optional port
+  [
+    /\b(ENOTFOUND|EAI_AGAIN|EAI_NONAME|EAI_FAIL|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|EHOSTDOWN)(\s+)(?:\[[0-9a-f:.]+\]|[\w.-]+)(?::\d{1,5})?/gi,
+    `$1$2${HOST}`
+  ],
+  // Quoted host names of driver messages: host name "x", could not translate host name "x",
+  // no pg_hba.conf entry for host "x", Host 'x' is not allowed…, address: 'x:27017', hostname 'x'
+  [
+    /\b((?:host(?:\s*name)?|address|hostname|server|member)\s*[:=]?\s*)(["'])[^"'\s]+\2/gi,
+    `$1$2${HOST}$2`
+  ],
+  // A quoted name:port (MongoDB members such as 'mongo-2:27017')
+  [/(["'])[A-Za-z][\w.-]*:\d{2,5}\1/g, `$1${HOST}:${PORT}$1`],
   // MySQL account notation 'user'@'host'
   [/'[^'\s]*'@'[^'\s]*'/g, `'${USER}'@'${HOST}'`],
   // user@host
@@ -152,10 +165,15 @@ export function redactorFor(
   config: ConnectionConfig | null,
   secrets: readonly string[] = []
 ): Redactor {
-  const terms = termsOf(config, secrets).map(
-    // Short values are matched with their quotes: keep the quotes around the placeholder.
-    (t) => [termPattern(t), t.value.length < 3 ? `$1${t.replacement}$1` : t.replacement] as const
-  )
+  const terms = termsOf(config, secrets).map((t) => {
+    // User names are always removed from errors (from 2 characters on word boundaries);
+    // other short values only when quoted, keeping the quotes around the placeholder.
+    const minBare = t.replacement === USER ? 2 : 3
+    return [
+      termPattern(t, minBare),
+      t.value.length < minBare ? `$1${t.replacement}$1` : t.replacement
+    ] as const
+  })
   const port = config?.port && config.port > 0 ? String(config.port) : null
   const ports = [config?.ssh?.enabled ? config.ssh.port : null, port ? Number(port) : null]
     .filter((p): p is number => typeof p === 'number' && p > 0)
@@ -164,13 +182,12 @@ export function redactorFor(
     let text = String(input ?? '')
     for (const [pattern, replacement] of terms) text = text.replace(pattern, replacement)
     for (const [pattern, replacement] of GENERIC) {
+      if (replacement !== IP) {
+        text = text.replace(pattern, replacement)
+        continue
+      }
       text = text.replace(pattern, (match) =>
-        replacement === IP &&
-        match.includes(':') &&
-        !/\d+\.\d+/.test(match) &&
-        !looksLikeIpv6(match)
-          ? match
-          : replacement
+        match.includes(':') && !/\d+\.\d+/.test(match) && !looksLikeIpv6(match) ? match : IP
       )
     }
     for (const p of [...new Set(ports)]) {
@@ -191,8 +208,17 @@ export function dataScrubberFor(
   secrets: readonly string[] = []
 ): Redactor {
   const terms = dataTermsOf(config, secrets).map((t) => [termPattern(t), t.replacement] as const)
-  if (!terms.length) return (text) => text
+  // The connection's user names only where a value IS the account (CURRENT_USER, USER():
+  // `app`, `app@10.0.0.9`): anywhere else they may be ordinary words of the data.
+  const users = [config?.username, config?.ssh?.enabled ? config.ssh.username : null]
+    .map((u) => u?.trim() ?? '')
+    .filter((u) => u.length > 0)
+  if (!terms.length && !users.length) return (text) => text
   return (input: string): string => {
+    for (const user of users) {
+      if (input === user) return USER
+      if (input.startsWith(`${user}@`)) return `${USER}@${HOST}`
+    }
     let text = input
     for (const [pattern, replacement] of terms) text = text.replace(pattern, replacement)
     return text

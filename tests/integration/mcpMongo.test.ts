@@ -119,6 +119,20 @@ describeServer(MONGO_TARGET, 'MCP server', (url) => {
       pipeline: [{ $match: { name: 'Pipeline Secreto' } }]
     })
     await d.collection('slow').insertMany(Array.from({ length: 50 }, (_, i) => ({ i })))
+    // Map-shaped documents: their keys are data (e-mails, dates, tokens).
+    await d.collection('polls').insertMany([
+      {
+        title: 'Encuesta',
+        votes: { 'ana.secreta@example.com': 1, 'luis.secreto@example.org': 2 },
+        byDay: { '2026-10-01': { n: 1 } },
+        sessions: Object.fromEntries(
+          Array.from({ length: 30 }, (_, i) => [
+            `tokSecreto${String.fromCharCode(65 + (i % 26))}${i}`,
+            i
+          ])
+        )
+      }
+    ])
   }, 120_000)
 
   afterAll(async () => {
@@ -185,6 +199,20 @@ describeServer(MONGO_TARGET, 'MCP server', (url) => {
     expect(
       await h.refused('run_query', { connection: 'Esquema', database: DB, sql: 'db.people.find()' })
     ).toMatch(/Solo estructura/)
+  })
+
+  it('describe_table collapses keys that are data (e-mails, dates, map keys) to <clave>', async () => {
+    const polls = await h.ok('describe_table', {
+      connection: 'Esquema',
+      database: DB,
+      table: 'polls'
+    })
+    const paths = polls.fields.map((f: { path: string }) => f.path)
+    expect(paths).toEqual(
+      expect.arrayContaining(['title', 'votes.<clave>', 'byDay.<clave>.n', 'sessions.<clave>'])
+    )
+    const text = JSON.stringify(polls)
+    expect(text).not.toMatch(/secret|2026-10-01|tokSecreto/i)
   })
 
   it('run_query returns documents as canonical Extended JSON and refuses writes', async () => {
@@ -263,6 +291,12 @@ describeServer(MONGO_TARGET, 'MCP server', (url) => {
       sql: 'db.people.stats()'
     })
     expect(JSON.stringify(stats.statements[0].value)).not.toMatch(/"host"|57017/)
+    const dbStats = await h.ok('run_query', {
+      connection: 'Lectura',
+      database: DB,
+      sql: 'db.stats()'
+    })
+    expect(JSON.stringify(dbStats.statements[0].value)).not.toMatch(/"raw"|"host"|57017/)
     for (const sql of [
       'db.people.aggregate([{ $indexStats: {} }])',
       'db.people.aggregate([{ $collStats: { count: {} } }])',

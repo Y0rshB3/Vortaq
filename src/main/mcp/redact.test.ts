@@ -66,8 +66,9 @@ describe('MCP redactor', () => {
     expect(redact('mongodb://root:x@10.1.2.3:27017/?authSource=admin is down')).toBe(
       '[uri] is down'
     )
-    expect(redact('connect ECONNREFUSED 127.0.0.1:5432')).toBe('connect ECONNREFUSED [ip]')
+    expect(redact('connect ECONNREFUSED 127.0.0.1:5432')).toBe('connect ECONNREFUSED [host]')
     expect(redact('connect ECONNREFUSED ::1:5432')).toBe('connect ECONNREFUSED [ip]')
+    expect(redact('timeout talking to 10.2.3.4:27017')).toBe('timeout talking to [ip]')
     expect(redact('timeout after 2026-03-17 14:51:20.123 (code 1045, 12 rows)')).toBe(
       'timeout after 2026-03-17 14:51:20.123 (code 1045, 12 rows)'
     )
@@ -100,6 +101,37 @@ describe('MCP redactor', () => {
       'Archivo no encontrado: [ruta]. Búscalo de nuevo'
     )
     expect(lite('cannot ATTACH /Volumes/Disco/aux-2026.sqlite')).toBe('cannot ATTACH [ruta]')
+  })
+
+  it('bare host names of driver messages are removed even when they are not the configured host', () => {
+    const r = redactGeneric
+    expect(r('getaddrinfo ENOTFOUND mongo-2.internal')).toBe('getaddrinfo ENOTFOUND [host]')
+    expect(r('getaddrinfo EAI_AGAIN dbserver')).toBe('getaddrinfo EAI_AGAIN [host]')
+    expect(r('connect ECONNREFUSED replica-b:27018')).toBe('connect ECONNREFUSED [host]')
+    expect(r('could not translate host name "pg-primary" to address')).toBe(
+      'could not translate host name "[host]" to address'
+    )
+    expect(r('no pg_hba.conf entry for host "10.1.1.1", user "x", database "y"')).toBe(
+      'no pg_hba.conf entry for host "[host]", user "x", database "y"'
+    )
+    expect(r("Host 'gw-01' is not allowed to connect to this MySQL server")).toBe(
+      "Host '[host]' is not allowed to connect to this MySQL server"
+    )
+    expect(r("Server selection timed out: { address: 'mongo-3:27017' }")).toBe(
+      "Server selection timed out: { address: '[host]' }"
+    )
+    expect(r("member 'mongo-4:27019' is down")).toBe("member '[host]' is down")
+    // Ordinary words around them stay.
+    expect(r("Table 'tienda.pedidos' doesn't exist")).toBe("Table 'tienda.pedidos' doesn't exist")
+  })
+
+  it('users of 2+ characters are always removed from errors; one letter only when quoted', () => {
+    expect(redactorFor(config({ username: 'sa' }))('login failed: sa has no access')).toBe(
+      'login failed: [usuario] has no access'
+    )
+    expect(redactorFor(config({ username: 'a' }))("user 'a' denied, a table")).toBe(
+      "user '[usuario]' denied, a table"
+    )
   })
 
   it('short users are only removed when quoted', () => {
@@ -135,8 +167,10 @@ describe('MCP data scrubber (successful answers)', () => {
     expect(scrub('via bastion.example.org')).toBe('via [host]')
     expect(scrub('/Users/ana/datos/tienda.db')).toBe('[ruta]')
     expect(scrub('the password is S3cr3t-pass')).toBe('the password is [secreto]')
-    // Ordinary data stays as it is.
-    expect(scrub('app_rw')).toBe('app_rw')
+    // The account itself (CURRENT_USER, USER()) goes; the name inside other text stays.
+    expect(scrub('app_rw')).toBe('[usuario]')
+    expect(scrub('app_rw@10.0.0.9')).toBe('[usuario]@[host]')
+    expect(scrub('owner app_rw of the report')).toBe('owner app_rw of the report')
     expect(scrub('https://example.com/x')).toBe('https://example.com/x')
     expect(scrub('tienda.db')).toBe('tienda.db')
     const local = dataScrubberFor({
@@ -145,5 +179,7 @@ describe('MCP data scrubber (successful answers)', () => {
       username: 'root'
     })
     expect(local('smtp on localhost for root')).toBe('smtp on localhost for root')
+    expect(local('root@localhost')).toBe('[usuario]@[host]')
+    expect(local('rooted')).toBe('rooted')
   })
 })

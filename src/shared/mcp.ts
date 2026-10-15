@@ -47,7 +47,7 @@ export const MCP_WRITE_BLOCKED =
   '«Lectura y escritura» no está disponible en las conexiones que piden escribir el nombre para confirmar (Producción y los entornos elegidos en Ajustes › Seguridad).'
 
 export const MCP_PRIVACY_NOTE =
-  'Con «Lectura» o «Lectura y escritura», las filas que lea el agente se envían a su proveedor de IA. «Solo estructura» no envía ningún dato de las filas. Vortaq nunca le envía la contraseña, el host, el puerto, el usuario, el túnel SSH ni la ruta del archivo de la conexión, tampoco en los errores.'
+  'Vortaq nunca envía la configuración de la conexión (contraseña, host, puerto, usuario, túnel SSH, ruta del archivo), tampoco en los errores. Con «Lectura» o «Lectura y escritura», el agente ejecuta consultas cuyos resultados llegan a su proveedor de IA y muestran lo que el usuario de la base de datos puede ver, incluido lo que el servidor dice de sí mismo (p. ej. CURRENT_USER, @@hostname o inet_server_addr()). Con «Solo estructura» no se envía ningún resultado de consultas.'
 
 export function isMcpAccess(value: unknown): value is McpAccess {
   return typeof value === 'string' && (MCP_ACCESS_LEVELS as readonly string[]).includes(value)

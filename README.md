@@ -128,7 +128,8 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
   compatible con OpenAI): pregunta sobre tu base de datos, genera SQL en el editor y explica consultas y
   errores. Solo se envía la estructura, nunca tus datos ([Asistente de IA](#asistente-de-ia)).
 - **Agentes (MCP)**: Claude Code, Claude Desktop, Cursor, VS Code u otro cliente MCP pueden usar las conexiones
-  que actives (solo estructura, lectura o lectura y escritura), sin ver contraseñas, hosts, usuarios ni rutas;
+  que actives (solo estructura, lectura o lectura y escritura) sin que Vortaq les dé contraseñas, hosts, usuarios
+  ni rutas;
   nunca escriben en Producción ([Agentes (MCP)](#agentes-mcp)).
 - Tema oscuro y claro.
 
@@ -1253,9 +1254,9 @@ entorno.
 ## Agentes (MCP)
 
 Vortaq incluye un servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol) para que un agente
-de IA (Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP) use **tus conexiones guardadas** sin
-ver nunca las contraseñas, los hosts, los puertos, los usuarios, la configuración SSH, las cadenas de conexión ni
-las rutas de los archivos SQLite. El agente se refiere a cada conexión por su nombre.
+de IA (Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP) use **tus conexiones guardadas** sin que
+Vortaq le dé nunca su configuración: ni la contraseña, ni el host, el puerto, el usuario, la configuración SSH, la
+cadena de conexión o la ruta del archivo SQLite. El agente se refiere a cada conexión por su nombre.
 
 El cliente arranca Vortaq él mismo en modo MCP (`Vortaq --mcp`, sin ventana, comunicándose por la entrada y
 salida estándar). Funciona con la app abierta o cerrada; los cambios que hagas en la app (activar una conexión,
@@ -1282,17 +1283,18 @@ El nivel se comprueba en cada llamada: si cambias el entorno de una conexión a 
 poder escribir en ella en ese mismo momento. Además, el control de producción de Vortaq sigue activo por
 debajo: el modo MCP nunca envía la confirmación de producción.
 
-**Privacidad**: con «Lectura» o «Lectura y escritura», las filas que lea el agente se envían a **su** proveedor
-de IA (lo que el agente ve, lo ve el modelo que use). «Solo estructura» no envía ningún dato de las filas (en
-MongoDB, ni documentos, ni valores de `enum`/`pattern` del validador, ni las etapas de las vistas, ni los filtros
-de los índices parciales: solo nombres, claves de índices y rutas de campos con su tipo BSON). Vortaq nunca le
-envía al agente la contraseña, el host, el puerto, el usuario, el túnel SSH ni la ruta del archivo de la conexión:
-los borra de los errores y quita la contraseña, el host (salvo `localhost`) y las rutas también de las respuestas
-(filas, documentos, planes de ejecución). En MongoDB rechaza además `rs.status()`, `db.serverStatus()`,
-`db.currentOp()`, las etapas que describen el servidor (`$collStats`, `$indexStats`, `$currentOp`…) y las bases de
-datos de sistema (`admin`, `local`, `config`). Aun así, en los niveles con lectura el agente puede consultar todo
-lo que el usuario de la base de datos puede leer, también funciones del servidor como el usuario actual: elige
-«Solo estructura» si eso importa. El asistente de IA integrado no cambia: sigue enviando solo la estructura.
+**Privacidad**: Vortaq nunca envía la configuración de la conexión (contraseña, host, puerto, usuario, túnel SSH,
+ruta del archivo), tampoco en los errores: la borra de los mensajes, quita la contraseña, el host (salvo
+`localhost`), las rutas y la propia cuenta (`CURRENT_USER`, `USER()`) de las respuestas y, en MongoDB, rechaza
+`rs.status()`, `db.serverStatus()`, `db.currentOp()`, las etapas que describen el servidor (`$collStats`,
+`$indexStats`, `$currentOp`…) y las bases de datos de sistema (`admin`, `local`, `config`). Pero con «Lectura» o
+«Lectura y escritura» el agente ejecuta consultas cuyos resultados llegan a **su** proveedor de IA (lo que el agente
+ve, lo ve el modelo que use) y muestran todo lo que el usuario de la base de datos puede ver, incluido lo que el
+servidor dice de sí mismo (por ejemplo `@@hostname`, `inet_server_addr()` o la lista de procesos). Con «Solo
+estructura» no se envía ningún resultado de consultas (en MongoDB, ni documentos, ni valores de `enum`/`pattern`
+del validador, ni las etapas de las vistas, ni los filtros de los índices parciales, y las claves que parecen datos
+—correos, identificadores, fechas, mapas con muchas claves— se agrupan como `<clave>`). El asistente de IA integrado
+no cambia: sigue enviando solo la estructura.
 
 ### Configurar el cliente
 

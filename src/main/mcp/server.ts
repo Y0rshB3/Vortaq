@@ -52,7 +52,7 @@ export function activityLine(e: McpActivity): string {
   return `tool=${e.tool} connection=${JSON.stringify(e.connection)} access=${e.access} outcome=${e.outcome} ms=${e.durationMs} rows=${e.rows ?? '-'}`
 }
 
-export const MCP_INSTRUCTIONS = `Vortaq exposes the database connections its user saved in the Vortaq desktop app and explicitly made available to agents. You never see passwords, hosts, ports, users, SSH settings, connection strings or file paths: refer to a connection by the id or name that list_connections returns.
+export const MCP_INSTRUCTIONS = `Vortaq exposes the database connections its user saved in the Vortaq desktop app and explicitly made available to agents. Vortaq never sends you a connection's own configuration (password, host, port, user, SSH tunnel, connection string or file path), not even in error messages: refer to a connection by the id or name that list_connections returns. Query results still show whatever the database user can see, including what the server reports about itself.
 
 Each connection has a level chosen by the user:
 - structure: list_databases, list_tables and describe_table only (no row values).

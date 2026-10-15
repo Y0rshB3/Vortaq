@@ -45,6 +45,7 @@ import { openRowSource, type RowSource } from '../export/sources'
 import { CANCELLED_EXPORT } from '../export/writer'
 import { assertScriptAllowed } from '../ipc/productionGuard'
 import { isMongoConnection } from '../mongo/connection'
+import { DATA_KEY, looksLikeDataKey } from '../mongo/documents'
 import { prepareMongoScript, type PreparedStatement } from '../mongo/run'
 import { MongoInputError, numberOf } from '../mongo/values'
 import { isMariaDbSession } from '../mysql/mariadb'
@@ -396,7 +397,11 @@ async function describeMongo(
       return {
         name: String(ix.name),
         keys: Object.entries(key).map(([field, v]) => ({
-          field,
+          // An index on a map entry (`votes.ana@x.com`) must not carry the key either.
+          field: field
+            .split('.')
+            .map((part) => (looksLikeDataKey(part) ? DATA_KEY : part))
+            .join('.'),
           order: typeof v === 'string' ? v : numberOf(v) < 0 ? 'desc' : 'asc'
         })),
         unique: ix.unique === true || ix.name === '_id_',
@@ -411,7 +416,7 @@ async function describeMongo(
     }),
     ...(schema ? { validator_schema: schema } : {}),
     ...(notes.length ? { notes } : {}),
-    note: 'Campos muestreados (hasta 200 documentos al azar) con sus tipos BSON; nunca valores.'
+    note: `Campos muestreados (hasta 200 documentos al azar) con sus tipos BSON; nunca valores. Las claves que son datos (correos, números, fechas, identificadores, claves de mapas) aparecen como ${DATA_KEY}.`
   }
 }
 
@@ -619,8 +624,19 @@ export const MONGO_STAGE_REFUSED =
 export const MONGO_SYSTEM_REFUSED =
   'Las bases de datos de sistema (admin, local, config) no están disponibles para agentes: guardan usuarios, la configuración del servidor y sus miembros.'
 
-/** Keys of explain/stats answers that name the server (host, port, connection string). */
-const SERVER_INFO_KEYS: ReadonlySet<string> = new Set(['serverInfo', 'host', 'connectionString'])
+/**
+ * Keys of explain/stats answers that name the server: host, port, connection
+ * string, and `raw` (db.stats() through mongos keys it by "shard/host:port,…").
+ */
+const SERVER_INFO_KEYS: ReadonlySet<string> = new Set([
+  'serverInfo',
+  'host',
+  'connectionString',
+  'raw',
+  'hosts',
+  'me',
+  'primary'
+])
 
 function hasStage(value: unknown, depth = 0): boolean {
   if (depth > 200) return true // fail closed
@@ -670,8 +686,9 @@ function assertAgentScript(prepared: PreparedStatement[], startDatabase: string)
 function answersWithServerInfo(prepared: PreparedStatement[]): boolean[] {
   return prepared.map(
     (p) =>
-      p.statement.type === 'collection' &&
-      (p.statement.method === 'stats' || p.statement.explain !== null || p.explain !== undefined)
+      (p.statement.type === 'db' && p.statement.method === 'stats') ||
+      (p.statement.type === 'collection' &&
+        (p.statement.method === 'stats' || p.statement.explain !== null || p.explain !== undefined))
   )
 }
 

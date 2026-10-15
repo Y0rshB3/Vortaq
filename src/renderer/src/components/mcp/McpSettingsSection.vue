@@ -75,7 +75,7 @@ onMounted(async () => {
       v-model="enabled"
       color="primary"
       label="Permitir que agentes usen Vortaq (MCP)"
-      hint="Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP pueden usar las conexiones que actives para agentes, sin ver contraseñas, hosts, usuarios ni rutas."
+      hint="Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP pueden usar las conexiones que actives para agentes; Vortaq no les da la configuración de la conexión (contraseña, host, usuario, ruta)."
       persistent-hint
       density="compact"
       data-test="settings-mcp-enabled"

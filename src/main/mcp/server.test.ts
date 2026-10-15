@@ -176,7 +176,7 @@ describe('MCP server over the in-memory transport (SQLite)', () => {
   it('initialize gives instructions; tools/list has the seven tools with their hints', async () => {
     expect(client.getServerVersion()).toMatchObject({ name: 'vortaq', version: '9.9.9' })
     expect(client.getInstructions()).toMatch(/list_connections/)
-    expect(client.getInstructions()).toMatch(/never see passwords, hosts/)
+    expect(client.getInstructions()).toMatch(/never sends you a connection's own configuration/)
     const { tools } = await client.listTools()
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
     expect(Object.keys(byName).sort()).toEqual([

@@ -13,7 +13,9 @@
  * - the `$jsonSchema` validator reduced to bsonType / required / properties /
  *   items / description (enum, pattern, const, bounds and query-operator
  *   validators are left out);
- * - field paths with their BSON types and how many sampled documents have them.
+ * - field paths with their BSON types and how many sampled documents have them,
+ *   with keys that are data (e-mails, ids, dates, keys of map-like objects)
+ *   collapsed to `<clave>` (documents.ts `shapeOf` with `collapseDataKeys`).
  */
 import type { Document } from 'mongodb'
 import type { MongoFieldStat } from '@shared/types'
@@ -82,7 +84,8 @@ export function mongoStructureSource(conn: MongoDriverConnection): MongoStructur
           .rawColl(database, collection)
           .aggregate([{ $sample: { size: AI_SAMPLE_SIZE } }], { maxTimeMS: 10_000 })
           .toArray()
-        return shapeOf(docs)
+        // Keys that are data (e-mails, ids, dates, map keys) never leave as field names.
+        return shapeOf(docs, { collapseDataKeys: true })
       } catch {
         return []
       }

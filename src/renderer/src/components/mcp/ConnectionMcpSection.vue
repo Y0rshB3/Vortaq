@@ -62,7 +62,7 @@ watch(
       label="Disponible para agentes (MCP)"
       :hint="
         enabled
-          ? 'Los agentes ven el nombre, el motor, el entorno y el nivel; nunca la contraseña, el host, el puerto, el usuario, el túnel SSH ni la ruta del archivo.'
+          ? 'Vortaq da a los agentes el nombre, el motor, el entorno y el nivel; nunca la contraseña, el host, el puerto, el usuario, el túnel SSH ni la ruta del archivo de la conexión.'
           : 'Desactivada: esta conexión no existe para los agentes.'
       "
       persistent-hint
