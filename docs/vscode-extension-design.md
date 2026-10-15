@@ -12,6 +12,7 @@ Phases:
 | ----- | ------------------------------------------------------------------------------------------------------------------------ |
 | 1     | Done. Core usable without Electron, desktop behaviour unchanged.                                                         |
 | 2     | Done (`extensions/vscode`, 0.1.0): connections tree, `.sql` documents, editable results, production guard, editor theme. |
+| 2.1   | Done (0.2.0): selection, «Copiar como» and «Exportar» in the results panel (section 9.9).                                |
 | 3     | Table designer, `.vqb` backups/restore, MongoDB documents, structure-only schema for the editor's AI.                    |
 | 4     | Publish to the Visual Studio Marketplace and Open VSX.                                                                   |
 
@@ -191,8 +192,8 @@ await core.invoke('connections:open', id) // same channels and guards as the ren
 await core.dispose() // closes connections, tunnels and SQLite workers
 ```
 
-It registers the `connections:*`, `db:*`, `sqlite:*`, `mongo:*`, `filters:*`, `backups:*` and
-`ai:*` channels (`core.channels()`), none of the desktop-only ones. Several processes may share one
+It registers the `connections:*`, `db:*`, `sqlite:*`, `mongo:*`, `filters:*`, `backups:*`,
+`export:*` and `ai:*` channels (`core.channels()`), none of the desktop-only ones. Several processes may share one
 `dataDir` (an editor extension host per window): `createCore` makes the JSON stores re-read a file
 another process changed (`setJsonStoreReload`). The SQLite spawner, the AI
 fetch and the log settings are process-wide: one core per process, like the desktop app's one
@@ -321,7 +322,7 @@ Plan:
 ## 9. Phase 2: the extension as built
 
 Phase 2 is `extensions/vscode/` (extension name «Vortaq», id `y0rshb3.vortaq`, version 0.1.0,
-separate from the desktop version). This section describes it as built; **Deviation** marks where
+separate from the desktop version; 0.2.0 adds copy and export of results, section 9.9). This section describes it as built; **Deviation** marks where
 it differs from the design notes this section replaced, and why.
 
 ### 9.1 Layout and build
@@ -374,7 +375,7 @@ extensions/vscode/
   byte-for-byte unchanged).
 - **Packaging** (`npm run ext:package`): `vsce package --no-dependencies` after checking that the
   VSIX has the bundles, the notices and the icons, and no source maps, TypeScript/Vue sources,
-  tests, fixtures, `node_modules`, `.node` binaries or secret-looking files. The 0.1.0 VSIX is about 2 MB
+  tests, fixtures, `node_modules`, `.node` binaries or secret-looking files. The 0.1.0 and 0.2.0 VSIX are about 2 MB
   (17 files). Nothing is published (phase 4). A GitHub release of
   the VSIX (tag `vscode-v<version>`) must not be marked as the latest release: the desktop update
   check reads `/releases/latest` and electron-updater its `latest*.yml`.
@@ -427,7 +428,9 @@ extensions/vscode/
     the user just chose in the save dialog. Host adapters answer `app:pickFile`, `app:pickSaveFile`,
     `app:pickDirectory` (VS Code dialogs) and `app:openPath` (only the edited connection's extra
     backup folders).
-  - Results: `db:tableStructure` and `db:applyRowChanges`, only on the panel's own connection.
+  - Results: `db:tableStructure` and `db:applyRowChanges`, only on the panel's own connection;
+    `export:rows`, `export:query` and `export:cancel` (section 9.9), and a host adapter for
+    `app:pickSaveFile` (VS Code's save dialog).
   - Never `db:execute`, `connections:delete`, `settings:*`, `jobs:*` or other `app:*` channels.
 - **Deviation:** `settings:get` was not moved out of `ipc/app.ts`: the webviews receive the
   settings they read (typed-confirmation environments, destructive confirmation, row limit) in their
@@ -513,6 +516,8 @@ Publisher `y0rshb3` is a placeholder until the Marketplace publisher and Open VS
 
 ### 9.8 Testing
 
+- **Webview components** (vitest project `ext-web`, jsdom, `*.web.test.ts`, in `npm run check`):
+  the results webview with the reused renderer components and a fake host.
 - **Unit** (vitest project `ext`, mocked `vscode`, in `npm run check`): statement selection,
   document targets, guard prompting and webview-call preparation, bridge validation/allowlist/
   serialization, CSP, form scope, desktop import (fixture, no passwords, only connections.json
@@ -531,12 +536,52 @@ Publisher `y0rshb3` is a placeholder until the Marketplace publisher and Open VS
   the window with `Page.captureScreenshot` (no screen-recording permission needed), in the dark,
   light and high-contrast themes.
 
+### 9.9 Copy and export of results (0.2.0)
+
+The results webview passes `exportable`, the run's `script` and its `context` (MySQL database,
+PostgreSQL `{ database, schema }`, null on SQLite: `runContext` in `host/runner.ts`) to the reused
+`EditableResult`, so the desktop grid selection, «Copiar como» and `ExportDialog` run unchanged. The
+core answers `export:*` with the same Electron-free service as the desktop (`src/main/export`):
+`<file>.part` renamed when complete, «Resultado completo» re-read in a new read-only session, MongoDB
+refused. `host/panels/exports.ts` adds the host's part:
+
+- `app:pickSaveFile` is `window.showSaveDialog` with the format's filter, in the folder of the last
+  export, else the local workspace folder or home; a remote file system pick is refused, as in the
+  connection form.
+- **Scope** (the webview is untrusted): `export:rows`/`export:query` only write a file the user just
+  chose in that panel's save dialog (each choice is good for one export), `export:query` only on the
+  panel's own connection, `export:cancel` only for an export the panel started.
+- «Ver datos» panels run `SELECT * … LIMIT n`; their «Resultado completo» becomes the table source
+  (`{ kind: 'table' }`, no paging), as in the desktop table view, so it exports the whole table.
+- **Progress:** the core's `event:progress` (kind `'export'`) is routed by operation id to the
+  panel that started it (`ResultsPanels.progress`), which forwards it to its webview: the progress
+  store and `ExportDialog` work as on the desktop, and a strip of `OperationProgress` cards with
+  «Cancelar» replaces the desktop operations card. It is mirrored in `window.withProgress`
+  (notification, cancellable → `export:cancel`). A closed panel's export keeps running there.
+- **Outcome:** a finished export is a VS Code notification with «Abrir» (`vscode.open`; Excel and
+  HTML with `env.openExternal`) and «Mostrar en carpeta» (`revealFileInOS`). The dialog's own
+  «filas exportadas» notice, whose «Mostrar en la carpeta» handler lives in the page, is not
+  forwarded (`webview/results/exportNotices.ts`). A failure is shown once: the host shows the
+  service's message after the webview received a progress event for the operation (its dialog then
+  leaves it to the operations UI), the webview shows the ones raised before any; a cancel is a
+  status bar message.
+- **Deviation:** no theming changes were needed: the dialog, the menus and the progress cards only
+  use `--nd-*` tokens and Vuetify colours, which `theme.ts` maps already (checked in the dark, light
+  and high-contrast screenshots).
+
+Tests: `exports.test.ts` and `results.test.ts` (scope, save dialog, progress routing,
+notifications, «Ver datos», with a fake webview panel), `ResultsApp.web.test.ts` (vitest project
+`ext-web`: the results webview in jsdom with «Exportar», the dialog, the progress strip and the
+notice filter), `src/core/host.test.ts` and `tests/integration/coreNode.test.ts` (export through
+`createCore` and the bundled core in plain Node: SQLite CSV/XLSX and cancel, MySQL 8.4, PostgreSQL
+17), and the VS Code suite (MySQL on production without a prompt, «Ver datos», SQLite).
+
 ## 10. Left for phase 3 (and later)
 
 - Table designer; `.vqb` backups and restore (core channels exist: `backups:*`).
 - MongoDB: document editing (`mongo:applyChanges`), shell queries from the editor
   (`mongo:execute` for `.mongodb`/`.js` documents), «Cargar más».
-- Pagination of SQL results and «Ver datos» (filters, sort on the server), export to a file.
+- Pagination of SQL results and «Ver datos» (filters, sort on the server).
 - Transaction controls for PostgreSQL/SQLite document sessions (state in the status bar,
   Confirmar/Deshacer) and the desktop's «transacción abierta» prompt when closing a document.
 - Schema-aware SQL completion in `.sql` documents.
