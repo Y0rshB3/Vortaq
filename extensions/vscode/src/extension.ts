@@ -7,7 +7,13 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import * as vscode from 'vscode'
-import { ENGINES, environmentName, type ConnectionConfig, type EngineId } from '@core'
+import {
+  ENGINES,
+  environmentName,
+  type ConnectionConfig,
+  type EngineId,
+  type ProgressEvent
+} from '@core'
 import { ConnectionService } from './host/connections'
 import { createExtensionCore } from './host/core'
 import {
@@ -59,12 +65,15 @@ export async function activate(
 
   let connections: ConnectionService | null = null
   let runner: SqlRunner | null = null
+  let results: ResultsPanels | null = null
   const { core, sqliteProblem } = await createExtensionCore(context, output, (channel, payload) => {
     if (channel === 'event:connectionClosed') {
       const event = payload as { connectionId: string; reason: string }
       runner?.connectionClosed(event.connectionId)
       connections?.connectionLost(event.connectionId, event.reason)
     }
+    // «Exportar»: progress of an export goes to the panel that started it.
+    if (channel === 'event:progress') results?.progress(payload as ProgressEvent)
   })
   disposeCore = () => core.dispose()
   context.subscriptions.push({ dispose: () => void core.dispose() })
@@ -86,7 +95,7 @@ export async function activate(
   const targets = new DocumentTargets(context.workspaceState)
   const invoke = (channel: string, args: unknown[]): Promise<unknown> =>
     (core.invoke as (c: string, ...a: unknown[]) => Promise<unknown>)(channel, ...args)
-  const results = new ResultsPanels({
+  results = new ResultsPanels({
     extensionUri: context.extensionUri,
     invoke,
     guard,

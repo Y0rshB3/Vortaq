@@ -39,8 +39,20 @@ export default defineConfig({
           name: 'ext',
           environment: 'node',
           include: ['extensions/vscode/src/**/*.test.ts'],
+          exclude: ['extensions/vscode/src/**/*.web.test.ts'],
           // theme.test.ts reads the desktop design tokens (tokens.css?raw).
           css: { include: [/styles\/tokens\.css/] }
+        }
+      },
+      {
+        // The extension's webviews mounted in jsdom (the reused renderer components included).
+        plugins: [vue()],
+        resolve: { alias },
+        test: {
+          name: 'ext-web',
+          environment: 'jsdom',
+          include: ['extensions/vscode/src/webview/**/*.web.test.ts'],
+          server: { deps: { inline: ['vuetify'] } }
         }
       },
       {

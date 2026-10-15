@@ -7,13 +7,13 @@
  * create the SQLite file the user just chose in the save dialog.
  */
 import { stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import * as vscode from 'vscode'
 import type { ConnectionConfig, EngineId } from '@core'
 import type { HostMessage } from '../../protocol'
 import type { ConnectionFormState, WebviewSettings } from '../../webviewState'
 import { handleWebviewMessage } from '../webview/bridge'
 import { webviewHtml, webviewOptions } from '../webview/html'
+import { dialogFilters, localHome, localPath, type FileFilters } from './dialogs'
 import { showNotification } from './results'
 
 /** Core channels the connection form may call. */
@@ -40,37 +40,6 @@ const ID_CHANNELS = new Set([
 ])
 
 const OTHER_CONNECTION = 'Este formulario solo puede modificar su propia conexión.'
-
-type FileFilters = { name: string; extensions: string[] }[] | undefined
-
-const dialogFilters = (filters: FileFilters): Record<string, string[]> | undefined =>
-  Array.isArray(filters) && filters.length
-    ? Object.fromEntries(
-        filters
-          .filter((f) => f && typeof f.name === 'string' && Array.isArray(f.extensions))
-          .map((f) => [f.name, f.extensions.filter((e) => typeof e === 'string')])
-      )
-    : undefined
-
-/**
- * Files the core opens are local paths of the machine the extension runs on.
- * In a remote window the dialogs can browse the remote file system: those
- * picks are refused instead of being used as local paths.
- */
-function localPath(uri: vscode.Uri | undefined): string | null {
-  if (!uri) return null
-  if (uri.scheme !== 'file')
-    throw new Error(
-      'Elige un archivo de este equipo: Vortaq abre los archivos donde se ejecuta la extensión.'
-    )
-  return uri.fsPath
-}
-
-/** First folder of the workspace when it is local, else the user's home folder. */
-function localHome(): vscode.Uri {
-  const folder = vscode.workspace.workspaceFolders?.[0]?.uri
-  return folder?.scheme === 'file' ? folder : vscode.Uri.file(homedir())
-}
 
 /**
  * The scope rules of one form, apart from VS Code so they can be tested:

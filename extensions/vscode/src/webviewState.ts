@@ -2,7 +2,13 @@
  * State the host sends to each webview (`init` / `state` messages). Types
  * only, shared by the extension host and the webview bundles.
  */
-import type { ConnectionConfig, EngineId, Environment, QueryStatementResult } from '@shared/types'
+import type {
+  ConnectionConfig,
+  EngineId,
+  Environment,
+  QueryStatementResult,
+  SchemaRef
+} from '@shared/types'
 
 /** The settings the reused desktop components read (settings store). */
 export interface WebviewSettings {
@@ -49,6 +55,16 @@ export interface ResultsState {
   running: boolean
   /** SQL statement results (kind 'sql'). */
   results: QueryStatementResult[]
+  /**
+   * The whole script of the run: «Exportar › Resultado completo» re-runs one
+   * statement alone, so it is refused when another one changed the session.
+   */
+  script: string | null
+  /**
+   * Where the statements ran (MySQL database, PostgreSQL `{ database, schema }`;
+   * null on SQLite), so the full export reads in the same place.
+   */
+  context: SchemaRef | null
   /** Wall time of the whole run in milliseconds. */
   totalMs: number | null
   /** Message above the results (stopped, failed to run). */
