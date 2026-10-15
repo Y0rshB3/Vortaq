@@ -166,6 +166,29 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.settings-section {
+  padding: 12px 14px 14px;
+  border-radius: var(--nd-radius-card);
+  background: var(--nd-bg-raised);
+  border: 1px solid var(--nd-border);
+}
+.settings-section__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: var(--nd-fs-small);
+  font-weight: 600;
+  color: var(--nd-text-2);
+}
+.settings-section__title .v-icon {
+  color: var(--nd-text-muted);
+}
+.settings-section__hint {
+  margin: 6px 0 0;
+  font-size: var(--nd-fs-xs);
+  color: var(--nd-text-2);
+}
 .mcp-settings__privacy {
   display: flex;
   gap: 6px;
@@ -246,8 +269,8 @@ onMounted(async () => {
   flex: 1;
   min-width: 0;
   margin: 0;
-  overflow-x: auto;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: var(--nd-fs-xs);
   color: var(--nd-text);
 }
