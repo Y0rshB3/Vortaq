@@ -17,6 +17,7 @@ import { registerAiHandlers } from '@main/ipc/ai'
 import { registerBackupsHandlers } from '@main/ipc/backups'
 import { registerConnectionsHandlers } from '@main/ipc/connections'
 import { registerDbHandlers } from '@main/ipc/db'
+import { registerExportHandlers } from '@main/ipc/export'
 import { registerFiltersHandlers } from '@main/ipc/filters'
 import { HandlerRegistry } from '@main/ipc/router'
 import { configureLog } from '@main/log'
@@ -38,7 +39,10 @@ export interface CoreOptions {
   secrets: { codec: SecretCodec; codecName: CodecName }
   /** Home folder for the default backup folder (default: os.homedir()). */
   home?: string
-  /** Push events for the host's views: progress, connection lost, assistant deltas. */
+  /**
+   * Push events for the host's views: progress (backups, exports), connection lost,
+   * assistant deltas.
+   */
   emit?: <E extends IpcEventChannel>(channel: E, payload: IpcEventMap[E]) => void
   /**
    * SQLite worker spawner, normally nodeSqliteSpawner(<bundled sqliteWorker.cjs>).
@@ -64,7 +68,7 @@ export interface VortaqCore {
   /**
    * Same contract as the renderer's window.vortaq.invoke for the core
    * channels (connections:*, db:*, sqlite:*, mongo:*, filters:*, backups:*,
-   * ai:*): same handlers, same production guard, same error messages.
+   * export:*, ai:*): same handlers, same production guard, same error messages.
    */
   invoke<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcResult<C>>
   /** The channels this core answers. */
@@ -103,6 +107,9 @@ export function createCore(options: CoreOptions): VortaqCore {
   registerDbHandlers(context, registry.handle)
   registerFiltersHandlers(context, registry.handle)
   registerBackupsHandlers(context, registry.handle)
+  // export:* writes only the path the host's save dialog returned; «Resultado completo»
+  // re-reads in a new read-only session, never the host's query sessions.
+  registerExportHandlers(context, registry.handle)
   registerAiHandlers(context, registry.handle)
   const connections = getConnectionManager(context)
   return {

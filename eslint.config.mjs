@@ -18,10 +18,11 @@ const CORE_FILES = [
   'src/main/sqlite/**/*.ts',
   'src/main/mongo/**/*.ts',
   'src/main/backup/**/*.ts',
+  'src/main/export/**/*.ts',
   'src/main/credentials/**/*.ts',
   'src/main/storage/**/*.ts',
   'src/main/ai/**/*.ts',
-  'src/main/ipc/{router,errorLog,productionGuard,connections,db,dbPostgres,dbSqlite,mongo,filters,backups,ai,jobValidation}.ts',
+  'src/main/ipc/{router,errorLog,productionGuard,connections,db,dbPostgres,dbSqlite,mongo,filters,backups,export,ai,jobValidation}.ts',
   'src/main/migration/mariadbEngine.ts',
   'src/main/{log,env,context,brand}.ts'
 ]

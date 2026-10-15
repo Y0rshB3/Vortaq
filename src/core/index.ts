@@ -96,6 +96,7 @@ export { registerConnectionsHandlers } from '@main/ipc/connections'
 export { registerDbHandlers } from '@main/ipc/db'
 export { registerFiltersHandlers, schemaKey } from '@main/ipc/filters'
 export { registerBackupsHandlers } from '@main/ipc/backups'
+export { registerExportHandlers } from '@main/ipc/export'
 export { registerAiHandlers } from '@main/ipc/ai'
 export { createPgDbHandlers, type PgDbHandlers } from '@main/ipc/dbPostgres'
 export { createSqliteDbHandlers, type SqliteDbHandlers } from '@main/ipc/dbSqlite'
@@ -202,6 +203,24 @@ export {
   type ArchiveVerifyResult
 } from '@main/backup/archive'
 export { checkBackupPassword, MIN_BACKUP_PASSWORD } from '@main/backup/create'
+
+/* ---------- copy/export of results (export:*; the host's save dialog picks the path) ---------- */
+export { createExportService, type ExportService } from '@main/export/service'
+export { EXPORT_MONGO_REFUSED } from '@main/export/sources'
+export { CANCELLED_EXPORT } from '@main/export/writer'
+export {
+  defaultExportOptions,
+  EXPORT_FORMATS,
+  formatInfo,
+  type ExportFormat,
+  type ExportFormatInfo,
+  type ExportOptions,
+  type ExportQueryRequest,
+  type ExportQuerySource,
+  type ExportResult,
+  type ExportRowsRequest
+} from '@shared/export/types'
+export { checkExportResult, checkExportStatement } from '@shared/export/statement'
 
 /* ---------- AI assistant (structure only; provider calls through setAiFetch) ---------- */
 export { AiService, getAiService, setAiFetch } from '@main/ai/index'

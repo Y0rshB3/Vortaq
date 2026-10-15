@@ -1,17 +1,26 @@
 /**
- * createCore without Electron: the channels it answers, the vault-key secrets
- * and the production guard, on a SQLite file with in-process workers (no
- * server). The Node-only integration test (tests/integration/coreNode.test.ts)
- * does the same against the bundled core and real servers.
+ * createCore without Electron: the channels it answers, the vault-key secrets,
+ * the production guard and the export:* channels, on a SQLite file with
+ * in-process workers (no server). The Node-only integration test
+ * (tests/integration/coreNode.test.ts) does the same against the bundled core
+ * and real servers.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { defaultSqliteOptions } from '@shared/engines'
-import type { ConnectionInput, QueryStatementResult } from '@shared/types'
+import type { ConnectionInput, ProgressEvent, QueryStatementResult } from '@shared/types'
+import { unzip } from '@main/export/testing/unzip'
 import { inProcessSpawner } from '@main/sqlite/spawner'
-import { createCore, keyCodec, newVaultKey, type VortaqCore } from './index'
+import {
+  createCore,
+  defaultExportOptions,
+  EXPORT_MONGO_REFUSED,
+  keyCodec,
+  newVaultKey,
+  type VortaqCore
+} from './index'
 
 function sqliteInput(filePath: string, overrides: Partial<ConnectionInput> = {}): ConnectionInput {
   return {
@@ -52,6 +61,7 @@ describe('createCore (Node host, no Electron)', () => {
   let dir: string
   let core: VortaqCore
   const vaultKey = newVaultKey()
+  const progress: ProgressEvent[] = []
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'vortaq-core-host-'))
@@ -59,7 +69,10 @@ describe('createCore (Node host, no Electron)', () => {
       dataDir: join(dir, 'profile'),
       home: dir,
       secrets: { codec: keyCodec(vaultKey), codecName: 'vaultKey' },
-      sqliteSpawner: inProcessSpawner()
+      sqliteSpawner: inProcessSpawner(),
+      emit: (channel, payload) => {
+        if (channel === 'event:progress') progress.push(payload as ProgressEvent)
+      }
     })
   })
 
@@ -81,6 +94,9 @@ describe('createCore (Node host, no Electron)', () => {
       'sqlite:createFile',
       'filters:list',
       'backups:create',
+      'export:rows',
+      'export:query',
+      'export:cancel',
       'ai:chat'
     ] as const)
       expect(channels).toContain(c)
@@ -139,5 +155,139 @@ describe('createCore (Node host, no Electron)', () => {
     ).rejects.toThrow(/necesita confirmación explícita/)
     const [after] = ok(await core.invoke('db:execute', prod.id, 'SELECT name FROM item'))
     expect(after.resultSet?.rows).toEqual([['dos']])
+  })
+
+  describe('export:* (copy/export of results)', () => {
+    let id: string
+    let out: string
+
+    beforeAll(async () => {
+      const file = join(dir, 'export.db')
+      await core.invoke('sqlite:createFile', file)
+      id = (
+        await core.invoke(
+          'connections:save',
+          sqliteInput(file, { name: 'Core export', environment: 'production' })
+        )
+      ).id
+      ok(
+        await core.invoke(
+          'db:execute',
+          id,
+          `CREATE TABLE venta (id INTEGER PRIMARY KEY, cliente TEXT, total REAL);
+           WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1200)
+           INSERT INTO venta SELECT i, 'Cliente ' || i, i * 1.5 FROM n;`,
+          { schema: 'main', confirmProduction: true }
+        )
+      )
+      out = mkdtempSync(join(dir, 'out-'))
+    })
+
+    const partFiles = (): string[] => readdirSync(out).filter((f) => f.endsWith('.part'))
+
+    it('export:rows writes the rows the host sends, through a .part file', async () => {
+      const filePath = join(out, 'seleccion.csv')
+      const result = await core.invoke('export:rows', {
+        filePath,
+        columns: [{ name: 'id' }, { name: 'cliente' }],
+        rows: [
+          [1, 'Lucía; "Madrid"'],
+          [2, null]
+        ],
+        options: defaultExportOptions({ format: 'csv', delimiter: ';', nullText: 'NULL' })
+      })
+      expect(result).toMatchObject({ filePath, rows: 2 })
+      expect(readFileSync(filePath, 'utf8')).toBe(
+        'id;cliente\r\n1;"Lucía; ""Madrid"""\r\n2;NULL\r\n'
+      )
+      expect(partFiles()).toEqual([])
+    })
+
+    it('export:query re-reads the whole result on a production connection, without confirmation', async () => {
+      progress.length = 0
+      const filePath = join(out, 'ventas.csv')
+      const result = await core.invoke('export:query', 'export-csv', {
+        connectionId: id,
+        filePath,
+        source: { kind: 'statement', sql: 'SELECT id, cliente, total FROM venta ORDER BY id' },
+        options: defaultExportOptions({ format: 'csv' })
+      })
+      expect(result.rows).toBe(1200)
+      const lines = readFileSync(filePath, 'utf8').trimEnd().split('\r\n')
+      expect(lines).toHaveLength(1201)
+      expect(lines.slice(0, 3)).toEqual(['id,cliente,total', '1,Cliente 1,1.5', '2,Cliente 2,3'])
+      expect(partFiles()).toEqual([])
+      const mine = progress.filter((e) => e.operationId === 'export-csv')
+      expect(mine.length).toBeGreaterThan(0)
+      expect(mine.every((e) => e.kind === 'export')).toBe(true)
+      expect(mine.at(-1)).toMatchObject({ done: true, phase: 'done', current: 1200 })
+    })
+
+    it('export:query writes XLSX from the table view source (no paging)', async () => {
+      const filePath = join(out, 'venta.xlsx')
+      const result = await core.invoke('export:query', 'export-xlsx', {
+        connectionId: id,
+        filePath,
+        source: { kind: 'table', request: { schema: 'main', table: 'venta', orderBy: null } },
+        options: defaultExportOptions({ format: 'xlsx', sheetName: 'venta' })
+      })
+      expect(result.rows).toBe(1200)
+      const entries = unzip(filePath)
+      expect([...entries.keys()]).toContain('xl/worksheets/sheet1.xml')
+      expect(entries.get('xl/worksheets/sheet1.xml')!.data.toString('utf8')).toContain(
+        'Cliente 1200'
+      )
+      expect(partFiles()).toEqual([])
+    })
+
+    it('refuses writes, MongoDB connections and relative paths, and creates no file', async () => {
+      const refused = join(out, 'nunca.csv')
+      await expect(
+        core.invoke('export:query', 'export-write', {
+          connectionId: id,
+          filePath: refused,
+          source: {
+            kind: 'statement',
+            sql: "WITH c AS (SELECT 1) UPDATE venta SET cliente = 'x' RETURNING id"
+          },
+          options: defaultExportOptions()
+        })
+      ).rejects.toThrow(/solo se vuelven a ejecutar consultas de solo lectura/)
+      const mongo = await core.invoke('connections:save', {
+        ...sqliteInput(''),
+        name: 'Core Mongo',
+        engine: 'mongodb',
+        host: '127.0.0.1',
+        port: 1,
+        sqlite: undefined
+      })
+      await expect(
+        core.invoke('export:query', 'export-mongo', {
+          connectionId: mongo.id,
+          filePath: refused,
+          source: { kind: 'statement', sql: 'SELECT 1' },
+          options: defaultExportOptions()
+        })
+      ).rejects.toThrow(EXPORT_MONGO_REFUSED)
+      await expect(
+        core.invoke('export:rows', {
+          filePath: 'relativo.csv',
+          columns: [{ name: 'a' }],
+          rows: [],
+          options: defaultExportOptions()
+        })
+      ).rejects.toThrow(/absoluta/)
+      expect(existsSync(refused)).toBe(false)
+      expect(partFiles()).toEqual([])
+      // Nothing was written: the full export never writes.
+      const [count] = ok(
+        await core.invoke('db:execute', id, "SELECT COUNT(*) FROM venta WHERE cliente = 'x'")
+      )
+      expect(count.resultSet?.rows).toEqual([[0]])
+    })
+
+    it('export:cancel of an operation that is not running does nothing', async () => {
+      await expect(core.invoke('export:cancel', 'no-such-export')).resolves.toBeUndefined()
+    })
   })
 })
