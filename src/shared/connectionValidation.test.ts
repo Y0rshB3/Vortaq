@@ -210,3 +210,39 @@ describe('engine block rules', () => {
     ).toEqual(['PostgreSQL: la base de datos inicial es obligatoria.'])
   })
 })
+
+describe('agents (MCP) section', () => {
+  const write = { enabled: true, access: 'write' as const }
+  it('refuses «Lectura y escritura» on guarded environments when the list is known', () => {
+    const prod = input({ environment: 'production', mcp: write })
+    expect(connectionSaveError(prod, { typedConfirmEnvironments: ['production'] })).toMatch(
+      /«Lectura y escritura» no está disponible/
+    )
+    expect(connectionFormErrors(prod, { typedConfirmEnvironments: [] })).toEqual([
+      expect.stringMatching(/Lectura y escritura/)
+    ])
+    const staging = input({ environment: 'staging', mcp: write })
+    expect(connectionSaveError(staging, { typedConfirmEnvironments: ['production'] })).toBeNull()
+    expect(
+      connectionSaveError(staging, { typedConfirmEnvironments: ['production', 'staging'] })
+    ).toMatch(/Lectura y escritura/)
+    // Off, read or structure are always fine; without the list nothing is checked.
+    expect(
+      connectionSaveError(
+        input({ environment: 'production', mcp: { enabled: false, access: 'write' } }),
+        {
+          typedConfirmEnvironments: ['production']
+        }
+      )
+    ).toBeNull()
+    expect(
+      connectionSaveError(
+        input({ environment: 'production', mcp: { enabled: true, access: 'read' } }),
+        {
+          typedConfirmEnvironments: ['production']
+        }
+      )
+    ).toBeNull()
+    expect(connectionSaveError(prod)).toBeNull()
+  })
+})

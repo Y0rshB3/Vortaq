@@ -7,7 +7,8 @@
  * engine rules only add messages for engines other than MySQL.
  */
 import { engineOf, isEngineId } from './engines'
-import type { ConnectionInput } from './types'
+import { mcpConfigError } from './mcp'
+import type { ConnectionInput, Environment } from './types'
 
 /**
  * OS whose absolute-path rules apply (a `process.platform` value); 'any'
@@ -18,6 +19,11 @@ export type PathPlatform = string
 export interface ValidationOptions {
   /** Defaults to 'any' (the renderer); main passes process.platform. */
   platform?: PathPlatform
+  /**
+   * Environments that need the typed confirmation (Ajustes › Seguridad). When
+   * given, «Lectura y escritura» for agents (MCP) is refused on them.
+   */
+  typedConfirmEnvironments?: readonly Environment[]
 }
 
 /**
@@ -155,7 +161,15 @@ export function connectionFormErrors(
       errors.push('SSH: selecciona el archivo de clave privada.')
   }
   errors.push(...engineBlockErrors(input, options))
+  const mcp = mcpProblem(input, options)
+  if (mcp) errors.push(mcp)
   return errors
+}
+
+/** The MCP section's problem when the typed-confirmation environments are known. */
+function mcpProblem(input: ConnectionInput, options: ValidationOptions): string | null {
+  if (!options.typedConfirmEnvironments) return null
+  return mcpConfigError(input, options.typedConfirmEnvironments)
 }
 
 /**
@@ -187,5 +201,5 @@ export function connectionSaveError(
   ) {
     return 'El usuario de la conexión es obligatorio'
   }
-  return engineBlockErrors(input, options)[0] ?? null
+  return engineBlockErrors(input, options)[0] ?? mcpProblem(input, options)
 }

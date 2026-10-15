@@ -14,6 +14,7 @@ import {
   normalizeTypedConfirmEnvironments
 } from '@shared/typedConfirm'
 import { isEngineId, withEngineDefaults } from '@shared/engines'
+import { normalizeMcpConfig } from '@shared/mcp'
 import { JsonStore } from './jsonStore'
 import { newId, nowIso } from './ids'
 
@@ -43,16 +44,16 @@ export class ConnectionsRepo {
   list(): ConnectionConfig[] {
     return this.store
       .get()
-      .items.map(withEngineDefaults)
+      .items.map(normalizeRecord)
       .sort((a, b) => a.name.localeCompare(b.name))
   }
   get(id: string): ConnectionConfig | null {
     const found = this.store.get().items.find((c) => c.id === id)
-    return found ? withEngineDefaults(found) : null
+    return found ? normalizeRecord(found) : null
   }
   findByName(name: string): ConnectionConfig | null {
     const found = this.store.get().items.find((c) => c.name === name)
-    return found ? withEngineDefaults(found) : null
+    return found ? normalizeRecord(found) : null
   }
   /**
    * Creates or replaces a connection. The engine is fixed once saved (the
@@ -69,7 +70,7 @@ export class ConnectionsRepo {
     }
     const engine = existing ? keptEngine(existing.engine, input.engine) : input.engine
     const now = nowIso()
-    const record: ConnectionConfig = withEngineDefaults({
+    const record: ConnectionConfig = normalizeRecord({
       ...input,
       engine,
       id: existing?.id ?? input.id ?? newId(),
@@ -109,6 +110,23 @@ export class ConnectionsRepo {
     })
   }
 }
+
+/**
+ * Engine defaults plus the MCP setting as Vortaq reads it: a missing one stays
+ * missing (off), a malformed one becomes off (shared/mcp.ts normalizeMcpConfig).
+ */
+function normalizeRecord<T extends ConnectionConfig | (ConnectionInput & ConnectionTimes)>(
+  record: T
+): T & { engine: EngineId } {
+  const withDefaults = withEngineDefaults(record)
+  const mcp = normalizeMcpConfig(record.mcp)
+  if (mcp) return { ...withDefaults, mcp } as T & { engine: EngineId }
+  if (!('mcp' in withDefaults)) return withDefaults
+  const { mcp: _dropped, ...rest } = withDefaults
+  return rest as T & { engine: EngineId }
+}
+
+type ConnectionTimes = Pick<ConnectionConfig, 'id' | 'createdAt' | 'updatedAt'>
 
 /** Engine a save keeps for an existing record (see ConnectionsRepo.save). */
 function keptEngine(stored: EngineId, requested: EngineId | undefined): EngineId {
@@ -234,7 +252,8 @@ export const DEFAULT_SETTINGS = (
   aiDefaultProviderId: null,
   aiEffort: 'low',
   aiMaxTokens: DEFAULT_AI_MAX_TOKENS,
-  defaultBackupFormat: 'vqb'
+  defaultBackupFormat: 'vqb',
+  mcpEnabled: false
 })
 
 /**
@@ -277,6 +296,8 @@ export class SettingsRepo {
         typeof stored.aiDefaultProviderId === 'string' ? stored.aiDefaultProviderId : null,
       aiEffort: AI_EFFORTS.includes(stored.aiEffort) ? stored.aiEffort : 'low',
       aiMaxTokens: normalizeAiMaxTokens(stored.aiMaxTokens),
+      // Agents (MCP): only an explicit true lets `Vortaq --mcp` answer tools (2.1.0).
+      mcpEnabled: stored.mcpEnabled === true,
       // Profiles saved before .vqb (or invalid values): .vqb is the default for new backups.
       defaultBackupFormat:
         stored.defaultBackupFormat && BACKUP_FORMATS.includes(stored.defaultBackupFormat)

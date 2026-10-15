@@ -18,6 +18,7 @@ import type {
   ExtensionInfo,
   Job,
   JobInput,
+  McpLaunchInfo,
   JobPackageSummary,
   JobLogEvent,
   JobRun,
@@ -145,6 +146,11 @@ export interface IpcInvokeMap {
   'app:licenses': { args: []; result: AppLicenses }
   /** Opens the project's repository page (fixed URL; the renderer passes nothing). */
   'app:openRepository': { args: []; result: void }
+  /**
+   * Ajustes › Agentes (MCP): how an MCP client starts this copy in MCP mode
+   * (executable and arguments built from process.execPath; nothing is written).
+   */
+  'app:mcpLaunch': { args: []; result: McpLaunchInfo }
 
   /** Looks for a newer GitHub release. Automatic checks (manual=false) use a 6-hour cache. */
   'updates:check': { args: [manual: boolean]; result: UpdateCheckResult }
@@ -710,6 +716,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'app:openExternal',
   'app:licenses',
   'app:openRepository',
+  'app:mcpLaunch',
   'updates:check',
   'updates:dismiss',
   'updates:snooze',

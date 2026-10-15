@@ -9,6 +9,7 @@ import { installedLegacyApps, LEGACY_APP_NOTICE } from '../migration/legacyApp'
 import { dismissRaisedNotice, raisedNotices } from '../notices'
 import { titleBarOverlayFor, usesTitleBarOverlay } from '../windowOptions'
 import { handle } from './typed'
+import { mcpLaunchOf } from '@shared/mcp'
 
 /** ElectronDB bundles still installed (macOS; a scratch profile checks only VORTAQ_LEGACY_APP_PATHS). */
 function legacyApps(): string[] {
@@ -45,6 +46,15 @@ export function registerAppHandlers(ctx: AppContext): void {
     })
   )
   handle('app:openRepository', () => shell.openExternal(REPOSITORY_OPEN_URL))
+  handle('app:mcpLaunch', () =>
+    mcpLaunchOf({
+      execPath: process.execPath,
+      packaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      platform: process.platform,
+      appImage: process.env.APPIMAGE ?? null
+    })
+  )
   handle('app:pickDirectory', async (title) => {
     const res = await dialog.showOpenDialog({
       title,
