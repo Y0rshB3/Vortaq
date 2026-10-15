@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { codeTokens, tokenizePg } from './pgLexer'
+import { codeTokens, decodeUnicodeEscapes, tokenizePg } from './pgLexer'
 
 const kinds = (sql: string): string[] => tokenizePg(sql).map((t) => `${t.kind}:${t.value}`)
 
@@ -95,5 +95,59 @@ describe('tokenizePg', () => {
     const started = Date.now()
     expect(codeTokens(tokenizePg(big)).length).toBe(150_003)
     expect(Date.now() - started).toBeLessThan(2000)
+  })
+})
+
+describe('U&"…" identifiers', () => {
+  const ident = (sql: string) => codeTokens(tokenizePg(sql)).find((t) => t.kind === 'ident')!
+
+  it('decodes \\XXXX, \\+XXXXXX and the doubled escape character', () => {
+    expect(ident('SELECT U&"pg\\005fterminate\\005fbackend"(1)').value).toBe('pg_terminate_backend')
+    expect(ident('SELECT U&"\\+000064blink_exec"(1)').value).toBe('dblink_exec')
+    expect(ident('SELECT U&"a\\\\b"').value).toBe('a\\b')
+    expect(ident('SELECT U&"d\\0061t""x"').value).toBe('dat"x')
+    expect(ident('SELECT u&"\\D83D\\DE00x"').value).toBe('😀x')
+    expect(ident('SELECT U&"x"').undecodable).toBeUndefined()
+  })
+
+  it('takes UESCAPE, also with whitespace and comments around it, as part of the identifier', () => {
+    const t = codeTokens(
+      tokenizePg('SELECT U&"pg!005fread!005ffile" /* c */ uescape -- x\n \'!\' (1)')
+    )
+    expect(t.map((x) => `${x.kind}:${x.value}`)).toEqual([
+      'word:SELECT',
+      'ident:pg_read_file',
+      'punct:(',
+      'number:1',
+      'punct:)'
+    ])
+    expect(ident('SELECT U&"a!!b" UESCAPE \'!\'').value).toBe('a!b')
+  })
+
+  it('fails closed: undecodable escapes or UESCAPE characters are flagged', () => {
+    for (const sql of [
+      'SELECT U&"pg\\zzzz"(1)',
+      'SELECT U&"pg\\005"(1)',
+      'SELECT U&"\\D83Dx"',
+      'SELECT U&"\\0000"',
+      'SELECT U&"\\+110000"',
+      'SELECT U&"a+0061" UESCAPE \'+\'',
+      'SELECT U&"a" UESCAPE \'ab\'',
+      'SELECT U&"a" UESCAPE 5',
+      'SELECT U&"pg_terminate'
+    ])
+      expect(ident(sql).undecodable, sql).toBe(true)
+    expect(decodeUnicodeEscapes('x!0041', '!')).toBe('xA')
+    expect(decodeUnicodeEscapes('x\\', '\\')).toBeNull()
+  })
+
+  it("U&'…' strings still lex as one string, UESCAPE included", () => {
+    expect(kinds("SELECT U&'d!0061t' UESCAPE '!', 1")).toEqual([
+      'word:SELECT',
+      "string:U&'d!0061t' UESCAPE '!'",
+      'punct:,',
+      'number:1'
+    ])
+    expect(kinds("SELECT U&'it''s'")).toEqual(['word:SELECT', "string:U&'it''s'"])
   })
 })

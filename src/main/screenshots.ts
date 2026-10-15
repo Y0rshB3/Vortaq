@@ -2229,6 +2229,56 @@ const EXPORT_STEPS: Step[] = [
 ]
 STEPS.push(...EXPORT_STEPS)
 
+/**
+ * Agents (MCP) (VORTAQ_SHOTS_ONLY=49): Ajustes › Agentes (MCP) with the
+ * connections available to agents and a client snippet, and the connection
+ * dialog's section with the three levels (a local connection, and production,
+ * where «Lectura y escritura» is blocked). Needs scripts/seed-mcp-shots.mjs
+ * (synthetic connections; nothing connects).
+ */
+const OPEN_MCP_TAB = (id: string): string => `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      const c = S.connections.items.find((x) => x.id === ${JSON.stringify(id)})
+      if (!c) throw new Error('connection ${id} not found (run scripts/seed-mcp-shots.mjs)')
+      S.ui.openConnectionDialog(c)
+      await H.click('[data-test="conn-tab-mcp"]', 8000)
+      await H.waitFor('[data-test="conn-mcp-level-read"]', 8000)
+      await H.sleep(700)`
+const MCP_STEPS: Step[] = [
+  {
+    name: '49a-settings-mcp',
+    script: `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      S.ui.settingsDialog = true
+      const section = await H.waitFor('[data-test="settings-mcp"]', 8000)
+      await H.until(() => H.$('[data-test="settings-mcp-snippet"]'), 8000)
+      section.scrollIntoView({ block: 'start' })
+      await H.sleep(700)`,
+    cleanup: `S.ui.settingsDialog = false`
+  },
+  {
+    name: '49b-settings-mcp-vscode',
+    script: `
+      S.ui.settingsDialog = true
+      const section = await H.waitFor('[data-test="settings-mcp"]', 8000)
+      await H.click('[data-test="settings-mcp-client-vscode"]', 8000)
+      section.scrollIntoView({ block: 'end' })
+      await H.sleep(700)`,
+    cleanup: `S.ui.settingsDialog = false`
+  },
+  {
+    name: '49c-connection-mcp-levels',
+    script: OPEN_MCP_TAB('shot-mcp-local'),
+    cleanup: `S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
+  },
+  {
+    name: '49d-connection-mcp-production',
+    script: OPEN_MCP_TAB('shot-mcp-prod'),
+    cleanup: `S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
+  }
+]
+STEPS.push(...MCP_STEPS)
+
 function wrap(body: string): string {
   return `(async () => { const S = window.__vortaqShots; const H = window.__ndShotHelpers; ${body}\n; return true })()`
 }

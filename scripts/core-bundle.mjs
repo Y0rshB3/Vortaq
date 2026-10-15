@@ -35,6 +35,8 @@ export const ELECTRON_PACKAGES = ['electron', 'electron-updater']
 export const DESKTOP_ONLY_FILES = [
   'src/main/index.ts',
   'src/main/bootstrap.ts',
+  'src/main/mcpMain.ts',
+  'src/main/mcpStdio.ts',
   'src/main/window.ts',
   'src/main/menu.ts',
   'src/main/screenshots.ts',

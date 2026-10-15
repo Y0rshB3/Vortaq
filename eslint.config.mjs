@@ -22,6 +22,8 @@ const CORE_FILES = [
   'src/main/credentials/**/*.ts',
   'src/main/storage/**/*.ts',
   'src/main/ai/**/*.ts',
+  // The MCP server (the `--mcp` bootstrap, src/main/mcpMain.ts, is the only Electron part).
+  'src/main/mcp/**/*.ts',
   'src/main/ipc/{router,errorLog,productionGuard,connections,db,dbPostgres,dbSqlite,mongo,filters,backups,export,ai,jobValidation}.ts',
   'src/main/migration/mariadbEngine.ts',
   'src/main/{log,env,context,brand}.ts'
@@ -111,7 +113,7 @@ export default tseslint.config(
             { regex: '^electron(-updater)?/', message: CORE_MESSAGE },
             {
               regex:
-                '(^|/)(electronSpawner|electronCodec|electronFetch|bootstrap|window|menu|screenshots|services)$',
+                '(^|/)(electronSpawner|electronCodec|electronFetch|bootstrap|window|menu|screenshots|services|mcpMain|mcpStdio)$',
               message: CORE_MESSAGE
             },
             { regex: '(^|/)ipc/typed$|^\\./typed$', message: CORE_MESSAGE },

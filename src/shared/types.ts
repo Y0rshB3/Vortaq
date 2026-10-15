@@ -125,6 +125,22 @@ export interface SslConfig {
   mode?: SslMode
 }
 
+/**
+ * «Disponible para agentes (MCP)» (src/main/mcp): what an external agent may do
+ * with a saved connection through `Vortaq --mcp`.
+ * - 'structure': databases, tables, columns, keys and indexes; never row values.
+ * - 'read': structure plus read-only queries (row limit, read-only session).
+ * - 'write': also writes and DDL; never on connections whose environment needs
+ *   the typed confirmation (re-checked on every call).
+ */
+export type McpAccess = 'structure' | 'read' | 'write'
+
+/** Per-connection MCP setting. Missing or invalid = not available to agents. */
+export interface ConnectionMcpConfig {
+  enabled: boolean
+  access: McpAccess
+}
+
 export interface ConnectionConfig {
   id: string
   name: string
@@ -158,6 +174,11 @@ export interface ConnectionConfig {
   postgres?: PostgresOptions
   sqlite?: SqliteOptions
   mongo?: MongoOptions
+  /**
+   * «Disponible para agentes (MCP)», off when missing. ConnectionsRepo normalises
+   * it (an invalid value means off); importers never set it.
+   */
+  mcp?: ConnectionMcpConfig
   source?: {
     /** Manager the connection was imported from (src/main/importers). */
     app: 'navicat' | 'dbeaver' | 'workbench'
@@ -1669,6 +1690,23 @@ export interface AppSettings {
    * or 'sql'. PostgreSQL connections always use .vqb.
    */
   defaultBackupFormat?: BackupFormat
+  /**
+   * Ajustes › Agentes (MCP): «Permitir que agentes usen Vortaq (MCP)». Off by
+   * default; while off, `Vortaq --mcp` answers every tool with an error that
+   * says where to turn it on.
+   */
+  mcpEnabled: boolean
+}
+
+/** How an MCP client starts Vortaq's MCP mode on this computer (app:mcpLaunch). */
+export interface McpLaunchInfo {
+  /** Executable: the installed app, the AppImage file, or Electron in a source checkout. */
+  command: string
+  args: string[]
+  /** `process.platform` of this computer. */
+  platform: string
+  /** False when running from the source folder (`npm run dev`, `electron .`). */
+  packaged: boolean
 }
 
 /* ---------- Updates ---------- */

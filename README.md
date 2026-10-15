@@ -40,7 +40,6 @@ Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
   </tr>
 </table>
 
-
 Vortaq es un gestor de bases de datos de escritorio, independiente y de código abierto, para macOS, Windows y
 Linux. Trabaja con MySQL, MariaDB, PostgreSQL, SQLite y MongoDB: explora y edita datos, escribe consultas con
 autocompletado, diseña tablas, saca copias de seguridad y automatiza copias y restauraciones entre entornos (por
@@ -65,6 +64,7 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
 - [Copias de seguridad y rollback a local](#copias-de-seguridad-y-rollback-a-local)
 - [Automatización](#automatización)
 - [Asistente de IA](#asistente-de-ia)
+- [Agentes (MCP)](#agentes-mcp)
 - [Extensión para editores (VS Code, Cursor, VSCodium, Windsurf)](#extensión-para-editores-vs-code-cursor-vscodium-windsurf)
 - [Dónde se guardan los datos](#dónde-se-guardan-los-datos)
 - [Actualizaciones](#actualizaciones)
@@ -127,6 +127,10 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
 - **Asistente de IA con tu propia clave** (Claude, OpenAI, Groq, Grok, GLM, Ollama o cualquier servidor
   compatible con OpenAI): pregunta sobre tu base de datos, genera SQL en el editor y explica consultas y
   errores. Solo se envía la estructura, nunca tus datos ([Asistente de IA](#asistente-de-ia)).
+- **Agentes (MCP)**: Claude Code, Claude Desktop, Cursor, VS Code u otro cliente MCP pueden usar las conexiones
+  que actives (solo estructura, lectura o lectura y escritura) sin que Vortaq les dé contraseñas, hosts, usuarios
+  ni rutas;
+  nunca escriben en Producción ([Agentes (MCP)](#agentes-mcp)).
 - Tema oscuro y claro.
 
 ## Compatibilidad por sistema operativo
@@ -1247,6 +1251,137 @@ tampoco lee filas).
 En conexiones de Producción el asistente funciona igual (solo estructura) y el panel muestra la etiqueta del
 entorno.
 
+## Agentes (MCP)
+
+Vortaq incluye un servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol) para que un agente
+de IA (Claude Code, Claude Desktop, Cursor, VS Code y otros clientes MCP) use **tus conexiones guardadas** sin que
+Vortaq le dé nunca su configuración: ni la contraseña, ni el host, el puerto, el usuario, la configuración SSH, la
+cadena de conexión o la ruta del archivo SQLite. El agente se refiere a cada conexión por su nombre.
+
+El cliente arranca Vortaq él mismo en modo MCP (`Vortaq --mcp`, sin ventana, comunicándose por la entrada y
+salida estándar). Funciona con la app abierta o cerrada; los cambios que hagas en la app (activar una conexión,
+cambiar su nivel o su entorno, apagar el acceso) se aplican en la siguiente llamada del agente, sin reiniciarlo.
+El modo MCP solo **lee** tu perfil: nunca modifica `connections.json`, `settings.json` ni las contraseñas.
+
+### Activarlo
+
+1. **Ajustes › Agentes (MCP)**: activa «Permitir que agentes usen Vortaq (MCP)» (desactivado por defecto).
+   Mientras esté apagado, el agente recibe un error que le dice dónde activarlo.
+2. En cada conexión que quieras ofrecer, **Editar conexión › Agentes (MCP)**: activa «Disponible para agentes
+   (MCP)» y elige el nivel. Una conexión sin activar **no existe** para el agente. Importar conexiones nunca las
+   activa.
+3. Copia la configuración de tu cliente desde **Ajustes › Agentes (MCP)** (ya lleva la ruta real de tu
+   ejecutable) y pégala donde indica.
+
+| Nivel                     | Qué puede hacer el agente                                                                                                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Solo estructura**       | Bases de datos y esquemas, tablas, vistas y colecciones, columnas, tipos, claves, índices y claves foráneas. Nunca el contenido de las filas.                                                            |
+| **Lectura** (por defecto) | Lo anterior y consultas de solo lectura, con límite de filas, en una sesión nueva que no puede escribir.                                                                                                 |
+| **Lectura y escritura**   | También modificaciones de datos y DDL (autocommit). **Nunca** en conexiones que piden escribir el nombre para confirmar (Producción y los entornos de **Ajustes › Seguridad**): allí el agente solo lee. |
+
+El nivel se comprueba en cada llamada: si cambias el entorno de una conexión a Producción, el agente deja de
+poder escribir en ella en ese mismo momento. Además, el control de producción de Vortaq sigue activo por
+debajo: el modo MCP nunca envía la confirmación de producción.
+
+**Privacidad**: Vortaq nunca envía la configuración de la conexión (contraseña, host, puerto, usuario, túnel SSH,
+ruta del archivo), tampoco en los errores: la borra de los mensajes, quita la contraseña, el host (salvo
+`localhost`), las rutas y la propia cuenta (`CURRENT_USER`, `USER()`) de las respuestas y, en MongoDB, rechaza
+`rs.status()`, `db.serverStatus()`, `db.currentOp()`, las etapas que describen el servidor (`$collStats`,
+`$indexStats`, `$currentOp`…) y las bases de datos de sistema (`admin`, `local`, `config`). Pero con «Lectura» o
+«Lectura y escritura» el agente ejecuta consultas cuyos resultados llegan a **su** proveedor de IA (lo que el agente
+ve, lo ve el modelo que use) y muestran todo lo que el usuario de la base de datos puede ver, incluido lo que el
+servidor dice de sí mismo (por ejemplo `@@hostname`, `inet_server_addr()` o la lista de procesos). Con «Solo
+estructura» no se envía ningún resultado de consultas (en MongoDB, ni documentos, ni valores de `enum`/`pattern`
+del validador, ni las etapas de las vistas, ni los filtros de los índices parciales, y las claves que parecen datos
+—correos, identificadores, fechas, mapas con muchas claves— se agrupan como `<clave>`). El asistente de IA integrado
+no cambia: sigue enviando solo la estructura.
+
+### Configurar el cliente
+
+Ajustes muestra el comando con la ruta exacta de tu instalación. Rutas habituales del ejecutable:
+
+| Sistema | Ejecutable                                                                                                                                    |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS   | `/Applications/Vortaq.app/Contents/MacOS/Vortaq`                                                                                              |
+| Windows | `C:\Users\<tú>\AppData\Local\Programs\Vortaq\Vortaq.exe` (instalador; si actualizaste desde ElectronDB, `...\Programs\ElectronDB\Vortaq.exe`) |
+| Linux   | El archivo `.AppImage` donde lo guardaste, o `/opt/Vortaq/vortaq` con el paquete `.deb`                                                       |
+
+- **Claude Code** (terminal; añade `--scope user` antes de `vortaq` para todos tus proyectos):
+
+  ```bash
+  claude mcp add vortaq -- "/Applications/Vortaq.app/Contents/MacOS/Vortaq" --mcp
+  ```
+
+- **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` en macOS,
+  `%APPDATA%\Claude\claude_desktop_config.json` en Windows; o Ajustes › Desarrollador › Editar configuración):
+
+  ```json
+  {
+    "mcpServers": {
+      "vortaq": {
+        "command": "C:\\Users\\<tú>\\AppData\\Local\\Programs\\Vortaq\\Vortaq.exe",
+        "args": ["--mcp"]
+      }
+    }
+  }
+  ```
+
+- **Cursor** (`.cursor/mcp.json` del proyecto o `~/.cursor/mcp.json`):
+
+  ```json
+  {
+    "mcpServers": {
+      "vortaq": {
+        "type": "stdio",
+        "command": "/home/<tú>/Apps/Vortaq-2.1.0-x86_64.AppImage",
+        "args": ["--mcp"]
+      }
+    }
+  }
+  ```
+
+- **VS Code** (`.vscode/mcp.json` del proyecto):
+
+  ```json
+  {
+    "servers": {
+      "vortaq": {
+        "type": "stdio",
+        "command": "/Applications/Vortaq.app/Contents/MacOS/Vortaq",
+        "args": ["--mcp"]
+      }
+    }
+  }
+  ```
+
+En los archivos JSON escribe la ruta completa (las variables como `%LOCALAPPDATA%` no se expanden) y, en
+Windows, con las barras invertidas dobles. En Linux, si la AppImage falla al arrancar con un error de «SUID
+sandbox», añade `"--no-sandbox"` a `args`. Desde la carpeta del código el comando es el Electron de
+`node_modules` con la carpeta del proyecto y `--mcp` (Ajustes lo muestra; necesita `npm run build`).
+
+### Herramientas y límites
+
+| Herramienta        | Nivel               | Qué hace                                                                                                                                                                                     |
+| ------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_connections` | —                   | Conexiones activadas: id, nombre, motor, entorno y nivel. Nada de host, puerto, usuario, ruta ni bases de datos.                                                                             |
+| `list_databases`   | Solo estructura     | Bases de datos de usuario (PostgreSQL con sus esquemas; SQLite `main` y adjuntas); las de sistema con `include_system`.                                                                      |
+| `list_tables`      | Solo estructura     | Tablas y vistas (MongoDB: colecciones y vistas).                                                                                                                                             |
+| `describe_table`   | Solo estructura     | Columnas (tipo, nulos, valor por defecto, clave), índices y claves foráneas; MongoDB: índices y rutas de campos muestreadas con su tipo, sin valores.                                        |
+| `run_query`        | Lectura             | Una sola sentencia de lectura (SELECT, WITH, SHOW…) en una sesión nueva de solo lectura; MongoDB: órdenes de lectura del shell (`find`, `aggregate` sin `$out`/`$merge`, `countDocuments`…). |
+| `explain_query`    | Lectura             | Plan de un SELECT (`EXPLAIN` sin `ANALYZE`; SQLite `EXPLAIN QUERY PLAN`). La consulta no se ejecuta.                                                                                         |
+| `execute_sql`      | Lectura y escritura | Scripts con varias sentencias (escrituras y DDL) en autocommit, parando en el primer error; MongoDB: órdenes de escritura del shell.                                                         |
+
+- `max_rows`: 100 por defecto, 1000 como máximo; `truncated: true` indica que hay más filas.
+- `timeout_seconds`: 30 por defecto, 120 como máximo; al superarlo la consulta **se cancela en el servidor**
+  (`KILL QUERY`, `pg_cancel_backend`, `killOp` o el proceso de SQLite).
+- Los textos largos se recortan a 2.000 caracteres (con una marca) y cada respuesta a unos 200 KB.
+- En SQLite, `execute_sql` rechaza `ATTACH`, `DETACH` y `VACUUM`: abrirían, copiarían o escribirían otros
+  archivos (las bases de datos adjuntas se configuran en la conexión).
+- Valores en JSON: enteros grandes y decimales como texto exacto, binarios como `{"type":"binary","hex":…}`,
+  documentos de MongoDB en Extended JSON canónico.
+- Cada llamada deja una línea en `logs/mcp.log` del perfil (hora, herramienta, conexión, nivel, resultado,
+  duración y filas), nunca el SQL ni los valores.
+
 ## Extensión para editores (VS Code, Cursor, VSCodium, Windsurf)
 
 Vortaq también existe como extensión para VS Code y los editores basados en él (Cursor, VSCodium,
@@ -1627,6 +1762,7 @@ el registro es más detallado y se copia también en la terminal.
 | `npm run lint`                      | ESLint                                                                                                |
 | `npm run format`                    | Prettier                                                                                              |
 | `npm run build`                     | Compila a `out/`                                                                                      |
+| `npm run test:mcp-e2e`              | Tras `npm run build`: `Vortaq --mcp` con un perfil desechable (`--with-app`: con la app abierta)      |
 | `npm run dist[:mac/:win/:linux]`    | Instaladores en `release/`                                                                            |
 | `npm run screenshots`               | Capturas de todas las pantallas con un perfil y un MySQL desechables                                  |
 

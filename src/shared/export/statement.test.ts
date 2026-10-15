@@ -81,7 +81,11 @@ describe('checkExportResult', () => {
       ['mysql', 'SELECT * FROM t', 'USE other; SELECT * FROM t'],
       ['mariadb', 'SELECT * FROM t', 'SET @@session.sql_mode = ""; SELECT * FROM t'],
       ['postgresql', 'SELECT * FROM t', 'SET search_path = x; SELECT * FROM t'],
-      ['postgresql', 'SELECT * FROM t', "SELECT set_config('search_path', 'x', false); SELECT * FROM t"],
+      [
+        'postgresql',
+        'SELECT * FROM t',
+        "SELECT set_config('search_path', 'x', false); SELECT * FROM t"
+      ],
       ['sqlite', 'SELECT * FROM t', 'CREATE TEMP TABLE t AS SELECT 1; SELECT * FROM t']
     ] as const) {
       const r = result(id, sql, script)
@@ -94,5 +98,21 @@ describe('checkExportResult', () => {
     expect(result('mysql', 'SELECT * FROM t', 'SELECT * FROM t').ok).toBe(true)
     expect(result('postgresql', 'SELECT 2', 'SELECT 1; SELECT 2').ok).toBe(true)
     expect(result('sqlite', 'SELECT 2', 'SELECT 1;\nSELECT 2;').ok).toBe(true)
+  })
+})
+
+describe('full export refuses side-effect functions under any spelling (PostgreSQL)', () => {
+  it('U& identifiers, UESCAPE, quoted and schema-qualified names', () => {
+    for (const sql of [
+      'SELECT U&"pg\\005fterminate\\005fbackend"(pid) FROM pg_stat_activity',
+      "SELECT U&\"pg!005fread!005ffile\" UESCAPE '!' ('/etc/passwd')",
+      'SELECT "pg_catalog"."pg_terminate_backend"(1)',
+      'SELECT pg_terminate_backend /* c */ (1)',
+      'SELECT U&"pg\\zz"(1)'
+    ]) {
+      const result = check('postgresql', sql)
+      expect(result.ok, sql).toBe(false)
+    }
+    expect(check('postgresql', 'SELECT U&"n\\0061me" FROM t').ok).toBe(true)
   })
 })

@@ -6,6 +6,8 @@
  */
 export const APP_NAME = 'Vortaq'
 export const LOG_FILE_NAME = 'vortaq.log'
+/** Log of the `--mcp` agent server: its own lines plus one line per tool call. */
+export const MCP_LOG_FILE_NAME = 'mcp.log'
 
 export interface LegacyApp {
   /** app.getName() of that release: profile folder and "<name> Safe Storage" keychain item. */

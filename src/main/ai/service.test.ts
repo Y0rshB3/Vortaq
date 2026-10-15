@@ -213,6 +213,7 @@ const SETTINGS: AppSettings = {
   aiDefaultProviderId: null,
   aiEffort: 'medium',
   aiMaxTokens: 8000,
+  mcpEnabled: false
 }
 
 function harness(

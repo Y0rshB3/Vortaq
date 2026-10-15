@@ -4,6 +4,7 @@ import type { AppContext } from '../context'
 import { DB_PASSWORD } from '../credentials/store'
 import { getConnectionManager } from '../db/manager'
 import { getAiService } from '../ai'
+import { typedConfirmEnvironments } from './productionGuard'
 import type { HandleFn } from './router'
 
 /** Fields whose change invalidates an open pool. */
@@ -22,8 +23,11 @@ function endpointSignature(c: ConnectionInput | ConnectionConfig): string {
   return JSON.stringify([...base, c.engine, c.network, c.postgres, c.sqlite, c.mongo])
 }
 
-function validateInput(input: ConnectionInput): void {
-  const problem = connectionSaveError(input, { platform: process.platform })
+function validateInput(ctx: Pick<AppContext, 'settings'>, input: ConnectionInput): void {
+  const problem = connectionSaveError(input, {
+    platform: process.platform,
+    typedConfirmEnvironments: typedConfirmEnvironments(ctx)
+  })
   if (problem) throw new Error(problem)
 }
 
@@ -40,7 +44,7 @@ export function registerConnectionsHandlers(ctx: AppContext, handle: HandleFn): 
   handle('connections:get', (id) => ctx.connections.get(id))
 
   handle('connections:save', async (input) => {
-    validateInput(input)
+    validateInput(ctx, input)
     const previous = input.id ? ctx.connections.get(input.id) : null
     const saved = ctx.connections.save(input)
     // A live pool built with the old endpoint would silently keep using it.

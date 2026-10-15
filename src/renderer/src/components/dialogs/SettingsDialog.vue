@@ -18,6 +18,7 @@ import './pathField.css'
 import { vPathTail } from './pathTail'
 import DialogHeader from './DialogHeader.vue'
 import AiSettingsSection from '@renderer/components/ai/AiSettingsSection.vue'
+import McpSettingsSection from '@renderer/components/mcp/McpSettingsSection.vue'
 
 const ui = useUiStore()
 const settingsStore = useSettingsStore()
@@ -246,6 +247,11 @@ async function save(): Promise<void> {
           v-model:default-provider-id="form.aiDefaultProviderId"
           v-model:effort="form.aiEffort"
           v-model:max-tokens="form.aiMaxTokens"
+        />
+
+        <McpSettingsSection
+          v-model:enabled="form.mcpEnabled"
+          :typed-environments="typedEnvironments"
         />
 
         <section class="settings-section settings-section--danger" aria-label="Seguridad">

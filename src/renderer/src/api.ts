@@ -119,7 +119,9 @@ export const api = {
     /** Only GitHub release pages/downloads of Vortaq (main rejects anything else). */
     openExternal: (url: string) => invoke('app:openExternal', url),
     licenses: () => invoke('app:licenses'),
-    openRepository: () => invoke('app:openRepository')
+    openRepository: () => invoke('app:openRepository'),
+    /** Ajustes › Agentes (MCP): the command an MCP client runs to start this copy. */
+    mcpLaunch: () => invokeSilent('app:mcpLaunch')
   },
   tour: {
     state: () => invokeSilent('tour:state'),

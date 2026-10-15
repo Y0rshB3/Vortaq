@@ -15,6 +15,21 @@ export function setJsonStoreReload(on: boolean): void {
 }
 
 /**
+ * Processes that only read another process's profile (the `--mcp` agent
+ * server reads the desktop app's connections, settings and secrets) never
+ * write it: saving throws, and an unreadable file is left where it is
+ * (defaults are used) instead of being moved aside.
+ */
+let readOnlyStores = false
+
+export const READ_ONLY_STORE_MESSAGE =
+  'Este proceso de Vortaq solo lee el perfil: no guarda cambios.'
+
+export function setJsonStoreReadOnly(on: boolean): void {
+  readOnlyStores = on
+}
+
+/**
  * Tiny durable JSON document store: reads once, keeps the document in memory
  * and writes atomically (temp file + rename) on every save. With
  * setJsonStoreReload(true) it re-reads the file when another process replaced
@@ -56,6 +71,10 @@ export class JsonStore<T extends object> {
       const raw = JSON.parse(readFileSync(this.filePath, 'utf8'))
       return { ...this.defaults(), ...this.migrate(raw) }
     } catch (err) {
+      if (readOnlyStores) {
+        console.error(`vortaq: could not parse ${this.filePath}; using defaults (read-only)`)
+        return this.defaults()
+      }
       const backup = `${this.filePath}.corrupt-${Date.now()}`
       try {
         renameSync(this.filePath, backup)
@@ -73,6 +92,7 @@ export class JsonStore<T extends object> {
   }
 
   update(mutator: (draft: T) => void): T {
+    if (readOnlyStores) throw new Error(READ_ONLY_STORE_MESSAGE)
     this.refresh()
     mutator(this.data)
     this.save()
@@ -80,12 +100,14 @@ export class JsonStore<T extends object> {
   }
 
   replace(next: T): T {
+    if (readOnlyStores) throw new Error(READ_ONLY_STORE_MESSAGE)
     this.data = next
     this.save()
     return this.data
   }
 
   save(): void {
+    if (readOnlyStores) throw new Error(READ_ONLY_STORE_MESSAGE)
     mkdirSync(dirname(this.filePath), { recursive: true })
     const tmp = `${this.filePath}.${process.pid}.tmp`
     writeFileSync(tmp, JSON.stringify(this.data, null, 2), { mode: 0o600 })

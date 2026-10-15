@@ -34,6 +34,7 @@ import PathPicker from '@renderer/components/common/PathPicker.vue'
 import './pathField.css'
 import { vPathTail } from './pathTail'
 import DialogHeader from './DialogHeader.vue'
+import ConnectionMcpSection from '@renderer/components/mcp/ConnectionMcpSection.vue'
 import { ENVIRONMENTS, environmentLabel } from '@renderer/components/backups/backupHelpers'
 import {
   COLOR_PRESETS,
@@ -56,6 +57,11 @@ const props = defineProps<{
    * desktop app passes nothing.
    */
   hiddenEngines?: EngineId[]
+  /**
+   * Hides «Agentes (MCP)»: the editor extension keeps its own connections and
+   * does not run `Vortaq --mcp`. The desktop app passes nothing.
+   */
+  hideMcp?: boolean
 }>()
 
 const ui = useUiStore()
@@ -63,7 +69,7 @@ const connections = useConnectionsStore()
 const settingsStore = useSettingsStore()
 const notify = useNotify()
 
-const tab = ref<'general' | 'ssh' | 'ssl' | 'advanced'>('general')
+const tab = ref<'general' | 'ssh' | 'ssl' | 'advanced' | 'mcp'>('general')
 const form = ref<ConnectionInput>(emptyConnectionInput())
 // Secrets live only in memory and go straight to the CredentialStore via IPC.
 const password = ref('')
@@ -437,7 +443,7 @@ async function test(): Promise<void> {
 
 async function save(): Promise<void> {
   const input = normalizeConnectionInput(form.value)
-  errors.value = validateConnectionInput(input)
+  errors.value = validateConnectionInput(input, settingsStore.typedEnvironments)
   if (errors.value.length) return
   saving.value = true
   const wasEditing = !!editing.value
@@ -524,6 +530,9 @@ async function save(): Promise<void> {
         <v-tab v-if="!isSqlite" value="ssh" prepend-icon="mdi-console-network-outline">SSH</v-tab>
         <v-tab v-if="!isSqlite" value="ssl" prepend-icon="mdi-shield-lock-outline">SSL</v-tab>
         <v-tab value="advanced" prepend-icon="mdi-cog-outline">Avanzado</v-tab>
+        <v-tab v-if="!hideMcp" value="mcp" prepend-icon="mdi-robot-outline" data-test="conn-tab-mcp"
+          >Agentes (MCP)</v-tab
+        >
       </v-tabs>
       <v-card-text class="connection-dialog__body">
         <div
@@ -1450,6 +1459,15 @@ async function save(): Promise<void> {
                 </v-list-item>
               </v-list>
             </div>
+          </v-window-item>
+
+          <v-window-item v-if="!hideMcp" value="mcp">
+            <ConnectionMcpSection
+              v-model:mcp="form.mcp"
+              :environment="form.environment"
+              :typed-environments="settingsStore.typedEnvironments"
+              :global-enabled="settingsStore.settings.mcpEnabled"
+            />
           </v-window-item>
         </v-window>
 

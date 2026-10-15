@@ -25,6 +25,24 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.1.0',
+    date: '2026-10-14',
+    highlights: [
+      'Agentes (MCP): Claude Code, Claude Desktop, Cursor o VS Code pueden usar las conexiones que elijas; Vortaq no les da contraseñas, hosts, usuarios ni rutas',
+      'Actívalo en Ajustes › Agentes (MCP), donde está la configuración lista para copiar en cada cliente; el agente arranca Vortaq solo, con la app abierta o cerrada',
+      'Cada conexión decide en editar conexión › Agentes (MCP): «Solo estructura», «Lectura» (por defecto) o «Lectura y escritura»',
+      'Las conexiones de producción nunca permiten escribir a un agente; las consultas de lectura van en una sesión de solo lectura, con límite de filas y de tiempo',
+      'Con «Lectura» los resultados de las consultas del agente llegan a su proveedor de IA; con «Solo estructura» no se envía ningún resultado'
+    ],
+    tour: [
+      {
+        target: 'toolbar-settings',
+        title: 'Agentes (MCP)',
+        text: 'En Ajustes › Agentes (MCP) activa el acceso para agentes y copia la configuración de tu cliente. Después, en cada conexión, abre Editar › Agentes (MCP) y elige qué puede hacer el agente.'
+      }
+    ]
+  },
+  {
     version: '2.0.2',
     date: '2026-10-14',
     highlights: [

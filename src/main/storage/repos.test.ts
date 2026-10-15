@@ -57,6 +57,24 @@ describe('repos', () => {
     expect(again.list()).toHaveLength(0)
   })
 
+  it('normalises the agents (MCP) setting: missing stays off, malformed becomes off', () => {
+    const repo = new ConnectionsRepo(dir)
+    const plain = repo.save(connInput('Sin MCP'))
+    expect('mcp' in plain).toBe(false)
+    const on = repo.save({ ...connInput('Con MCP'), mcp: { enabled: true, access: 'structure' } })
+    expect(repo.get(on.id)?.mcp).toEqual({ enabled: true, access: 'structure' })
+    // A hand-edited file: unknown level or a non-boolean switch never enables it.
+    const file = join(dir, 'connections.json')
+    const doc = JSON.parse(readFileSync(file, 'utf8'))
+    doc.items.find((c: { id: string }) => c.id === on.id).mcp = { enabled: 'true', access: 'root' }
+    writeFileSync(file, JSON.stringify(doc))
+    expect(new ConnectionsRepo(dir).get(on.id)?.mcp).toEqual({ enabled: false, access: 'read' })
+    // Saving without the field (an importer) leaves it off.
+    const again = new ConnectionsRepo(dir)
+    const { mcp: _m, ...rest } = again.get(on.id)!
+    expect('mcp' in again.save(rest)).toBe(false)
+  })
+
   it('recovers from a corrupt file by moving it aside', () => {
     const path = join(dir, 'broken.json')
     new JsonStore(path, () => ({ a: 1 })).save()
@@ -102,6 +120,15 @@ describe('repos', () => {
     })
     jobs.touchLastRun(job.id, '2026-09-14T00:00:00.000Z')
     expect(jobs.get(job.id)?.lastRunAt).toBe('2026-09-14T00:00:00.000Z')
+  })
+
+  it('agents (MCP) are off by default, for older profiles and for anything but true', () => {
+    expect(DEFAULT_SETTINGS('/data', '/home/test', 'linux').mcpEnabled).toBe(false)
+    expect(new SettingsRepo(join(dir, 'fresh'), '/home/test').get().mcpEnabled).toBe(false)
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ mcpEnabled: 'yes' }))
+    expect(new SettingsRepo(dir, '/home/test').get().mcpEnabled).toBe(false)
+    new SettingsRepo(dir, '/home/test').update({ mcpEnabled: true })
+    expect(new SettingsRepo(dir, '/home/test').get().mcpEnabled).toBe(true)
   })
 
   it('confirms destructive operations everywhere by default, also for older profiles', () => {

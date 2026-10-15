@@ -82,6 +82,36 @@ describe('ConnectionTree', () => {
     wrapper.unmount()
   })
 
+  it('marks connections available to agents (MCP) with their effective level', async () => {
+    installBridge({
+      'connections:list': [
+        makeConnection({ id: 'a', name: 'Agentes', mcp: { enabled: true, access: 'write' } }),
+        makeConnection({
+          id: 'p',
+          name: 'Prod',
+          environment: 'production',
+          mcp: { enabled: true, access: 'write' }
+        }),
+        makeConnection({ id: 'o', name: 'Off', mcp: { enabled: false, access: 'read' } })
+      ]
+    })
+    await useConnectionsStore().load()
+    const wrapper = mountTree()
+    await flush()
+    const row = (name: string) =>
+      wrapper
+        .findAll('[data-test="tree-node-connection"]')
+        .find((r) => r.find('.tree-node__label').text() === name)!
+    expect(row('Agentes').get('[data-test="mcp-badge"]').attributes('title')).toBe(
+      'Disponible para agentes (MCP): Lectura y escritura'
+    )
+    expect(row('Prod').get('[data-test="mcp-badge"]').attributes('title')).toBe(
+      'Disponible para agentes (MCP): Lectura'
+    )
+    expect(row('Off').find('[data-test="mcp-badge"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows closed connections dimmed and open ones with their schemas after expanding', async () => {
     installBridge({
       'connections:list': [makeConnection({ id: 'c1', name: 'Dev' })],

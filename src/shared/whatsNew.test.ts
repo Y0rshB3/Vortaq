@@ -134,6 +134,17 @@ describe('WHATS_NEW (curated list)', () => {
     expect(versions(whatsNewBetween('2.0.1', '2.0.2'))).toEqual(['2.0.2'])
   })
 
+  it('2.1.0 announces agents (MCP), its levels and the privacy note, with a tour step on Ajustes', () => {
+    const entry = whatsNewFor('2.1.0')
+    const text = entry?.highlights.join(' ') ?? ''
+    expect(text).toMatch(/Agentes \(MCP\)/)
+    expect(text).toMatch(/«Solo estructura», «Lectura» \(por defecto\) o «Lectura y escritura»/)
+    expect(text).toMatch(/producción nunca permiten escribir/)
+    expect(text).toMatch(/proveedor de IA/)
+    expect(entry?.tour?.map((s) => s.target)).toEqual(['toolbar-settings'])
+    expect(versions(whatsNewBetween('2.0.2', '2.1.0'))).toEqual(['2.1.0'])
+  })
+
   it('0.1.8 announces connections without a password', () => {
     expect(whatsNewFor('0.1.8')?.highlights).toEqual([
       'Conexiones sin contraseña: para proxies, túneles o certificados (Autenticación › Sin contraseña)'

@@ -21,7 +21,8 @@ const DEFAULTS: AppSettings = {
   aiDefaultProviderId: null,
   aiEffort: 'low',
   aiMaxTokens: 16000,
-  defaultBackupFormat: 'vqb'
+  defaultBackupFormat: 'vqb',
+  mcpEnabled: false
 }
 
 export const useSettingsStore = defineStore('settings', () => {

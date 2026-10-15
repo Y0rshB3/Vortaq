@@ -25,7 +25,8 @@ function makeCtx(
   const items = [
     connection('prod', 'production'),
     connection('dev', 'local'),
-    connection('stg', 'staging')
+    connection('stg', 'staging'),
+    { ...connection('pgprod', 'production'), engine: 'postgresql' } as ConnectionConfig
   ]
   return {
     connections: { get: (id: string) => items.find((c) => c.id === id) ?? null },
@@ -127,6 +128,24 @@ describe('assertScriptAllowed', () => {
       assertScriptAllowed(ctx, 'prod', 'TRUNCATE TABLE t', { confirmProduction: true })
     ).not.toThrow()
     expect(() => assertScriptAllowed(ctx, 'dev', 'DROP TABLE t', undefined)).not.toThrow()
+  })
+
+  it('PostgreSQL: side-effect functions need the confirmation under any spelling', () => {
+    const ctx = makeCtx()
+    for (const sql of [
+      'SELECT U&"pg\\005fterminate\\005fbackend"(pid) FROM pg_stat_activity',
+      'SELECT U&"pg!005fterminate!005fbackend" UESCAPE \'!\' (1)',
+      'SELECT "pg_catalog"."pg_terminate_backend"(1)',
+      'SELECT U&"pg\\zz"(1)'
+    ]) {
+      expect(() => assertScriptAllowed(ctx, 'pgprod', sql, undefined), sql).toThrow(/confirmación/)
+      expect(() =>
+        assertScriptAllowed(ctx, 'pgprod', sql, { confirmProduction: true })
+      ).not.toThrow()
+    }
+    expect(() =>
+      assertScriptAllowed(ctx, 'pgprod', 'SELECT U&"n\\0061me" FROM t', undefined)
+    ).not.toThrow()
   })
 
   it('applies to listed environments too', () => {
