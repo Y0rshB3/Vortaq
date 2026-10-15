@@ -119,8 +119,9 @@ export function createMcpServer(rt: McpRuntime, options: McpServerOptions): McpS
     let rows: number | null = null
     let end = (): void => undefined
     try {
-      rt.assertAvailable()
+      // First: connections no longer available (or with the switch off) are closed.
       await rt.sweep()
+      rt.assertAvailable()
       if (tool !== 'list_connections') {
         resolved = rt.resolve(args.connection)
         requireLevel(resolved.config, resolved.access, resolved.requested, tool)

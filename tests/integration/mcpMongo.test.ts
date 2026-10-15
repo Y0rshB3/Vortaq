@@ -225,6 +225,27 @@ describeServer(MONGO_TARGET, 'MCP server', (url) => {
         /run_query/
       )
     expect(await (await db()).listCollections({ name: 'copia' }).toArray()).toEqual([])
+    // Commands that describe the deployment (member hosts, clients, other sessions) are refused.
+    for (const sql of ['rs.status()', 'db.serverStatus()', 'db.currentOp()'])
+      expect(await h.refused('run_query', { connection: 'Lectura', database: DB, sql })).toMatch(
+        /no están disponibles para agentes/
+      )
+    expect(
+      await h.refused('execute_sql', {
+        connection: 'Escritura',
+        database: DB,
+        sql: 'db.currentOp()'
+      })
+    ).toMatch(/no están disponibles para agentes/)
+    expect(
+      (
+        await h.ok('run_query', {
+          connection: 'Lectura',
+          database: DB,
+          sql: 'db.getCollectionNames()'
+        })
+      ).statements[0].value
+    ).toEqual(expect.arrayContaining(['people', 'slow']))
   })
 
   it('a timeout kills the operation on the server (killOp)', async () => {

@@ -1282,10 +1282,13 @@ debajo: el modo MCP nunca envía la confirmación de producción.
 **Privacidad**: con «Lectura» o «Lectura y escritura», las filas que lea el agente se envían a **su** proveedor
 de IA (lo que el agente ve, lo ve el modelo que use). «Solo estructura» no envía ningún dato de las filas (en
 MongoDB, ni documentos, ni valores de `enum`/`pattern` del validador, ni las etapas de las vistas, ni los filtros
-de los índices parciales: solo nombres, claves de índices y rutas de campos con su tipo BSON). En los niveles con
-lectura el agente puede leer todo lo que el usuario de la base de datos puede leer. Las contraseñas, hosts,
-puertos, usuarios, túneles SSH y rutas nunca salen de Vortaq: también se borran de los mensajes de error antes de
-devolverlos. El asistente de IA integrado no cambia: sigue enviando solo la estructura.
+de los índices parciales: solo nombres, claves de índices y rutas de campos con su tipo BSON). Vortaq nunca le
+envía al agente la contraseña, el host, el puerto, el usuario, el túnel SSH ni la ruta del archivo de la conexión:
+tampoco en los errores, de los que se borran antes de devolverlos (y en MongoDB rechaza `rs.status()`,
+`db.serverStatus()` y `db.currentOp()`, que describen el servidor). Aun así, en los niveles con lectura el agente
+puede consultar todo lo que el usuario de la base de datos puede leer, también funciones del servidor como el
+usuario actual o el nombre del host: elige «Solo estructura» si eso importa. El asistente de IA integrado no
+cambia: sigue enviando solo la estructura.
 
 ### Configurar el cliente
 

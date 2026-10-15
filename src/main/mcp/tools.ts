@@ -592,6 +592,30 @@ async function runSqlQuery(
   }
 }
 
+/**
+ * Server commands an agent never runs: they describe the deployment (member
+ * hosts and ports, client addresses, other sessions' operations), not the data.
+ */
+const MONGO_SERVER_COMMANDS = new Set(['serverStatus', 'currentOp'])
+export const MONGO_SERVER_REFUSED =
+  'rs.status(), db.serverStatus() y db.currentOp() no están disponibles para agentes: describen el servidor (hosts, clientes, operaciones de otras sesiones), no los datos.'
+
+/** Refuses the deployment commands (MONGO_SERVER_COMMANDS, rs.*) before anything runs. */
+function assertNoServerCommands(script: string): void {
+  let prepared
+  try {
+    prepared = prepareMongoScript(script)
+  } catch (err) {
+    if (err instanceof MongoInputError) throw new McpToolError(err.message)
+    throw err
+  }
+  for (const p of prepared) {
+    const s = p.statement
+    if (s.type === 'rs' || (s.type === 'db' && MONGO_SERVER_COMMANDS.has(s.method)))
+      throw new McpToolError(MONGO_SERVER_REFUSED)
+  }
+}
+
 /** MongoDB: every statement must provably read (parsed, before anything runs). */
 function assertMongoReads(script: string, canWrite: boolean): void {
   const write = canWrite ? ' Para modificar datos usa execute_sql.' : ''
@@ -691,6 +715,7 @@ async function runMongo(
   if (!script.trim())
     throw new McpToolError('Falta la orden («sql»), con la sintaxis del shell de MongoDB.')
   if (!writes) assertMongoReads(script, c.access === 'write')
+  assertNoServerCommands(script)
   const limit = resolveRowLimit(args.max_rows)
   const timeout = resolveTimeoutMs(args.timeout_seconds)
   const executionId = randomUUID()
