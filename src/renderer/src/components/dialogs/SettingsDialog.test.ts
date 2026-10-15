@@ -134,7 +134,8 @@ const savedSettings: AppSettings = {
   aiEnabled: false,
   aiDefaultProviderId: null,
   aiEffort: 'low',
-  aiMaxTokens: 16000
+  aiMaxTokens: 16000,
+  mcpEnabled: false
 }
 
 describe('SettingsDialog without «Motores en vista previa» (every engine is regular)', () => {

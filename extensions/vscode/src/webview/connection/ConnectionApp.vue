@@ -8,7 +8,8 @@ import type { WebviewHost } from '../bridge'
 /**
  * The desktop connection dialog as the content of the tab: it opens at once
  * and closing it (Cancelar, or Guardar when the save succeeded) closes the
- * tab. Engines the editor cannot run (SQLite on an old Node) are left out.
+ * tab. Engines the editor cannot run (SQLite on an old Node) are left out, and so
+ * is «Agentes (MCP)» (the desktop app's MCP mode reads the desktop profile only).
  */
 const props = defineProps<{
   host: WebviewHost<ConnectionFormState>
@@ -40,6 +41,7 @@ watch(
       :scrim="false"
       :no-click-animation="true"
       :hidden-engines="initial.hiddenEngines"
+      hide-mcp
     />
   </v-app>
 </template>

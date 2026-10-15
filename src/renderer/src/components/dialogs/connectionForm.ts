@@ -7,7 +7,13 @@ import {
   defaultSqliteOptions
 } from '@shared/engines'
 import { mongoUriOf } from '@shared/mongo/uri'
-import type { ConnectionConfig, ConnectionInput, EngineId, SslMode } from '@shared/types'
+import type {
+  ConnectionConfig,
+  ConnectionInput,
+  EngineId,
+  Environment,
+  SslMode
+} from '@shared/types'
 
 /** Marker colours per environment (Local green, Staging yellow, Production red, ...). */
 export const COLOR_PRESETS: { value: string | null; label: string }[] = [
@@ -167,6 +173,7 @@ export function inputFromConnection(c: ConnectionConfig): ConnectionInput {
     ssl: { ...c.ssl },
     ...(c.postgres ? { postgres: { ...defaultPostgresOptions(), ...c.postgres } } : {}),
     ...(c.network ? { network: { ...c.network } } : {}),
+    ...(c.mcp ? { mcp: { ...c.mcp } } : {}),
     ...(c.mongo
       ? {
           mongo: {
@@ -189,9 +196,15 @@ export function inputFromConnection(c: ConnectionConfig): ConnectionInput {
   }
 }
 
-/** Problems to show in the dialog (shared rules: src/shared/connectionValidation.ts). */
-export function validateConnectionInput(input: ConnectionInput): string[] {
-  return connectionFormErrors(input)
+/**
+ * Problems to show in the dialog (shared rules: src/shared/connectionValidation.ts).
+ * With the typed-confirmation environments, the agents (MCP) section is checked too.
+ */
+export function validateConnectionInput(
+  input: ConnectionInput,
+  typedConfirmEnvironments?: readonly Environment[]
+): string[] {
+  return connectionFormErrors(input, typedConfirmEnvironments ? { typedConfirmEnvironments } : {})
 }
 
 /** Normalises the form before sending it to the main process. */

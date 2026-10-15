@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useConnectionsStore } from '@renderer/stores/connections'
+import { useSettingsStore } from '@renderer/stores/settings'
+import { effectiveMcpAccess, MCP_ACCESS_LABELS } from '@shared/mcp'
 import { useTreeStore, type TreeNode } from '@renderer/stores/tree'
 import { ENVIRONMENT_LABELS, GROUP_ICONS, GROUP_LABELS } from '@renderer/utils/objectTypes'
 
@@ -14,6 +16,7 @@ const emit = defineEmits<{
 
 const tree = useTreeStore()
 const connections = useConnectionsStore()
+const settings = useSettingsStore()
 
 const connection = computed(() => connections.get(props.node.connectionId))
 const isOpen = computed(() => connections.isOpen(props.node.connectionId))
@@ -89,6 +92,12 @@ const ENV_PILL: Record<string, string> = {
   staging: 'nd-pill--staging',
   local: 'nd-pill--local'
 }
+/** «Disponible para agentes (MCP)»: the level agents get, shown as a small badge. */
+const mcpLevel = computed(() => {
+  if (props.node.kind !== 'connection' || !connection.value) return null
+  const access = effectiveMcpAccess(connection.value, settings.typedEnvironments)
+  return access ? MCP_ACCESS_LABELS[access] : null
+})
 const envPill = computed(() =>
   connection.value ? (ENV_PILL[connection.value.environment] ?? '') : ''
 )
@@ -148,6 +157,15 @@ const envPill = computed(() =>
         :title="error ?? (node.detail ? `${label} · ${node.detail}` : label)"
         >{{ label }}</span
       >
+      <v-icon
+        v-if="mcpLevel"
+        icon="mdi-robot-outline"
+        size="12"
+        class="tree-node__mcp"
+        :title="`Disponible para agentes (MCP): ${mcpLevel}`"
+        :aria-label="`Disponible para agentes (MCP): ${mcpLevel}`"
+        data-test="mcp-badge"
+      />
       <span
         v-if="node.kind === 'connection' && connection"
         class="nd-pill tree-node__env"
@@ -302,6 +320,11 @@ const envPill = computed(() =>
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--nd-fs-base);
+}
+.tree-node__mcp {
+  flex: none;
+  margin-left: 6px;
+  color: var(--nd-text-muted);
 }
 .tree-node__env {
   flex: none;
