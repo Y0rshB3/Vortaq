@@ -25,6 +25,21 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.1.2',
+    date: '2026-10-15',
+    highlights: [
+      'Agentes (MCP): Ajustes trae la configuración lista para Codex, Gemini CLI, Antigravity y OpenCode, además de Claude Code, Claude Desktop, Cursor y VS Code',
+      'Sirve con cualquier cliente MCP y con el modelo que uses en él (Claude, GPT, Gemini, GLM…); «Otro cliente» muestra el comando y los argumentos para los demás'
+    ],
+    tour: [
+      {
+        target: 'toolbar-settings',
+        title: 'Tu agente, el que sea',
+        text: 'En Ajustes › Agentes (MCP) › Configurar un cliente elige tu agente y copia su configuración.'
+      }
+    ]
+  },
+  {
     version: '2.1.1',
     date: '2026-10-15',
     highlights: [
