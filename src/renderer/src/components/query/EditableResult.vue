@@ -18,6 +18,7 @@ import { useValuePanelPref } from '@renderer/components/data/useValuePanelPref'
 import { invokeSilent } from '@renderer/api'
 import ApplyErrorBanner from '@renderer/components/data/ApplyErrorBanner.vue'
 import EditableGrid from '@renderer/components/data/EditableGrid.vue'
+import { gridForeignKeys } from '@renderer/components/data/foreignKeys'
 import ExportDialog from '@renderer/components/data/ExportDialog.vue'
 import type { CopyContext, ExportScope } from '@renderer/components/data/gridCopy'
 import type { GridSelectionSnapshot } from '@renderer/components/data/gridSelection'
@@ -113,6 +114,14 @@ const columnInfo = computed<(ColumnInfo | null)[]>(() =>
     const name = (c.sourceName ?? c.name).toLowerCase()
     return structure.value.columns.find((i) => i.name.toLowerCase() === name) ?? null
   })
+)
+/** Foreign keys of the source table, once the result is known to be editable. */
+const gridFks = computed(() =>
+  editable.value && structure.value
+    ? gridForeignKeys(columnInfo.value, structure.value.foreignKeys ?? [], (s) =>
+        schemaRef(s, database)
+      )
+    : null
 )
 /** Widths remembered per source table of the result (names and pixels only). */
 const widthKey = source.ok
@@ -369,6 +378,8 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
         :plain-editors="isLite"
         :copy="copyContext"
         :exportable="exportable"
+        :foreign-keys="gridFks"
+        :connection-id="connectionId"
         @sort="toggleSort"
         @edit="editor.onEdit"
         @export="openExport"

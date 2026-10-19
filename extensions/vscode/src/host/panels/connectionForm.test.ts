@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ConnectionConfig } from '@core'
 import { CONNECTION_FORM_CHANNELS, FormScope } from './connectionForm'
-import { RESULTS_CHANNELS } from './results'
+import { RESULTS_CHANNELS, tableDataProblem } from './results'
 
 const editing = { id: 'c1', extraBackupDirs: ['/backups/navicat'] } as unknown as ConnectionConfig
 
@@ -46,9 +46,10 @@ describe('connection form scope', () => {
   it('the webviews never get settings, app, job or SQL-execution channels', () => {
     for (const channel of CONNECTION_FORM_CHANNELS)
       expect(channel).toMatch(/^(connections|db|sqlite):/)
-    // Results: the grid's editability check and Aplicar, and «Exportar».
+    // Results: the grid's editability check and Aplicar, «Elegir de <tabla>» and «Exportar».
     expect([...RESULTS_CHANNELS].sort()).toEqual([
       'db:applyRowChanges',
+      'db:tableData',
       'db:tableStructure',
       'export:cancel',
       'export:query',
@@ -62,5 +63,15 @@ describe('connection form scope', () => {
       'jobs:run'
     ])
       expect(CONNECTION_FORM_CHANNELS.has(forbidden) || RESULTS_CHANNELS.has(forbidden)).toBe(false)
+  })
+
+  it('results views read related tables only with the structured search, never a raw WHERE', () => {
+    const request = { schema: 'tienda', table: 'clientes', limit: 50, offset: 0 }
+    expect(tableDataProblem(['c1', request])).toBeNull()
+    expect(tableDataProblem(['c1', { ...request, filter: { kind: 'group' } }])).toBeNull()
+    expect(tableDataProblem(['c1', { ...request, where: '1=1' }])).toBe(
+      'Esta vista no acepta un WHERE escrito a mano.'
+    )
+    expect(tableDataProblem(['c1', null])).toBe('Petición de datos no válida.')
   })
 })

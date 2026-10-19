@@ -2230,6 +2230,40 @@ const EXPORT_STEPS: Step[] = [
 STEPS.push(...EXPORT_STEPS)
 
 /**
+ * Grid editors (VORTAQ_SHOTS_ONLY=51): «Elegir de <tabla>» on a foreign key
+ * column and the list of an ENUM column. Needs scripts/seed-grid-shots.mjs
+ * (its own scratch profile and the throwaway test MySQL).
+ */
+const OPEN_GRID_TABLE = `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      await S.tree.expand(S.tree.parse('c:shot-grid-mysql'))
+      if (!S.connections.isOpen('shot-grid-mysql')) throw new Error('could not open the grid connection (run scripts/seed-grid-shots.mjs)')
+      S.workspace.openTableData('shot-grid-mysql', 'navidog_test', 'shot_grid_members')
+      await H.waitFor('[data-test="cell-0-2"]', 15000)
+      await H.settle(S, 900)`
+const GRID_STEPS: Step[] = [
+  {
+    name: '51a-grid-fk-picker',
+    script: `${OPEN_GRID_TABLE}
+      await H.click('[data-test="cell-1-2"]', 8000)
+      await H.click('[data-test="cell-1-2"] [data-test="fk-open"]', 8000)
+      await H.waitFor('.v-overlay--active [data-test="fk-row-0"]', 10000)
+      await H.sleep(700)`,
+    cleanup: `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+  },
+  {
+    name: '51b-grid-enum-list',
+    script: `${OPEN_GRID_TABLE}
+      const cell = await H.waitFor('[data-test="cell-2-1"]', 8000)
+      cell.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      await H.waitFor('[data-test="enum-list"]', 8000)
+      await H.sleep(700)`
+  }
+]
+STEPS.push(...GRID_STEPS)
+
+/**
  * Agents (MCP) (VORTAQ_SHOTS_ONLY=49): Ajustes › Agentes (MCP) with the
  * connections available to agents and client snippets (VS Code, Codex), and the connection
  * dialog's section with the three levels (a local connection, and production,

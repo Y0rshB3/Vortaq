@@ -6,6 +6,7 @@ import {
   HIGHLIGHT_LIMIT,
   binaryBytes,
   byteLength,
+  displayColumnType,
   formatBytes,
   hexDump,
   isBinaryValue,
@@ -210,7 +211,9 @@ function onSplitKey(event: KeyboardEvent): void {
       <v-icon icon="mdi-text-box-outline" size="14" class="vpanel__icon" />
       <template v-if="column">
         <span class="vpanel__col" data-test="value-panel-column">{{ column.name }}</span>
-        <span class="vpanel__meta">· {{ info?.columnType?.toUpperCase() || column.type }}</span>
+        <span class="vpanel__meta" data-test="value-panel-type"
+          >· {{ info?.columnType ? displayColumnType(info.columnType) : column.type }}</span
+        >
         <span class="vpanel__meta" data-test="value-panel-size">· {{ size }}</span>
         <span
           v-if="json && !/json/i.test(info?.columnType ?? column.type)"

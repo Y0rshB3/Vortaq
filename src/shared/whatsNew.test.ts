@@ -154,6 +154,16 @@ describe('WHATS_NEW (curated list)', () => {
     expect(versions(whatsNewBetween('2.1.0', '2.1.1'))).toEqual(['2.1.1'])
   })
 
+  it('2.2.0 announces the foreign key picker, the ENUM list and Cmd/Ctrl+D', () => {
+    const entry = whatsNewFor('2.2.0')
+    const text = entry?.highlights.join(' ') ?? ''
+    expect(text).toMatch(/«Elegir de <tabla>»/)
+    expect(text).toMatch(/ENUM se editan con su lista/)
+    expect(text).toMatch(/Cmd\/Ctrl\+D abre la estructura/)
+    expect(entry?.highlights.length).toBeLessThanOrEqual(5)
+    expect(versions(whatsNewBetween('2.1.2', '2.2.0'))).toEqual(['2.2.0'])
+  })
+
   it('2.1.2 says agents (MCP) work with any MCP client and names the new snippets', () => {
     const entry = whatsNewFor('2.1.2')
     const text = entry?.highlights.join(' ') ?? ''

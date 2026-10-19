@@ -1,7 +1,7 @@
 import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ColumnInfo, QueryColumn } from '@shared/types'
-import { mountComponent, setupDom } from '../../views/__tests__/helpers'
+import { mockBridge, mountComponent, setupDom } from '../../views/__tests__/helpers'
 import EditableGrid from './EditableGrid.vue'
 import { rowsFromPage } from './rowEditing'
 
@@ -209,5 +209,145 @@ describe('EditableGrid', () => {
       '120px'
     )
     expect(localStorage.getItem('electrondb.grid.columnWidths')).toContain('"note":120')
+  })
+})
+
+describe('EditableGrid: ENUM list and «Elegir de <tabla>»', () => {
+  let wrapper: Wrapper | null = null
+  beforeEach(() => {
+    document.body.innerHTML = ''
+    localStorage.clear()
+  })
+  afterEach(() => wrapper?.unmount())
+
+  const fkColumns: QueryColumn[] = [
+    { name: 'id', type: 'INT', primaryKey: true },
+    { name: 'status', type: 'STRING' },
+    { name: 'cliente_id', type: 'INT' }
+  ]
+  const fk = {
+    name: 'fk_cliente',
+    cols: [2],
+    table: 'clientes',
+    schema: 'tienda',
+    refColumns: ['id']
+  }
+
+  async function mount(extra: Record<string, unknown> = {}) {
+    wrapper?.unmount()
+    const pinia = setupDom()
+    const invoke = mockBridge({
+      'db:tableData': () => ({
+        columns: [
+          { name: 'id', type: 'INT', typeKind: 'integer' },
+          { name: 'nombre', type: 'VARCHAR', typeKind: 'text' }
+        ],
+        rows: [
+          [7, 'Ana'],
+          [9, 'Luis']
+        ],
+        primaryKey: ['id'],
+        total: 2,
+        durationMs: 1
+      })
+    })
+    wrapper = await mountComponent(
+      EditableGrid,
+      {
+        columns: fkColumns,
+        rows: rowsFromPage([[1, 'Active', 7]]),
+        primaryKey: ['id'],
+        sort: null,
+        columnInfo: [
+          info('id', 'int', false),
+          info('status', "enum('Active','Archived')", false),
+          info('cliente_id', 'int', true)
+        ],
+        foreignKeys: [null, null, fk],
+        connectionId: 'c1',
+        ...extra
+      },
+      pinia
+    )
+    return { w: wrapper, invoke }
+  }
+  const edits = (w: Wrapper) => (w.emitted('edit') ?? []) as unknown[][]
+  const options = () =>
+    [...document.body.querySelectorAll<HTMLElement>('[data-test="enum-list"] [role="option"]')].map(
+      (o) => o.textContent?.trim()
+    )
+
+  it('edits an ENUM with its list: double-click opens it, a value is chosen', async () => {
+    const { w } = await mount()
+    await w.get('[data-test="cell-0-1"]').trigger('dblclick')
+    expect(w.find('[data-test="enum-input"]').exists()).toBe(true)
+    expect(options()).toEqual(['Active', 'Archived'])
+    document.body
+      .querySelectorAll<HTMLElement>('[data-test="enum-list"] [role="option"]')[1]
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(edits(w)).toEqual([[w.props('rows')[0].uid, 1, 'Archived']])
+    expect(w.find('[data-test="enum-input"]').exists()).toBe(false)
+  })
+
+  it('the active ENUM cell has a list button, and Alt+↓ opens the list too', async () => {
+    const { w } = await mount()
+    await w.get('[data-test="cell-0-1"]').trigger('click')
+    expect(w.find('[data-test="cell-0-1"] [data-test="enum-open-cell"]').exists()).toBe(true)
+    await w.get('[data-test="cell-0-1"] [data-test="enum-open-cell"]').trigger('click')
+    expect(w.find('[data-test="enum-input"]').exists()).toBe(true)
+    await w.get('[data-test="enum-input"] input').trigger('keydown', { key: 'Escape' })
+    await w.get('[data-test="enum-input"] input').trigger('keydown', { key: 'Escape' })
+    expect(w.find('[data-test="enum-input"]').exists()).toBe(false)
+    await w.get('.editable-grid').trigger('keydown', { key: 'ArrowDown', altKey: true })
+    expect(w.find('[data-test="enum-input"]').exists()).toBe(true)
+  })
+
+  it('marks foreign key columns and fills one from the referenced rows', async () => {
+    const { w, invoke } = await mount()
+    expect(w.get('[data-test="fk-icon-cliente_id"]').attributes('title')).toBe(
+      'Clave foránea → clientes (id)'
+    )
+    expect(w.find('[data-test="fk-icon-status"]').exists()).toBe(false)
+    expect(w.find('[data-test="fk-open"]').exists()).toBe(false)
+    await w.get('[data-test="cell-0-2"]').trigger('click')
+    await w.get('[data-test="cell-0-2"] [data-test="fk-open"]').trigger('click')
+    await flushPromises()
+    expect(invoke).toHaveBeenCalledWith(
+      'db:tableData',
+      'c1',
+      expect.objectContaining({ table: 'clientes' })
+    )
+    const picker = body('[data-test="fk-picker"]')
+    expect(picker.querySelector('[data-test="fk-row-0"]')?.classList).toContain('is-current')
+    picker.querySelector<HTMLElement>('[data-test="fk-row-1"]')!.click()
+    await flushPromises()
+    expect(edits(w)).toEqual([[w.props('rows')[0].uid, 2, '9']])
+    expect(document.body.querySelector('.v-overlay--active [data-test="fk-picker"]')).toBeNull()
+  })
+
+  it('Alt+↓ on a foreign key cell opens the picker; choosing the current row writes nothing', async () => {
+    const { w } = await mount()
+    await w.get('[data-test="cell-0-2"]').trigger('click')
+    await w.get('.editable-grid').trigger('keydown', { key: 'ArrowDown', altKey: true })
+    await flushPromises()
+    body('[data-test="fk-row-0"]').click()
+    await flushPromises()
+    expect(edits(w)).toEqual([])
+  })
+
+  it('offers «Elegir de» in the cell menu, and nothing on a read-only grid', async () => {
+    const { w } = await mount()
+    await w.get('[data-test="cell-0-2"]').trigger('contextmenu')
+    await flushPromises()
+    expect(body('[data-test="menu-fk-pick"]').textContent).toMatch(/Elegir de «clientes»…/)
+
+    const ro = await mount({ readonly: true })
+    await ro.w.get('[data-test="cell-0-2"]').trigger('click')
+    expect(ro.w.find('[data-test="fk-open"]').exists()).toBe(false)
+    expect(ro.w.find('[data-test="fk-icon-cliente_id"]').exists()).toBe(true)
+    await ro.w.get('.editable-grid').trigger('keydown', { key: 'ArrowDown', altKey: true })
+    await flushPromises()
+    expect(document.body.querySelector('.v-overlay--active [data-test="fk-picker"]')).toBeNull()
   })
 })

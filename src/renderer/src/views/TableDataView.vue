@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import type { CellValue, ColumnInfo, QueryColumn, SchemaRef } from '@shared/types'
+import type { CellValue, ColumnInfo, ForeignKeyInfo, QueryColumn, SchemaRef } from '@shared/types'
 import { api, invokeSilent } from '@renderer/api'
 import CellValuePanel from '@renderer/components/data/CellValuePanel.vue'
 import { isCellChanged } from '@renderer/components/data/rowEditing'
@@ -8,6 +8,7 @@ import { useValuePanelPref } from '@renderer/components/data/useValuePanelPref'
 import EmptyState from '@renderer/components/common/EmptyState.vue'
 import ApplyErrorBanner from '@renderer/components/data/ApplyErrorBanner.vue'
 import EditableGrid from '@renderer/components/data/EditableGrid.vue'
+import { gridForeignKeys } from '@renderer/components/data/foreignKeys'
 import ExportDialog from '@renderer/components/data/ExportDialog.vue'
 import type { CopyContext, ExportScope } from '@renderer/components/data/gridCopy'
 import type { GridSelectionSnapshot } from '@renderer/components/data/gridSelection'
@@ -18,18 +19,27 @@ import TableFilterPanel from '@renderer/components/data/filter/TableFilterPanel.
 import { NO_FILTER, useTableFilter } from '@renderer/components/data/filter/useTableFilter'
 import { isApplyShortcut, useRowEditor } from '@renderer/components/data/useRowEditor'
 import { useConfirm } from '@renderer/composables/useConfirm'
+import { useWorkspace } from '@renderer/composables/useWorkspace'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
 import { useSettingsStore } from '@renderer/stores/settings'
 import { useTabsStore, type WorkspaceTab } from '@renderer/stores/tabs'
 import { formatDuration, formatNumber } from '@renderer/utils/format'
-import { refOf } from '@renderer/utils/schemaRef'
+import { refOf, schemaRef } from '@renderer/utils/schemaRef'
 import { isViewLike } from '@renderer/utils/columnMeta'
+import { isMac } from '@renderer/utils/platform'
 import { useConnectionsStore } from '@renderer/stores/connections'
 
 const props = defineProps<{ tab: WorkspaceTab }>()
 
 const settings = useSettingsStore()
 const tabs = useTabsStore()
+const workspace = useWorkspace()
+/** «Estructura» (Cmd/Ctrl+D anywhere in the tab, see useShortcuts). */
+const designShortcut = isMac() ? '⌘D' : 'Ctrl+D'
+function openStructure(): void {
+  tabs.activate(props.tab.id)
+  workspace.designCurrent(false)
+}
 const { ask } = useConfirm()
 const notify = useNotify()
 
@@ -80,6 +90,11 @@ const columnInfoList = ref<ColumnInfo[]>([])
 const columnInfo = computed(() =>
   columns.value.map((c) => columnInfoList.value.find((i) => i.name === c.name) ?? null)
 )
+/** The table's foreign keys: «Elegir de <tabla>» on their columns. */
+const foreignKeyList = ref<ForeignKeyInfo[]>([])
+const gridFks = computed(() =>
+  gridForeignKeys(columnInfo.value, foreignKeyList.value, (s) => schemaRef(s, props.tab.database))
+)
 async function loadColumnInfo(): Promise<void> {
   const { connectionId, schema, objectName } = props.tab
   if (!connectionId || !schema || !objectName) return
@@ -93,20 +108,21 @@ async function loadColumnInfo(): Promise<void> {
   } catch {
     columnInfoList.value = [] // editors fall back to the result types
   }
-  if (isPostgres.value) {
-    try {
-      const structure = await invokeSilent(
-        'db:tableStructure',
-        connectionId,
-        refOf(props.tab),
-        objectName
-      )
+  try {
+    const structure = await invokeSilent(
+      'db:tableStructure',
+      connectionId,
+      refOf(props.tab),
+      objectName
+    )
+    foreignKeyList.value = structure.foreignKeys ?? []
+    if (isPostgres.value)
       pgReadOnlyReason.value = isViewLike(structure)
         ? 'Vista materializada: solo lectura (usa «Refrescar» para recalcularla).'
         : null
-    } catch {
-      /* the primary-key check below still applies */
-    }
+  } catch {
+    // No foreign keys offered; on PostgreSQL the primary-key check below still applies.
+    foreignKeyList.value = []
   }
 }
 /** Column widths are remembered per table (names and pixels only). */
@@ -398,6 +414,14 @@ defineExpose({ rows, applyChanges, load })
         @click="openExport()"
         >Exportar</v-btn
       >
+      <v-btn
+        prepend-icon="mdi-table-cog"
+        size="small"
+        :title="`Ver la estructura de la tabla (${designShortcut})`"
+        data-test="structure"
+        @click="openStructure"
+        >Estructura</v-btn
+      >
       <span class="nd-viewbar__sep" aria-hidden="true" />
       <RowEditActions
         :can-add="!loading && columns.length > 0 && !readOnlyNotice"
@@ -492,6 +516,8 @@ defineExpose({ rows, applyChanges, load })
           :plain-editors="isSqlite"
           :readonly="!!readOnlyNotice"
           :copy="copyContext"
+          :foreign-keys="gridFks"
+          :connection-id="tab.connectionId ?? null"
           exportable
           @sort="toggleSort"
           @edit="editor.onEdit"

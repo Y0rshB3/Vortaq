@@ -34,6 +34,10 @@ import {
   type GridSelectionSnapshot
 } from './gridSelection'
 import { displayCell, isCellChanged, type ActiveCell, type EditableRow } from './rowEditing'
+import EnumInput from './EnumInput.vue'
+import { enumOptions } from './enumValues'
+import ForeignKeyPicker from './ForeignKeyPicker.vue'
+import { foreignKeyLabel, type GridForeignKey } from './foreignKeys'
 import TemporalInput from './TemporalInput.vue'
 import { temporalSpec, type TemporalSpec } from './temporal'
 
@@ -64,6 +68,12 @@ const props = defineProps<{
   copy?: CopyContext | null
   /** Offer «Exportar…» in the context menu (the parent opens its dialog). */
   exportable?: boolean
+  /**
+   * Foreign key of each column (aligned with `columns`), for «Elegir de
+   * <tabla>»; it reads the referenced table on `connectionId`.
+   */
+  foreignKeys?: (GridForeignKey | null)[] | null
+  connectionId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -85,6 +95,12 @@ const specs = computed<(TemporalSpec | null)[]>(() =>
     props.plainEditors ? null : temporalSpec(c.type, props.columnInfo?.[i]?.columnType)
   )
 )
+/** Allowed values of ENUM columns (MySQL/MariaDB type, PostgreSQL pg_enum): edited with a list. */
+const enums = computed<(string[] | null)[]>(() =>
+  props.columns.map((_, i) => (props.plainEditors ? null : enumOptions(props.columnInfo?.[i])))
+)
+const fkOf = (col: number): GridForeignKey | null =>
+  (props.connectionId && props.foreignKeys?.[col]) || null
 
 const STORAGE_LABELS: Record<StorageClass, string> = {
   null: 'NULL',
@@ -188,6 +204,13 @@ const typed = ref(false)
 const inputRef = ref<HTMLInputElement[] | HTMLInputElement | null>(null)
 type TemporalEditor = InstanceType<typeof TemporalInput>
 const temporalRef = ref<TemporalEditor[] | TemporalEditor | null>(null)
+type EnumEditor = InstanceType<typeof EnumInput>
+const enumRef = ref<EnumEditor[] | EnumEditor | null>(null)
+/** The open date/time or ENUM editor (both validate before committing). */
+function specialEditor(): { tryCommit: () => boolean } | null {
+  const pick = <T,>(r: T[] | T | null): T | null => (Array.isArray(r) ? (r[0] ?? null) : r)
+  return pick(temporalRef.value) ?? pick(enumRef.value)
+}
 
 /* ---------- selection (gridSelection.ts) ---------- */
 
@@ -369,7 +392,7 @@ async function startEdit(uid: string, col: number): Promise<void> {
   draft.value = value === null ? '' : displayCell(value)
   typed.value = false
   await nextTick()
-  if (specs.value[col]) return // TemporalInput focuses itself
+  if (specs.value[col] || enums.value[col]) return // TemporalInput and EnumInput focus themselves
   const el = Array.isArray(inputRef.value) ? inputRef.value[0] : inputRef.value
   el?.focus()
   el?.select()
@@ -393,9 +416,9 @@ function onTemporalCommit(value: string | null): void {
   root.value?.focus()
 }
 
-/** Leaving a temporal editor commits only valid text; invalid text keeps the editor open. */
+/** Leaving a temporal or ENUM editor commits only valid text; invalid text keeps the editor open. */
 function onTemporalLeave(): void {
-  const editor = Array.isArray(temporalRef.value) ? temporalRef.value[0] : temporalRef.value
+  const editor = specialEditor()
   if (!editor) return commit()
   editor.tryCommit()
 }
@@ -408,8 +431,7 @@ function onTemporalKey(event: KeyboardEvent): void {
   if (event.key === 'Tab') {
     event.preventDefault()
     event.stopPropagation()
-    const editor = Array.isArray(temporalRef.value) ? temporalRef.value[0] : temporalRef.value
-    if (editor?.tryCommit() ?? true) move(0, event.shiftKey ? -1 : 1)
+    if (specialEditor()?.tryCommit() ?? true) move(0, event.shiftKey ? -1 : 1)
     return
   }
   event.stopPropagation()
@@ -466,8 +488,71 @@ function onInputKey(event: KeyboardEvent): void {
   }
 }
 
+/* ---------- «Elegir de <tabla>» (foreign keys) ---------- */
+
+const picker = ref<{ uid: string; col: number; fk: GridForeignKey; target: Element } | null>(null)
+const pickerCurrent = computed(() => {
+  const p = picker.value
+  const row = p ? props.rows.find((r) => r.uid === p.uid) : undefined
+  if (!p || !row) return []
+  return p.fk.cols.map((c) => (row.values[c] === null ? null : displayCell(row.values[c])))
+})
+const pickerNullable = computed(() => !!picker.value?.fk.cols.every((c) => nullable(c)))
+
+/** The cell can take a value from its referenced table now. */
+function canPick(row: EditableRow | undefined, col: number): boolean {
+  const fk = fkOf(col)
+  return !!fk && !!row && !props.readonly && !row.deleted && fk.cols.every((c) => !isLocked(row, c))
+}
+
+function openPicker(uid: string, col: number): void {
+  const row = props.rows.find((r) => r.uid === uid)
+  const fk = fkOf(col)
+  if (!fk || !canPick(row, col)) return
+  const index = props.rows.indexOf(row!)
+  const target = root.value?.querySelector(`td[data-test="cell-${index}-${col}"]`)
+  if (!target) return
+  editing.value = null
+  active.value = { uid, col }
+  applySelection(singleCell({ uid, col }))
+  picker.value = { uid, col, fk, target }
+}
+
+function closePicker(): void {
+  picker.value = null
+  void nextTick(() => root.value?.focus())
+}
+
+/** Writes the chosen referenced values into every column of the key (unchanged ones skipped). */
+function onPicked(values: (string | null)[]): void {
+  const p = picker.value
+  const row = p ? props.rows.find((r) => r.uid === p.uid) : undefined
+  if (p && row)
+    p.fk.cols.forEach((c, i) => {
+      const next = values[i] ?? null
+      const cur = row.values[c]
+      if (next === null ? cur === null : cur !== null && displayCell(cur) === next) return
+      emit('edit', p.uid, c, next)
+    })
+  closePicker()
+}
+
 function onGridKey(event: KeyboardEvent): void {
   if (editing.value) return
+  if (event.altKey && event.key === 'ArrowDown' && active.value) {
+    // Alt+↓: the referenced rows of a foreign key, or the list of an ENUM.
+    const { uid, col } = active.value
+    if (fkOf(col)) {
+      event.preventDefault()
+      openPicker(uid, col)
+      return
+    }
+    if (enums.value[col]) {
+      event.preventDefault()
+      void startEdit(uid, col)
+      return
+    }
+  }
   const mod = (event.metaKey || event.ctrlKey) && !event.altKey
   const key = event.key.toLowerCase()
   if (mod && key === 'c') {
@@ -576,8 +661,9 @@ function exportItems(): MenuAction[] {
   ]
 }
 
-function openMenu(event: MouseEvent, extra: MenuAction[] = []): void {
+function openMenu(event: MouseEvent, extra: MenuAction[] = [], lead: MenuAction[] = []): void {
   menu.value?.show(event, [
+    ...lead,
     ...copyItems(),
     ...exportItems(),
     { key: 'd-select', label: '', divider: true },
@@ -600,7 +686,23 @@ function cellMenu(event: MouseEvent, uid: string, col: number, index: number): v
     active.value = { uid, col }
     applySelection(singleCell({ uid, col }))
   }
-  openMenu(event)
+  const fk = fkOf(col)
+  const row = props.rows.find((r) => r.uid === uid)
+  const lead: MenuAction[] =
+    fk && !props.readonly
+      ? [
+          {
+            key: 'fk-pick',
+            label: `Elegir de «${fk.table}»…`,
+            icon: 'mdi-link-variant',
+            hint: 'Alt+↓',
+            disabled: !canPick(row, col),
+            action: () => openPicker(uid, col)
+          },
+          { key: 'd-fk', label: '', divider: true }
+        ]
+      : []
+  openMenu(event, [], lead)
 }
 function inRegionOrSingle(index: number, col: number): boolean {
   const region = selRegion.value
@@ -715,6 +817,15 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 class="header-cell__key"
                 aria-label="Clave primaria"
               />
+              <v-icon
+                v-if="fkOf(c)"
+                icon="mdi-link-variant"
+                size="13"
+                class="header-cell__fk"
+                :aria-label="`Clave foránea: ${foreignKeyLabel(fkOf(c)!)}`"
+                :title="`Clave foránea → ${foreignKeyLabel(fkOf(c)!)}`"
+                :data-test="`fk-icon-${col.name}`"
+              />
               <span class="header-cell__name">{{ col.name }}</span>
               <button
                 type="button"
@@ -806,7 +917,7 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
             <span
               v-if="isEditing(row.uid, c)"
               class="cell-editor"
-              :class="{ 'is-temporal': !!specs[c] }"
+              :class="{ 'is-temporal': !!specs[c] || !!enums[c] }"
               data-test="cell-editor"
             >
               <TemporalInput
@@ -814,6 +925,20 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 ref="temporalRef"
                 v-model="draft"
                 :spec="specs[c]!"
+                :nullable="nullable(c)"
+                :label="`Editar ${col.name}`"
+                :placeholder="row.values[c] === null ? 'NULL' : undefined"
+                autofocus
+                @commit="onTemporalCommit"
+                @cancel="cancelTemporal"
+                @leave="onTemporalLeave"
+                @keydown="onTemporalKey"
+              />
+              <EnumInput
+                v-else-if="enums[c]"
+                ref="enumRef"
+                v-model="draft"
+                :options="enums[c]!"
                 :nullable="nullable(c)"
                 :label="`Editar ${col.name}`"
                 :placeholder="row.values[c] === null ? 'NULL' : undefined"
@@ -836,11 +961,59 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 @blur="commit"
               />
             </span>
+            <button
+              v-else-if="isActive(row.uid, c) && canPick(row, c)"
+              type="button"
+              class="cell-action"
+              tabindex="-1"
+              :title="`Elegir de «${fkOf(c)!.table}» (Alt+↓)`"
+              :aria-label="`Elegir ${col.name} de ${fkOf(c)!.table}`"
+              data-test="fk-open"
+              @mousedown.stop.prevent
+              @click.stop="openPicker(row.uid, c)"
+              @dblclick.stop
+            >
+              <v-icon icon="mdi-link-variant" size="14" />
+            </button>
+            <button
+              v-else-if="
+                isActive(row.uid, c) && enums[c] && !readonly && !row.deleted && !isLocked(row, c)
+              "
+              type="button"
+              class="cell-action"
+              tabindex="-1"
+              title="Elegir un valor (Alt+↓)"
+              :aria-label="`Elegir el valor de ${col.name}`"
+              data-test="enum-open-cell"
+              @mousedown.stop.prevent
+              @click.stop="startEdit(row.uid, c)"
+              @dblclick.stop
+            >
+              <v-icon icon="mdi-chevron-down" size="16" />
+            </button>
           </td>
         </tr>
       </tbody>
     </table>
     <ContextMenu ref="menu" />
+    <v-menu
+      :model-value="!!picker"
+      :target="picker?.target"
+      location="bottom start"
+      :close-on-content-click="false"
+      @update:model-value="(open: boolean) => !open && closePicker()"
+    >
+      <ForeignKeyPicker
+        v-if="picker && connectionId"
+        :key="`${picker.uid}:${picker.col}`"
+        :connection-id="connectionId"
+        :fk="picker.fk"
+        :current="pickerCurrent"
+        :nullable="pickerNullable"
+        @choose="onPicked"
+        @close="closePicker"
+      />
+    </v-menu>
   </div>
 </template>
 
@@ -989,6 +1162,34 @@ th.is-sorted {
 .header-cell__key {
   color: var(--nd-warning);
   opacity: 0.9;
+}
+.header-cell__fk {
+  color: var(--nd-accent);
+  opacity: 0.85;
+}
+/* «Elegir de <tabla>» / ENUM list button of the active cell, over its right edge. */
+td.cell-active {
+  position: relative;
+}
+.cell-action {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--nd-radius-sm);
+  color: var(--nd-accent);
+  background: var(--nd-bg-raised);
+  border: 1px solid var(--nd-border);
+  cursor: pointer;
+}
+.cell-action:hover {
+  background: color-mix(in srgb, var(--nd-bg-raised) 100%, var(--nd-accent) 18%);
 }
 .header-cell__sort {
   display: inline-flex;
