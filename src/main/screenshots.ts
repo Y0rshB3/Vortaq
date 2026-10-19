@@ -2264,6 +2264,58 @@ const GRID_STEPS: Step[] = [
 STEPS.push(...GRID_STEPS)
 
 /**
+ * Relationship diagram and visual query (VORTAQ_SHOTS_ONLY=52): the
+ * `shots_diagram` database of scripts/seed-grid-shots.mjs.
+ */
+const OPEN_DIAGRAM_DB = `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      await S.tree.expand(S.tree.parse('c:shot-grid-mysql'))
+      if (!S.connections.isOpen('shot-grid-mysql')) throw new Error('could not open the grid connection (run scripts/seed-grid-shots.mjs)')`
+const DIAGRAM_STEPS: Step[] = [
+  {
+    name: '52a-diagram',
+    script: `${OPEN_DIAGRAM_DB}
+      S.workspace.openDiagram('shot-grid-mysql', 'shots_diagram')
+      await H.waitFor('[data-test="diagram-footer"]', 15000)
+      await H.sleep(900)`
+  },
+  {
+    name: '52b-diagram-keys',
+    script: `${OPEN_DIAGRAM_DB}
+      S.workspace.openDiagram('shot-grid-mysql', 'shots_diagram')
+      await H.waitFor('[data-test="diagram-footer"]', 15000)
+      await H.click('[data-test="diagram-keys"]', 8000)
+      await H.sleep(900)`,
+    cleanup: `H.$('[data-test="diagram-keys"]')?.click()`
+  },
+  {
+    name: '52c-query-builder',
+    script: `${OPEN_DIAGRAM_DB}
+      S.workspace.openQueryBuilder('shot-grid-mysql', 'shots_diagram')
+      for (const t of ['orders', 'customers', 'order_items']) {
+        await H.click('[data-test="qb-table-' + t + '"]', 10000)
+        await H.waitFor('[data-test="dbox-' + t + '"]', 10000)
+      }
+      for (const r of ['customers-country', 'orders-total', 'orders-id']) await H.click('[data-test="dbox-row-' + r + '"]', 8000)
+      const set = (sel, value) => { const el = H.$(sel); el.value = value; el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })) }
+      set('[data-test="qb-agg-o.total"]', 'SUM')
+      set('[data-test="qb-as-o.total"]', 'facturado')
+      set('[data-test="qb-sort-o.total"]', 'DESC')
+      set('[data-test="qb-agg-o.id"]', 'COUNT')
+      set('[data-test="qb-as-o.id"]', 'pedidos')
+      await H.sleep(300)
+      await H.sleep(800)`
+  },
+  {
+    name: '52d-query-builder-sql',
+    script: `
+      await H.click('[data-test="qb-tab-sql"]', 8000)
+      await H.sleep(700)`
+  }
+]
+STEPS.push(...DIAGRAM_STEPS)
+
+/**
  * Agents (MCP) (VORTAQ_SHOTS_ONLY=49): Ajustes › Agentes (MCP) with the
  * connections available to agents and client snippets (VS Code, Codex), and the connection
  * dialog's section with the three levels (a local connection, and production,

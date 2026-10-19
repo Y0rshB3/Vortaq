@@ -44,7 +44,9 @@ export const VIEW_REGISTRY: Record<TabKind, Component> = {
   automation: lazyView(() => import('./AutomationView.vue')),
   jobEditor: lazyView(() => import('./JobEditorView.vue')),
   collection: lazyView(() => import('./CollectionView.vue')),
-  collectionDesigner: lazyView(() => import('./CollectionDesignerView.vue'))
+  collectionDesigner: lazyView(() => import('./CollectionDesignerView.vue')),
+  diagram: lazyView(() => import('./DiagramView.vue')),
+  queryBuilder: lazyView(() => import('./QueryBuilderView.vue'))
 }
 
 export function viewFor(kind: TabKind): Component {

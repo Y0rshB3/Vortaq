@@ -146,6 +146,30 @@ describe('ObjectsView', () => {
     wrapper.unmount()
   })
 
+  it('opens the relationship diagram or the visual query of the database in context', async () => {
+    const connections = useConnectionsStore()
+    await connections.load()
+    await connections.open('c1')
+    const tree = useTreeStore()
+    tree.select(nodeIds.connection('c1'))
+    const wrapper = mountView()
+    await flush()
+    await flush()
+    // A database list needs a selected row.
+    expect(wrapper.get('[data-test="objects-diagram"]').attributes('disabled')).toBeDefined()
+    await wrapper.findAll('[data-test="data-list-row"]')[1].trigger('click')
+    await wrapper.get('[data-test="objects-diagram"]').trigger('click')
+    const tabs = useTabsStore()
+    expect(tabs.active).toMatchObject({ kind: 'diagram', connectionId: 'c1', schema: 'crm' })
+
+    tabs.activate('objects')
+    tree.select(nodeIds.group('c1', 'shop', 'tables'))
+    await flush()
+    await wrapper.get('[data-test="objects-query-builder"]').trigger('click')
+    expect(tabs.active).toMatchObject({ kind: 'queryBuilder', connectionId: 'c1', schema: 'shop' })
+    wrapper.unmount()
+  })
+
   it('offers to open a closed connection', async () => {
     await useConnectionsStore().load()
     useTreeStore().select(nodeIds.connection('c1'))

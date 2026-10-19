@@ -15,6 +15,9 @@ export type TabKind =
   // MongoDB (preview)
   | 'collection'
   | 'collectionDesigner'
+  // Relationship diagram and visual query builder of one database/schema (SQL engines)
+  | 'diagram'
+  | 'queryBuilder'
 
 export interface WorkspaceTab {
   id: string
@@ -50,7 +53,9 @@ const ICONS: Record<TabKind, string> = {
   users: 'mdi-account-multiple',
   jobEditor: 'mdi-robot-outline',
   collection: 'mdi-file-document-multiple-outline',
-  collectionDesigner: 'mdi-file-document-edit-outline'
+  collectionDesigner: 'mdi-file-document-edit-outline',
+  diagram: 'mdi-sitemap-outline',
+  queryBuilder: 'mdi-vector-link'
 }
 
 export interface OpenTabInput {

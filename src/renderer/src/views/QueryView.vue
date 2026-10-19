@@ -437,6 +437,14 @@ function loadPayload(): void {
   if (typeof payload.sql === 'string') sql.value = payload.sql
 }
 
+/** «Ejecutar» from the visual query builder: run its SQL once, through run() and its guards. */
+function runFromPayload(): void {
+  const payload = props.tab.payload
+  if (payload?.run !== true || typeof payload.sql !== 'string') return
+  tabs.setPayload(props.tab.id, { ...payload, run: false })
+  void run()
+}
+
 async function run(selectionOnly = false): Promise<void> {
   if (running.value || switching.value || !connectionId.value) return
   const selection = editor.value?.getSelection() ?? ''
@@ -874,6 +882,7 @@ onMounted(async () => {
   await Promise.all([loadSchemas(), loadCompletion()])
   if (isPg.value) updateTitle()
   if (tabSession.value) await refreshSessionState()
+  runFromPayload()
 })
 
 /* ---------- AI assistant (never runs SQL: it only reads it or inserts it) ---------- */

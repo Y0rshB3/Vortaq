@@ -1699,6 +1699,12 @@ export interface AppSettings {
 }
 
 /** How an MCP client starts Vortaq's MCP mode on this computer (app:mcpLaunch). */
+/** «Exportar imagen» of the relationship diagram: PNG as base64, or SVG text. */
+export interface DiagramImage {
+  format: 'png' | 'svg'
+  data: string
+}
+
 export interface McpLaunchInfo {
   /** Executable: the installed app, the AppImage file, or Electron in a source checkout. */
   command: string

@@ -154,6 +154,15 @@ describe('WHATS_NEW (curated list)', () => {
     expect(versions(whatsNewBetween('2.1.0', '2.1.1'))).toEqual(['2.1.1'])
   })
 
+  it('2.3.0 announces the relationship diagram and the visual query', () => {
+    const entry = whatsNewFor('2.3.0')
+    const text = entry?.highlights.join(' ') ?? ''
+    expect(text).toMatch(/Diagrama de relaciones/)
+    expect(text).toMatch(/Consulta gráfica/)
+    expect(text).toMatch(/protecciones de siempre/)
+    expect(versions(whatsNewBetween('2.2.0', '2.3.0'))).toEqual(['2.3.0'])
+  })
+
   it('2.2.0 announces the foreign key picker, the ENUM list and Cmd/Ctrl+D', () => {
     const entry = whatsNewFor('2.2.0')
     const text = entry?.highlights.join(' ') ?? ''
