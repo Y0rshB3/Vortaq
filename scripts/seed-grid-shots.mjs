@@ -2,7 +2,8 @@
 /**
  * Seeds a scratch profile and the throwaway test MySQL for the grid editor
  * screenshots (steps 51* of src/main/screenshots.ts): «Elegir de <tabla>» on a
- * foreign key and the list of an ENUM column. Synthetic names and values only.
+ * foreign key and the list of an ENUM column; and the `shots_diagram` database
+ * of the relationship diagram and visual query (steps 52*). Synthetic names only.
  *
  *   node scripts/seed-grid-shots.mjs
  *   npm run build
@@ -84,6 +85,45 @@ const statuses = ['Active', 'Active', 'Archived', 'Active', 'Suspended', 'Active
 await conn.query('INSERT INTO shot_grid_members (status, personID, joined) VALUES ?', [
   statuses.map((s, i) => [s, persons[i % persons.length][0], `2026-0${i + 1}-0${i + 1} 10:00:00`])
 ])
+// Relationship diagram and visual query (steps 52*): a small shop in its own database.
+await conn.query(`
+  CREATE DATABASE IF NOT EXISTS shots_diagram;
+  USE shots_diagram;
+  DROP TABLE IF EXISTS payments, order_items, orders, products, categories, coupons, customers, audit_log;
+  CREATE TABLE customers (
+    id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL, email VARCHAR(120) NOT NULL,
+    country CHAR(2) NOT NULL, created_at DATETIME NOT NULL
+  );
+  CREATE TABLE categories (
+    id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(60) NOT NULL, parent_id INT NULL,
+    FOREIGN KEY (parent_id) REFERENCES categories (id)
+  );
+  CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY, sku VARCHAR(20) NOT NULL UNIQUE, name VARCHAR(120) NOT NULL,
+    price DECIMAL(10,2) NOT NULL, category_id INT NOT NULL,
+    FOREIGN KEY (category_id) REFERENCES categories (id)
+  );
+  CREATE TABLE coupons (code VARCHAR(20) PRIMARY KEY, discount DECIMAL(5,2) NOT NULL, expires_at DATE NULL);
+  CREATE TABLE orders (
+    id INT AUTO_INCREMENT PRIMARY KEY, customer_id INT NOT NULL, coupon_code VARCHAR(20) NULL,
+    status ENUM('pending','paid','shipped','cancelled') NOT NULL DEFAULT 'pending',
+    created_at DATETIME NOT NULL, total DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers (id),
+    FOREIGN KEY (coupon_code) REFERENCES coupons (code)
+  );
+  CREATE TABLE order_items (
+    order_id INT NOT NULL, product_id INT NOT NULL, quantity INT NOT NULL, unit_price DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (order_id, product_id),
+    FOREIGN KEY (order_id) REFERENCES orders (id),
+    FOREIGN KEY (product_id) REFERENCES products (id)
+  );
+  CREATE TABLE payments (
+    id INT AUTO_INCREMENT PRIMARY KEY, order_id INT NOT NULL, method ENUM('card','transfer') NOT NULL,
+    amount DECIMAL(10,2) NOT NULL, paid_at DATETIME NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders (id)
+  );
+  CREATE TABLE audit_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, action VARCHAR(40) NOT NULL, at DATETIME NOT NULL);
+`)
 await conn.end()
 
 rmSync(PROFILE, { recursive: true, force: true })
@@ -100,7 +140,7 @@ const connection = {
   username: DB.user,
   authMode: 'password',
   savePassword: true,
-  customDatabases: [DB.database],
+  customDatabases: [DB.database, 'shots_diagram'],
   initialQueries: '',
   ssh: {
     enabled: false,

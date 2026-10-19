@@ -131,6 +131,10 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
   conexiones que actives (solo estructura, lectura o lectura y escritura) sin que Vortaq les dé contraseñas, hosts, usuarios
   ni rutas;
   nunca escriben en Producción ([Agentes (MCP)](#agentes-mcp)).
+- **Diagrama de relaciones y consulta gráfica**: dibuja las tablas de una base de datos o esquema con sus claves
+  foráneas (moverlas, zoom, «Solo claves», exportar a PNG o SVG) y arma consultas añadiendo tablas, que se unen
+  solas por sus claves, marcando columnas y eligiendo totales, orden y filtros, con el SQL a la vista
+  ([Diagrama de relaciones y consulta gráfica](#diagrama-de-relaciones-y-consulta-gráfica)).
 - Tema oscuro y claro.
 
 ## Compatibilidad por sistema operativo
@@ -1122,6 +1126,28 @@ Al editar una celda `DATE`, `DATETIME`, `TIMESTAMP`, `TIME` o `YEAR` el editor s
   Elegir una fila escribe sus valores en las columnas de la clave, todas a la vez si la clave es compuesta, como
   cambio pendiente. Solo se lee la tabla relacionada; nada se escribe hasta **Aplicar**.
 - Funciona en la vista de datos y en los resultados editables del editor de consultas.
+
+### Diagrama de relaciones y consulta gráfica
+
+En la pestaña **Objetos**, con una base de datos (MySQL, MariaDB, SQLite) o un esquema (PostgreSQL) seleccionado,
+o abierto en la lista, aparecen dos botones:
+
+- **Diagrama**: todas las tablas con sus columnas (icono de llave en la clave primaria y de enlace en las
+  foráneas) y una línea por clave foránea, con la «pata de gallo» en la tabla que apunta y discontinua si la
+  clave admite `NULL`. Las tablas relacionadas se colocan solas (las referenciadas a la izquierda) y las sueltas
+  aparte. Arrastra el fondo o usa la rueda para moverte, `Cmd/Ctrl` + rueda para el zoom, arrastra una cabecera
+  para mover una tabla y haz doble clic para abrir sus datos (botón derecho: **Diseñar tabla**). **Solo claves**
+  deja solo las columnas de claves; **Reorganizar** vuelve a la colocación automática; **Exportar** guarda una
+  imagen PNG o SVG. Dónde dejas cada tabla se recuerda en este equipo. Se leen como mucho 300 tablas (por orden
+  alfabético) y solo su estructura; las claves que apuntan a otra base o esquema se cuentan pero no se dibujan.
+- **Consulta gráfica**: haz clic en las tablas de la lista para añadirlas. Si tienen claves foráneas entre sí,
+  se unen solas (`INNER JOIN`); para otra unión, arrastra el punto de una columna hasta una columna de otra tabla.
+  Un clic en una línea la cambia a «todas las filas de…» (`LEFT JOIN`) o la quita. Marca columnas en las tablas y,
+  abajo, elige alias, **Total** (contar, suma, media, mínimo, máximo; las demás columnas visibles pasan a
+  `GROUP BY` y los filtros de un total van a `HAVING`), orden y filtro (`=`, `≠`, `<`, `contiene`, `es nulo`,
+  `en la lista`…). La pestaña **SQL** muestra la consulta tal como se va armando; **Abrir en consulta** la lleva
+  a una pestaña de consulta y **Ejecutar** además la ejecuta allí, con las protecciones de siempre. Los valores
+  se escriben como literales escapados según el motor; nada se ejecuta desde la propia consulta gráfica.
 
 ### Columnas y panel Texto
 

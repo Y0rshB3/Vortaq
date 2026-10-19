@@ -14,6 +14,7 @@ import type {
   ConnectionTestResult,
   DataTypeInfo,
   DatabaseInfo,
+  DiagramImage,
   EngineObjectType,
   EventInfo,
   ExtensionInfo,
@@ -152,6 +153,12 @@ export interface IpcInvokeMap {
    * (executable and arguments built from process.execPath; nothing is written).
    */
   'app:mcpLaunch': { args: []; result: McpLaunchInfo }
+  /**
+   * «Exportar imagen» of the relationship diagram: main shows its own save
+   * dialog and writes the PNG or SVG there (the renderer never picks a path).
+   * The chosen path, or null when cancelled.
+   */
+  'app:saveImage': { args: [defaultName: string, image: DiagramImage]; result: string | null }
 
   /** Looks for a newer GitHub release. Automatic checks (manual=false) use a 6-hour cache. */
   'updates:check': { args: [manual: boolean]; result: UpdateCheckResult }
@@ -728,6 +735,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'app:licenses',
   'app:openRepository',
   'app:mcpLaunch',
+  'app:saveImage',
   'updates:check',
   'updates:dismiss',
   'updates:snooze',

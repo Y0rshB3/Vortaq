@@ -46,6 +46,28 @@ const engine = computed(() =>
   context.value ? connections.get(context.value.connectionId)?.engine : undefined
 )
 
+/**
+ * Database/schema «Diagrama» and «Consulta gráfica» open on: the one listed,
+ * or the selected row of a database (MySQL, SQLite) or schema (PostgreSQL) list.
+ */
+const diagramTarget = computed(() => {
+  const ctx = context.value
+  if (!ctx || !connectionOpen.value || !engine.value || engine.value === 'mongodb') return null
+  if (ctx.schema)
+    return { connectionId: ctx.connectionId, schema: ctx.schema, database: ctx.database }
+  if (!isDatabaseList.value || !selectedDb.value) return null
+  if (isSchemaList.value)
+    return { connectionId: ctx.connectionId, schema: selectedDb.value, database: ctx.database }
+  if (tree.hasDatabaseLevel(ctx.connectionId)) return null
+  return { connectionId: ctx.connectionId, schema: selectedDb.value, database: undefined }
+})
+function openDiagram(builder: boolean): void {
+  const t = diagramTarget.value
+  if (!t) return
+  if (builder) ws.openQueryBuilder(t.connectionId, t.schema, t.database)
+  else ws.openDiagram(t.connectionId, t.schema, t.database)
+}
+
 /** Tree node id that drives loading/error state for the current list. */
 const listNodeId = computed(() => {
   const ctx = context.value
@@ -415,6 +437,35 @@ const title = computed(() => {
         data-test="objects-refresh"
         @click="refresh"
       />
+      <span class="objects-view__divider" aria-hidden="true" />
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-sitemap-outline"
+        :disabled="!diagramTarget"
+        :title="
+          diagramTarget
+            ? `Diagrama de relaciones de ${diagramTarget.schema}`
+            : 'Selecciona una base de datos o un esquema'
+        "
+        data-test="objects-diagram"
+        @click="openDiagram(false)"
+        >Diagrama</v-btn
+      >
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-vector-link"
+        :disabled="!diagramTarget"
+        :title="
+          diagramTarget
+            ? `Consulta gráfica sobre ${diagramTarget.schema}`
+            : 'Selecciona una base de datos o un esquema'
+        "
+        data-test="objects-query-builder"
+        @click="openDiagram(true)"
+        >Consulta gráfica</v-btn
+      >
       <v-spacer />
       <v-btn-toggle
         v-model="ui.objectsViewMode"

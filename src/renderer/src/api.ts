@@ -3,6 +3,7 @@ import type {
   BackupCreateOptions,
   ConnectionInput,
   ConnectionMcpConfig,
+  DiagramImage,
   JobInput,
   EngineObjectType,
   MongoCreateCollectionOptions,
@@ -122,7 +123,9 @@ export const api = {
     licenses: () => invoke('app:licenses'),
     openRepository: () => invoke('app:openRepository'),
     /** Ajustes › Agentes (MCP): the command an MCP client runs to start this copy. */
-    mcpLaunch: () => invokeSilent('app:mcpLaunch')
+    mcpLaunch: () => invokeSilent('app:mcpLaunch'),
+    saveImage: (defaultName: string, image: DiagramImage) =>
+      invoke('app:saveImage', defaultName, image)
   },
   tour: {
     state: () => invokeSilent('tour:state'),

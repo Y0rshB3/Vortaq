@@ -73,6 +73,31 @@ describe('QueryView', () => {
     expect(wrapper.find('[data-test="tab-rs0"]').exists()).toBe(true)
   })
 
+  it('runs the SQL handed over by «Consulta gráfica › Ejecutar» once, on opening', async () => {
+    const pinia = setupDom()
+    const invoke = mockBridge({
+      'db:databases': () => [
+        { name: 'shop', characterSet: 'utf8mb4', collation: 'utf8mb4_0900_ai_ci' }
+      ],
+      'db:tables': () => [],
+      'db:execute': () => [results[0]]
+    })
+    const tab = openTab({
+      kind: 'query',
+      title: 'q',
+      connectionId: 'c1',
+      schema: 'shop',
+      payload: { sql: 'SELECT id FROM items;\n', name: 'Consulta gráfica', run: true }
+    })
+    wrapper = await mountView(QueryView, tab, pinia)
+    await flushPromises()
+    expect(invoke.mock.calls.filter((c) => c[0] === 'db:execute')).toEqual([
+      ['db:execute', 'c1', 'SELECT id FROM items;', { schema: 'shop' }]
+    ])
+    // The request is consumed: reopening or re-rendering the tab never runs it again.
+    expect(useTabsStore().tabs.find((t) => t.id === tab.id)?.payload?.run).toBe(false)
+  })
+
   it('ignores late results after Detener', async () => {
     const pinia = setupDom()
     let release: (v: QueryStatementResult[]) => void = () => {}

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { LOG_FILE_NAME } from '../brand'
 import type { AppContext } from '../context'
@@ -10,6 +11,7 @@ import { dismissRaisedNotice, raisedNotices } from '../notices'
 import { titleBarOverlayFor, usesTitleBarOverlay } from '../windowOptions'
 import { handle } from './typed'
 import { mcpLaunchOf } from '@shared/mcp'
+import { imageFileBytes, imageFileName, imageSavePath } from '../imageExport'
 
 /** ElectronDB bundles still installed (macOS; a scratch profile checks only VORTAQ_LEGACY_APP_PATHS). */
 function legacyApps(): string[] {
@@ -74,6 +76,21 @@ export function registerAppHandlers(ctx: AppContext): void {
       properties: ['createDirectory', 'showOverwriteConfirmation']
     })
     return res.canceled || !res.filePath ? null : res.filePath
+  })
+  // The renderer sends the image; the path comes only from this dialog.
+  handle('app:saveImage', async (defaultName, image) => {
+    const bytes = imageFileBytes(image)
+    const format = image.format
+    const res = await dialog.showSaveDialog({
+      title: 'Exportar diagrama',
+      defaultPath: imageFileName(defaultName, format),
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation']
+    })
+    if (res.canceled || !res.filePath) return null
+    const path = imageSavePath(res.filePath, format)
+    await writeFile(path, bytes)
+    return path
   })
   handle('app:startupNotices', () => [
     ...startupNotices(ctx.userDataPath, legacyApps),

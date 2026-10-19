@@ -25,6 +25,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.3.0',
+    date: '2026-10-19',
+    highlights: [
+      'Diagrama de relaciones: las tablas de una base de datos o esquema con sus claves foráneas; muévelas, haz zoom y expórtalo a PNG o SVG',
+      'Consulta gráfica: añade tablas (se unen solas por sus claves), marca columnas, elige totales, orden y filtros, y mira el SQL mientras se arma',
+      '«Ejecutar» lleva la consulta a una pestaña de consulta y la ejecuta allí, con las protecciones de siempre'
+    ],
+    tour: [
+      {
+        target: 'toolbar-objects',
+        title: 'Diagrama y consulta gráfica',
+        text: 'En la pestaña Objetos, con una base de datos o un esquema seleccionado, pulsa «Diagrama» para ver sus relaciones o «Consulta gráfica» para armar una consulta sin escribir SQL.'
+      }
+    ]
+  },
+  {
     version: '2.2.0',
     date: '2026-10-19',
     highlights: [

@@ -130,7 +130,8 @@ export function useWorkspace() {
   function openQuery(
     connectionId?: string | null,
     schema?: string | null,
-    payload?: { savedQueryId?: string; sql?: string; name?: string },
+    /** `run`: run the SQL once the tab is open (through the query view's guards). */
+    payload?: { savedQueryId?: string; sql?: string; name?: string; run?: boolean },
     /** PostgreSQL: database of the tab (defaults to the tree's / the initial one). */
     database?: string
   ): void {
@@ -171,6 +172,29 @@ export function useWorkspace() {
       ...(db !== undefined ? { database: db } : {}),
       schema: s ?? undefined,
       payload
+    })
+  }
+
+  /** Relationship diagram of one MySQL/MariaDB database, PostgreSQL schema or SQLite database. */
+  function openDiagram(connectionId: string, schema: string, database?: string): void {
+    tabs.open({
+      kind: 'diagram',
+      id: objectTabId('diagram', connectionId, database, schema),
+      title: tabTitle('Diagrama', schema, connections.nameOf(connectionId), database),
+      connectionId,
+      database,
+      schema
+    })
+  }
+
+  /** «Consulta gráfica» on one database/schema: a new builder each time. */
+  function openQueryBuilder(connectionId: string, schema: string, database?: string): void {
+    tabs.open({
+      kind: 'queryBuilder',
+      title: tabTitle('Consulta gráfica', schema, connections.nameOf(connectionId), database),
+      connectionId,
+      database,
+      schema
     })
   }
 
@@ -436,6 +460,8 @@ export function useWorkspace() {
     openQuery,
     openCollection,
     openCollectionDesigner,
+    openDiagram,
+    openQueryBuilder,
     openBackups,
     openUsers,
     openAutomation,
