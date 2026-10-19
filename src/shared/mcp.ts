@@ -188,20 +188,84 @@ export function vscodeConfig(launch: McpLaunchInfo): string {
   })
 }
 
+/** A TOML basic string: backslashes, quotes and control characters escaped. */
+function tomlString(value: string): string {
+  let out = ''
+  for (const c of value) {
+    const code = c.charCodeAt(0)
+    if (c === '\\' || c === '"') out += `\\${c}`
+    else if (code < 0x20 || code === 0x7f) out += `\\u${code.toString(16).padStart(4, '0')}`
+    else out += c
+  }
+  return `"${out}"`
+}
+
+/**
+ * ~/.codex/config.toml (Codex). Codex stops a tool call after 60 s by
+ * default; Vortaq lets a query run up to 120 s (`maxTimeoutSec`).
+ */
+export function codexConfig(launch: McpLaunchInfo): string {
+  return [
+    `[mcp_servers.${MCP_SERVER_NAME}]`,
+    `command = ${tomlString(launch.command)}`,
+    `args = [${launch.args.map(tomlString).join(', ')}]`,
+    'tool_timeout_sec = 130'
+  ].join('\n')
+}
+
+/**
+ * Gemini CLI's settings.json and Antigravity's mcp_config.json: the same
+ * `mcpServers` shape as Claude Desktop.
+ */
+export const geminiConfig = claudeDesktopConfig
+
+/** opencode.json (OpenCode): a local server takes the command and its arguments in one array. */
+export function opencodeConfig(launch: McpLaunchInfo): string {
+  return json({
+    mcp: { [MCP_SERVER_NAME]: { type: 'local', command: [launch.command, ...launch.args] } }
+  })
+}
+
+/** The bare launch facts, for clients without a snippet of their own. */
+export function genericClientInfo(launch: McpLaunchInfo): string {
+  return [
+    'Tipo: stdio (servidor local)',
+    `Comando: ${launch.command}`,
+    `Argumentos: ${launch.args.map((a) => shellQuote(a, launch.platform)).join(' ')}`
+  ].join('\n')
+}
+
+export type McpClientId =
+  | 'claudeCode'
+  | 'claudeDesktop'
+  | 'codex'
+  | 'gemini'
+  | 'antigravity'
+  | 'cursor'
+  | 'vscode'
+  | 'opencode'
+  | 'other'
+
 export interface McpClientSnippet {
-  id: 'claudeCode' | 'claudeDesktop' | 'cursor' | 'vscode'
+  id: McpClientId
   label: string
   /** Where it goes. */
   where: string
   text: string
 }
 
+/** A file under the home folder, written the way each system's users read it. */
+function homeFile(platform: string, path: string): string {
+  return platform === 'win32' ? `%USERPROFILE%\\${path.replace(/\//g, '\\')}` : `~/${path}`
+}
+
 /** Every client snippet for this computer, in the order Ajustes shows them. */
 export function mcpClientSnippets(launch: McpLaunchInfo): McpClientSnippet[] {
-  const win = launch.platform === 'win32'
+  const { platform } = launch
+  const win = platform === 'win32'
   const desktopFile = win
     ? '%APPDATA%\\Claude\\claude_desktop_config.json'
-    : launch.platform === 'darwin'
+    : platform === 'darwin'
       ? '~/Library/Application Support/Claude/claude_desktop_config.json'
       : 'claude_desktop_config.json (Ajustes › Desarrollador › Editar configuración)'
   return [
@@ -218,9 +282,27 @@ export function mcpClientSnippets(launch: McpLaunchInfo): McpClientSnippet[] {
       text: claudeDesktopConfig(launch)
     },
     {
+      id: 'codex',
+      label: 'Codex',
+      where: `${homeFile(platform, '.codex/config.toml')} o .codex/config.toml de un proyecto de confianza`,
+      text: codexConfig(launch)
+    },
+    {
+      id: 'gemini',
+      label: 'Gemini CLI',
+      where: `${homeFile(platform, '.gemini/settings.json')} o .gemini/settings.json del proyecto`,
+      text: geminiConfig(launch)
+    },
+    {
+      id: 'antigravity',
+      label: 'Antigravity',
+      where: `${homeFile(platform, '.gemini/config/mcp_config.json')} (Antigravity CLI y el editor) o .agents/mcp_config.json del proyecto`,
+      text: geminiConfig(launch)
+    },
+    {
       id: 'cursor',
       label: 'Cursor',
-      where: '.cursor/mcp.json del proyecto o ~/.cursor/mcp.json',
+      where: `.cursor/mcp.json del proyecto o ${homeFile(platform, '.cursor/mcp.json')}`,
       text: cursorConfig(launch)
     },
     {
@@ -228,6 +310,19 @@ export function mcpClientSnippets(launch: McpLaunchInfo): McpClientSnippet[] {
       label: 'VS Code',
       where: '.vscode/mcp.json del proyecto',
       text: vscodeConfig(launch)
+    },
+    {
+      id: 'opencode',
+      label: 'OpenCode',
+      where: `opencode.json del proyecto o ${homeFile(platform, '.config/opencode/opencode.json')}`,
+      text: opencodeConfig(launch)
+    },
+    {
+      id: 'other',
+      label: 'Otro cliente',
+      where:
+        'Añade un servidor MCP local (stdio) con estos datos; muchos clientes también aceptan el JSON de Claude Desktop',
+      text: genericClientInfo(launch)
     }
   ]
 }

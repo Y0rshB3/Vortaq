@@ -154,6 +154,16 @@ describe('WHATS_NEW (curated list)', () => {
     expect(versions(whatsNewBetween('2.1.0', '2.1.1'))).toEqual(['2.1.1'])
   })
 
+  it('2.1.2 says agents (MCP) work with any MCP client and names the new snippets', () => {
+    const entry = whatsNewFor('2.1.2')
+    const text = entry?.highlights.join(' ') ?? ''
+    expect(text).toMatch(/Codex, Gemini CLI, Antigravity y OpenCode/)
+    expect(text).toMatch(/cualquier cliente MCP/)
+    expect(text).toMatch(/«Otro cliente»/)
+    expect(entry?.tour?.map((s) => s.target)).toEqual(['toolbar-settings'])
+    expect(versions(whatsNewBetween('2.1.1', '2.1.2'))).toEqual(['2.1.2'])
+  })
+
   it('0.1.8 announces connections without a password', () => {
     expect(whatsNewFor('0.1.8')?.highlights).toEqual([
       'Conexiones sin contraseña: para proxies, túneles o certificados (Autenticación › Sin contraseña)'
