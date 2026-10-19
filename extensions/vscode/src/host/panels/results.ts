@@ -18,13 +18,25 @@ import { EXPORT_CHANNELS, ExportOperations, PanelExports, type ExportTable } fro
 
 /**
  * Core channels a results webview may call: EditableResult's editability check and
- * Aplicar, and «Exportar» (export:rows, export:query, export:cancel).
+ * Aplicar, «Elegir de <tabla>» (db:tableData with a structured search only) and
+ * «Exportar» (export:rows, export:query, export:cancel).
  */
 export const RESULTS_CHANNELS: ReadonlySet<string> = new Set([
   'db:tableStructure',
+  'db:tableData',
   'db:applyRowChanges',
   ...EXPORT_CHANNELS
 ])
+
+/**
+ * db:tableData from a results view: the foreign-key picker sends only the
+ * structured filter (main escapes it); a raw WHERE is never accepted here.
+ */
+export function tableDataProblem(args: readonly unknown[]): string | null {
+  const request = args[1] as { where?: unknown } | null | undefined
+  if (!request || typeof request !== 'object') return 'Petición de datos no válida.'
+  return request.where ? 'Esta vista no acepta un WHERE escrito a mano.' : null
+}
 
 export interface ResultsDeps {
   extensionUri: vscode.Uri
@@ -131,9 +143,9 @@ export class ResultsPanel {
         if (channel === 'app:pickSaveFile') return null
         if (EXPORT_CHANNELS.has(channel)) return this.exports.check(channel, args)
         // Only the connection this panel shows.
-        return args[0] === this.state.connection.id
-          ? null
-          : 'Esta vista solo trabaja con su propia conexión.'
+        if (args[0] !== this.state.connection.id)
+          return 'Esta vista solo trabaja con su propia conexión.'
+        return channel === 'db:tableData' ? tableDataProblem(args) : null
       },
       after: (channel) => {
         if (channel === 'db:applyRowChanges') this.deps.onApplied?.(this.key)

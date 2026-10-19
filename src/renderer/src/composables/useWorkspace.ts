@@ -390,6 +390,41 @@ export function useWorkspace() {
     else void runSafely(() => openNode(node))
   }
 
+  /**
+   * Cmd/Ctrl+D: the structure of the object in context. With the tree focused,
+   * its selected table, collection or view; otherwise the active data tab's
+   * table (a view opened as data, in SQLite or a PostgreSQL materialized view,
+   * opens its DDL). False when there is nothing to show.
+   */
+  function designCurrent(fromTree: boolean): boolean {
+    if (fromTree) {
+      const node = tree.selected
+      if (node?.kind !== 'object' || !node.schema || !node.name) return false
+      if (node.group === 'materializedViews' && node.database !== undefined) {
+        openDdlEditor(node.connectionId, node.schema, 'materialized_view', node.name, node.database)
+        return true
+      }
+      if (!['tables', 'collections', 'views'].includes(node.group ?? '')) return false
+      designNode(node)
+      return true
+    }
+    const tab = tabs.active
+    const { connectionId: c, schema: s, objectName: name, database: db } = tab
+    if (!c || !s || !name) return false
+    if (tab.kind === 'collection') {
+      openCollectionDesigner(c, s, name)
+      return true
+    }
+    if (tab.kind !== 'tableData') return false
+    const listed = (group: 'views' | 'materializedViews'): boolean =>
+      tree.itemsOf(c, s, group, db).some((o) => o.name === name)
+    if (listed('views')) openDdlEditor(c, s, 'view', name, db)
+    else if (db !== undefined && listed('materializedViews'))
+      openDdlEditor(c, s, 'materialized_view', name, db)
+    else openTableDesigner(c, s, name, db)
+    return true
+  }
+
   return {
     currentConnectionId,
     currentSchema,
@@ -407,6 +442,7 @@ export function useWorkspace() {
     openJobEditor,
     openNode,
     designNode,
+    designCurrent,
     showObjects,
     showGroup,
     ui

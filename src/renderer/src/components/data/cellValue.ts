@@ -93,3 +93,13 @@ export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
+
+/**
+ * A declared column type for display: keywords upper-cased, the quoted values
+ * of ENUM/SET kept exactly as defined (`ENUM('Active','it''s')`).
+ */
+export function displayColumnType(columnType: string): string {
+  return columnType.replace(/('(?:[^'\\]|''|\\.)*')|[^']+/g, (m, quoted?: string) =>
+    quoted ? m : m.toUpperCase()
+  )
+}

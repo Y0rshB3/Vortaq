@@ -3,6 +3,7 @@ import {
   binaryBytes,
   byteLength,
   compactJson,
+  displayColumnType,
   formatBytes,
   hexDump,
   isBinaryValue,
@@ -51,5 +52,16 @@ describe('cellValue helpers', () => {
   it('measures UTF-8 bytes', () => {
     expect(byteLength('ñ🐦')).toBe(6)
     expect(formatBytes(2048)).toBe('2.0 KB')
+  })
+})
+
+describe('displayColumnType', () => {
+  it('upper-cases the type but keeps ENUM/SET values as defined', () => {
+    expect(displayColumnType("enum('Active','Archived')")).toBe("ENUM('Active','Archived')")
+    expect(displayColumnType("set('it''s','a\\\\b') not null")).toBe(
+      "SET('it''s','a\\\\b') NOT NULL"
+    )
+    expect(displayColumnType('varchar(22)')).toBe('VARCHAR(22)')
+    expect(displayColumnType('int unsigned')).toBe('INT UNSIGNED')
   })
 })

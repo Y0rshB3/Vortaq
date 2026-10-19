@@ -302,3 +302,121 @@ describe('TableDataView', () => {
     expect((call[2] as { source: { request: object } }).source.request).not.toHaveProperty('limit')
   })
 })
+
+describe('TableDataView: foreign keys, ENUM list and «Estructura»', () => {
+  let wrapper: Awaited<ReturnType<typeof mountView>> | null = null
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => wrapper?.unmount())
+
+  const column = (name: string, columnType: string) => ({
+    name,
+    ordinal: 1,
+    columnType,
+    dataType: columnType.replace(/\(.*$/, ''),
+    nullable: false,
+    key: '',
+    defaultValue: null,
+    extra: '',
+    characterSet: null,
+    collation: null,
+    comment: ''
+  })
+
+  it('reads the foreign keys from the structure, offers the ENUM values, and opens the structure', async () => {
+    const pinia = setupDom()
+    const columns = [
+      column('id', 'int'),
+      column('status', "enum('Active','Archived')"),
+      column('person_id', 'varchar(22)')
+    ]
+    const invoke = mockBridge({
+      'db:tableData': (_c, req) =>
+        (req as { table: string }).table === 'persons'
+          ? {
+              columns: [
+                { name: 'personID', type: 'VAR_STRING' },
+                { name: 'name', type: 'VAR_STRING' }
+              ],
+              rows: [['c-1', 'Ana']],
+              primaryKey: ['personID'],
+              total: 1,
+              durationMs: 1
+            }
+          : {
+              columns: [
+                { name: 'id', type: 'LONG', primaryKey: true },
+                { name: 'status', type: 'STRING' },
+                { name: 'person_id', type: 'VAR_STRING' }
+              ],
+              rows: [[1, 'Active', 'c-0']],
+              primaryKey: ['id'],
+              total: 1,
+              durationMs: 1
+            },
+      'db:columns': () => columns,
+      'db:tableStructure': () => ({
+        schema: 'shop',
+        name: 'items',
+        columns,
+        indexes: [],
+        foreignKeys: [
+          {
+            name: 'fk_person',
+            columns: ['person_id'],
+            referencedSchema: 'people',
+            referencedTable: 'persons',
+            referencedColumns: ['personID'],
+            onUpdate: 'RESTRICT',
+            onDelete: 'RESTRICT'
+          }
+        ],
+        engine: 'InnoDB',
+        collation: null,
+        comment: '',
+        autoIncrement: null,
+        createSql: ''
+      })
+    })
+    const tab = openTab({
+      kind: 'tableData',
+      title: 't',
+      connectionId: 'c1',
+      schema: 'shop',
+      objectName: 'items',
+      objectType: 'table'
+    })
+    wrapper = await mountView(TableDataView, tab, pinia)
+
+    await wrapper.get('[data-test="cell-0-2"]').trigger('click')
+    await wrapper.get('[data-test="cell-0-2"] [data-test="fk-open"]').trigger('click')
+    await flushPromises()
+    expect(invoke).toHaveBeenCalledWith(
+      'db:tableData',
+      'c1',
+      expect.objectContaining({ schema: 'people', table: 'persons' })
+    )
+    ;(
+      document.body.querySelector('.v-overlay--active [data-test="fk-row-0"]') as HTMLElement
+    ).click()
+    await flushPromises()
+    expect(wrapper.get('[data-test="cell-0-2"]').text()).toBe('c-1')
+    expect(wrapper.get('[data-test="pending"]').text()).toContain('1')
+
+    await wrapper.get('[data-test="cell-0-1"]').trigger('dblclick')
+    expect(
+      [...document.body.querySelectorAll('[data-test="enum-list"] [role="option"]')].map((o) =>
+        o.textContent?.trim()
+      )
+    ).toEqual(['Active', 'Archived'])
+
+    await wrapper.get('[data-test="structure"]').trigger('click')
+    expect(useTabsStore().active).toMatchObject({
+      kind: 'tableDesigner',
+      connectionId: 'c1',
+      schema: 'shop',
+      objectName: 'items'
+    })
+  })
+})

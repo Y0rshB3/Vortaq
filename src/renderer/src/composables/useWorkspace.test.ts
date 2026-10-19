@@ -110,3 +110,51 @@ describe('useWorkspace context resolution', () => {
     expect(tabs.tabs.some((t) => t.connectionId === 'b')).toBe(true)
   })
 })
+
+describe('Cmd/Ctrl+D: the structure of the table in context', () => {
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    installBridge({
+      'connections:list': [makeConnection({ id: 'b', name: 'Beta' })],
+      'db:views': () => [{ name: 'v_ventas' }]
+    })
+    await useConnectionsStore().load()
+  })
+
+  it('opens the designer of the active data tab, the DDL of a view opened as data', async () => {
+    const ws = useWorkspace()
+    const tabs = useTabsStore()
+    ws.openTableData('b', 'shop', 'users')
+    expect(ws.designCurrent(false)).toBe(true)
+    expect(tabs.active).toMatchObject({
+      kind: 'tableDesigner',
+      connectionId: 'b',
+      schema: 'shop',
+      objectName: 'users'
+    })
+
+    await useTreeStore().loadGroup('b', 'shop', 'views')
+    ws.openTableData('b', 'shop', 'v_ventas')
+    expect(ws.designCurrent(false)).toBe(true)
+    expect(tabs.active).toMatchObject({
+      kind: 'ddlEditor',
+      objectType: 'view',
+      objectName: 'v_ventas'
+    })
+  })
+
+  it('with the tree focused it uses the selected table; elsewhere it does nothing', () => {
+    const ws = useWorkspace()
+    const tabs = useTabsStore()
+    const tree = useTreeStore()
+    tree.select(nodeIds.object('b', 'shop', 'tables', 'orders'))
+    expect(ws.designCurrent(true)).toBe(true)
+    expect(tabs.active).toMatchObject({ kind: 'tableDesigner', objectName: 'orders' })
+
+    tree.select(nodeIds.connection('b'))
+    expect(ws.designCurrent(true)).toBe(false)
+    ws.openQuery('b', 'shop')
+    expect(ws.designCurrent(false)).toBe(false)
+    expect(tabs.active.kind).toBe('query')
+  })
+})

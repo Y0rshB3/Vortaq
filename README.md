@@ -789,6 +789,8 @@ En macOS se usa `Cmd`; en Windows y Linux, `Ctrl`.
 | `Cmd/Ctrl+R` o `Cmd/Ctrl+Enter` | Ejecuta la consulta de la pestaña activa                              |
 | `Cmd/Ctrl+S`                    | Guarda (consulta, diseño de tabla, objeto DDL o cambios en los datos) |
 | `Cmd/Ctrl+W`                    | Cierra la pestaña activa (pregunta si hay cambios sin guardar)        |
+| `Cmd/Ctrl+D`                    | Estructura de la tabla abierta (o de la seleccionada en el árbol)     |
+| `Alt+↓` (en la rejilla)         | Valores permitidos de un ENUM o filas de la tabla relacionada (FK)    |
 | `Cmd/Ctrl+C` (en la rejilla)    | Copia la selección como texto tabulado (se pega en hojas de cálculo)  |
 | `Shift+Cmd/Ctrl+C` (rejilla)    | Copia la selección con la fila de encabezados                         |
 | `Cmd/Ctrl+A` (en la rejilla)    | Selecciona todas las celdas del resultado                             |
@@ -1107,6 +1109,19 @@ Al editar una celda `DATE`, `DATETIME`, `TIMESTAMP`, `TIME` o `YEAR` el editor s
 - `Enter` valida y guarda el cambio pendiente; `Esc` cancela. Un valor no válido se marca en rojo y no se guarda.
 - Se escribe siempre el formato de MySQL (`AAAA-MM-DD`, `AAAA-MM-DD hh:mm:ss[.ffffff]`, `hh:mm:ss`) sin
   conversiones de zona horaria. Las fechas cero (`0000-00-00`) se muestran y se pueden conservar.
+
+### Listas de ENUM y valores de claves foráneas
+
+- Una columna `ENUM` (MySQL, MariaDB y los tipos enumerados de PostgreSQL) se edita con su lista de valores: al
+  abrir la celda aparecen todos, y al escribir la lista se filtra (primero los que empiezan por el texto). `↑/↓`
+  recorren la lista; `Enter` o un clic guardan el cambio pendiente. Un texto que no es uno de los valores se
+  marca en rojo y no se guarda. **NULL** solo aparece si la columna lo admite.
+- En una columna con **clave foránea** la cabecera muestra un icono de enlace, y la celda activa un botón
+  **Elegir de «tabla»** (también `Alt+↓` o el menú del botón derecho). Abre las filas de la tabla relacionada,
+  ordenadas por su clave, con buscador (busca en las columnas de la clave y en las de texto) y **Cargar más**.
+  Elegir una fila escribe sus valores en las columnas de la clave, todas a la vez si la clave es compuesta, como
+  cambio pendiente. Solo se lee la tabla relacionada; nada se escribe hasta **Aplicar**.
+- Funciona en la vista de datos y en los resultados editables del editor de consultas.
 
 ### Columnas y panel Texto
 

@@ -25,6 +25,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.2.0',
+    date: '2026-10-19',
+    highlights: [
+      'Claves foráneas: «Elegir de <tabla>» en la celda (o Alt+↓) busca en la tabla relacionada y escribe el valor de la fila que elijas',
+      'Las columnas ENUM se editan con su lista de valores; al escribir, la lista se filtra y autocompleta',
+      'Cmd/Ctrl+D abre la estructura de la tabla en la que estás; también con el botón «Estructura» de la vista de datos',
+      'El panel «Texto» muestra los valores de un ENUM tal como están definidos (antes salían en mayúsculas)'
+    ],
+    tour: [
+      {
+        title: 'Valores relacionados',
+        text: 'Abre los datos de una tabla: en una columna con clave foránea (icono de enlace en la cabecera) selecciona la celda y pulsa su botón, o Alt+↓, para elegir el valor entre las filas de la tabla relacionada.'
+      }
+    ]
+  },
+  {
     version: '2.1.2',
     date: '2026-10-15',
     highlights: [

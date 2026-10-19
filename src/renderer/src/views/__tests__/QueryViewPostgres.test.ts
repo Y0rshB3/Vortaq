@@ -448,4 +448,94 @@ describe('EditableResult on PostgreSQL', () => {
     expect(wrapper.get('[data-test="editability"]').text()).toContain('Editable · sales.Items')
     wrapper.unmount()
   })
+
+  it('fills a foreign key from the referenced table in its own schema of the same database', async () => {
+    const pinia = setupDom()
+    seedPg()
+    const { default: EditableResult } =
+      await import('@renderer/components/query/EditableResult.vue')
+    const column = (name: string, columnType: string) => ({
+      name,
+      ordinal: 1,
+      columnType,
+      dataType: columnType,
+      nullable: true,
+      key: '',
+      defaultValue: null,
+      extra: '',
+      characterSet: null,
+      collation: null,
+      comment: ''
+    })
+    const invoke = mockBridge({
+      'db:tableStructure': () => ({
+        schema: 'sales',
+        database: 'app',
+        name: 'Items',
+        kind: 'table',
+        columns: [column('id', 'integer'), column('category_id', 'integer')],
+        indexes: [
+          {
+            name: 'items_pkey',
+            unique: true,
+            type: 'btree',
+            columns: ['id'],
+            comment: '',
+            primary: true
+          }
+        ],
+        foreignKeys: [
+          {
+            name: 'items_category_fk',
+            columns: ['category_id'],
+            referencedSchema: 'catalog',
+            referencedTable: 'categories',
+            referencedColumns: ['id'],
+            onUpdate: 'NO ACTION',
+            onDelete: 'NO ACTION'
+          }
+        ],
+        engine: null,
+        collation: null,
+        comment: '',
+        autoIncrement: null,
+        createSql: ''
+      }),
+      'db:tableData': () => ({
+        columns: [{ name: 'id', type: 'integer', typeKind: 'integer' }],
+        rows: [[3], [4]],
+        primaryKey: ['id'],
+        total: 2,
+        durationMs: 1
+      })
+    })
+    const meta = { schema: 'sales', table: 'Items', database: 'app' }
+    const wrapper = await mountComponent(
+      EditableResult,
+      {
+        connectionId: 'pg',
+        sql: 'SELECT id, category_id FROM sales."Items"',
+        columns: [
+          { name: 'id', type: 'integer', sourceName: 'id', primaryKey: true, ...meta },
+          { name: 'category_id', type: 'integer', sourceName: 'category_id', ...meta }
+        ],
+        rows: [[1, 3]],
+        truncated: false
+      },
+      pinia
+    )
+    expect(wrapper.find('[data-test="fk-icon-category_id"]').exists()).toBe(true)
+    await wrapper.get('[data-test="cell-0-1"]').trigger('click')
+    await wrapper.get('[data-test="cell-0-1"] [data-test="fk-open"]').trigger('click')
+    await flushPromises()
+    expect(invoke).toHaveBeenCalledWith(
+      'db:tableData',
+      'pg',
+      expect.objectContaining({
+        schema: { database: 'app', schema: 'catalog' },
+        table: 'categories'
+      })
+    )
+    wrapper.unmount()
+  })
 })
