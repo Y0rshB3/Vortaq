@@ -50,6 +50,16 @@ macOS, Windows y Linux, con diseñador de tablas, copias de seguridad y automati
   **Mostrarlo en la carpeta**. (Los documentos de MongoDB no usan esta exportación.)
 - **Resultados editables.** Cuando la consulta lee una sola tabla e incluye su clave primaria,
   puedes editar celdas, añadir y borrar filas, poner `NULL` y pulsar **Aplicar** (o Descartar).
+  Las columnas con clave foránea tienen un botón (o `Alt+↓`) para elegir el valor entre las filas
+  de la tabla relacionada, y las columnas `ENUM` se editan con su lista de valores.
+- **Diagrama de relaciones.** Botón derecho en una base de datos (o en un esquema de PostgreSQL) ›
+  «Diagrama de relaciones»: las tablas con sus columnas y claves y una línea por clave foránea.
+  Muévelas, haz zoom, mira «Solo claves», abre los datos de una tabla con doble clic y exporta el
+  diagrama a PNG o SVG.
+- **Consulta gráfica.** En el mismo menú: añade tablas (se unen solas por sus claves foráneas),
+  marca columnas y elige totales, orden y filtros, con el SQL a la vista. **Abrir en consulta** lo
+  lleva a un documento SQL nuevo y **Ejecutar** además lo ejecuta allí, con las protecciones de
+  siempre.
 - **Ver datos** de una tabla o vista y **Ver documentos** de una colección de MongoDB (como tabla o
   como JSON; en esta versión, de solo lectura).
 - **El tema de tu editor.** Los paneles usan los colores, la fuente y el tamaño del editor, en

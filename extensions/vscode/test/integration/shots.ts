@@ -88,6 +88,33 @@ const COPY_AS_MENU = `(async () => {
   return 'ok'
 })()`
 
+/** «Consulta gráfica»: two related tables, three columns ticked, a total and its order. */
+const QUERY_BUILDER = `(async () => {
+  const frame = document.querySelector('iframe')
+  const doc = frame && frame.contentDocument
+  if (!doc || !doc.querySelector('[data-test="qb-table-pedidos"]')) return 'skip'
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const click = async (sel) => { doc.querySelector(sel).click(); await sleep(500) }
+  await click('[data-test="qb-table-pedidos"]')
+  await click('[data-test="qb-table-clientes"]')
+  await click('[data-test="dbox-row-clientes-ciudad"]')
+  await click('[data-test="dbox-row-pedidos-total"]')
+  await click('[data-test="dbox-row-pedidos-id"]')
+  const set = (sel, value) => {
+    const el = doc.querySelector(sel)
+    el.value = value
+    el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+  }
+  set('[data-test="qb-agg-p.total"]', 'SUM')
+  set('[data-test="qb-as-p.total"]', 'facturado')
+  set('[data-test="qb-sort-p.total"]', 'DESC')
+  set('[data-test="qb-agg-p.id"]', 'COUNT')
+  set('[data-test="qb-as-p.id"]', 'pedidos')
+  await sleep(300)
+  await click('[data-test="qb-tab-sql"]')
+  return 'ok'
+})()`
+
 /** From the same menu, «Exportar selección…»: the export dialog over the results. */
 const EXPORT_DIALOG = `(async () => {
   const frame = document.querySelector('iframe')
@@ -175,7 +202,13 @@ async function setup(): Promise<{ local: string; prod: string; mongo: string | n
     `DROP DATABASE IF EXISTS ${DB}; CREATE DATABASE ${DB};
      CREATE TABLE ${DB}.clientes (id INT PRIMARY KEY, nombre VARCHAR(60) NOT NULL, ciudad VARCHAR(40),
        alta DATE, saldo DECIMAL(10,2), notas VARCHAR(80) NULL);
-     CREATE TABLE ${DB}.pedidos (id INT PRIMARY KEY, cliente_id INT, total DECIMAL(10,2));
+     CREATE TABLE ${DB}.pedidos (id INT PRIMARY KEY, cliente_id INT, total DECIMAL(10,2),
+       FOREIGN KEY (cliente_id) REFERENCES ${DB}.clientes (id));
+     CREATE TABLE ${DB}.productos (id INT PRIMARY KEY, nombre VARCHAR(60) NOT NULL, precio DECIMAL(10,2));
+     CREATE TABLE ${DB}.lineas (pedido_id INT NOT NULL, producto_id INT NOT NULL, cantidad INT NOT NULL,
+       PRIMARY KEY (pedido_id, producto_id),
+       FOREIGN KEY (pedido_id) REFERENCES ${DB}.pedidos (id),
+       FOREIGN KEY (producto_id) REFERENCES ${DB}.productos (id));
      CREATE VIEW ${DB}.saldos AS SELECT ciudad, SUM(saldo) AS saldo FROM ${DB}.clientes GROUP BY ciudad;
      INSERT INTO ${DB}.clientes VALUES ${values};`
   )
@@ -352,6 +385,18 @@ async function tour(
   const edit = api.openConnectionForm(prod)
   await step(`connection-production-${suffix}`)
   edit.dispose()
+
+  // Relationship diagram and visual query of the shop database.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+  const shop: TreeNode = { kind: 'database', connectionId: ids.local, database: DB }
+  await vscode.commands.executeCommand('vortaq.diagram', shop)
+  await tidy()
+  await step(`diagram-${suffix}`)
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+  await vscode.commands.executeCommand('vortaq.queryBuilder', shop)
+  await tidy()
+  await step(`query-builder-${suffix}`, QUERY_BUILDER)
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors')
 
   if (ids.mongo) {
     await vscode.commands.executeCommand('vortaq.viewDocuments', {

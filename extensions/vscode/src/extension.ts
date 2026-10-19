@@ -26,6 +26,7 @@ import {
 import { sqlDialectOf, vscodePrompter, WriteGuard, type Prompter } from './host/guard'
 import { ConnectionFormPanel } from './host/panels/connectionForm'
 import { ResultsPanels } from './host/panels/results'
+import { SchemaPanels } from './host/panels/schemaViews'
 import { SqlRunner } from './host/runner'
 import { readSettings, syncSettings, type ExtensionSettings } from './host/settings'
 import { isSqlDocument, TargetCodeLens, TargetStatusBar } from './host/sqlDocuments'
@@ -37,7 +38,7 @@ import {
   type ObjectNode,
   type TreeNode
 } from './host/tree'
-import type { WebviewSettings } from './webviewState'
+import type { SchemaViewState, WebviewSettings } from './webviewState'
 
 /** What the integration tests reach (only returned in ExtensionMode.Test). */
 export interface VortaqTestApi {
@@ -48,6 +49,7 @@ export interface VortaqTestApi {
   targets: DocumentTargets
   runner: SqlRunner
   results: ResultsPanels
+  schemaViews: SchemaPanels
   sqliteProblem: string | null
   setPrompter(prompter: Prompter | null): void
   openConnectionForm(editing: ConnectionConfig | null): ConnectionFormPanel
@@ -104,6 +106,32 @@ export async function activate(
   })
   runner = new SqlRunner(core, service, targets, guard, results, () => settings, webviewSettings)
   const sqlRunner = runner
+  /* «Diagrama de relaciones» / «Consulta gráfica»: structure reads only; data and SQL open here. */
+  const schemaViews = new SchemaPanels({
+    extensionUri: context.extensionUri,
+    invoke,
+    prepare: (channel, args) => guard.prepareWebviewCall(channel, args),
+    settings: webviewSettings,
+    viewData: (state, table) =>
+      sqlRunner.viewData({
+        kind: 'table',
+        connectionId: state.connection.id,
+        database: typeof state.ref === 'string' ? state.ref : state.ref.database,
+        ...(typeof state.ref === 'string' ? {} : { schema: state.ref.schema }),
+        name: table
+      }),
+    openSql: async (state, sql, run) => {
+      const doc = await vscode.workspace.openTextDocument({ language: 'sql', content: sql })
+      const editor = await vscode.window.showTextDocument(doc, vscode.ViewColumn.Active)
+      await sqlRunner.setTarget(doc.uri.toString(), {
+        connectionId: state.connection.id,
+        database: typeof state.ref === 'string' ? state.ref : state.ref.database,
+        ...(typeof state.ref === 'string' ? {} : { schema: state.ref.schema })
+      })
+      // Runs through the runner like Ejecutar todo: the same guards and confirmations.
+      if (run) await sqlRunner.run(editor, true)
+    }
+  })
 
   const tree = new ConnectionsTree(
     service,
@@ -122,6 +150,7 @@ export async function activate(
     tree,
     view,
     results,
+    schemaViews,
     sqlRunner,
     statusBar,
     codeLens,
@@ -380,6 +409,7 @@ export async function activate(
     )
     if (answer !== remove) return
     for (const panel of results.forConnection(connection.id)) panel.dispose()
+    for (const panel of schemaViews.forConnection(connection.id)) panel.dispose()
     await service.remove(connection.id)
     await targets.forgetConnection(connection.id)
   })
@@ -406,6 +436,39 @@ export async function activate(
   command('vortaq.viewDocuments', (node?: TreeNode) => {
     if (node?.kind === 'collection') return sqlRunner.viewDocuments(node)
   })
+  command('vortaq.diagram', (node?: TreeNode) => openSchemaView('diagram', node))
+  command('vortaq.queryBuilder', (node?: TreeNode) => openSchemaView('queryBuilder', node))
+
+  /** The diagram or a visual query of a database node (MySQL, MariaDB, SQLite) or schema (PostgreSQL). */
+  async function openSchemaView(kind: SchemaViewState['kind'], node?: TreeNode): Promise<void> {
+    const connection = nodeConnection(node)
+    if (!node || !connection || (node.kind !== 'database' && node.kind !== 'schema')) {
+      void vscode.window.showInformationMessage(
+        'Elige una base de datos o un esquema en el árbol de Vortaq.'
+      )
+      return
+    }
+    if (connection.engine === 'mongodb') {
+      void vscode.window.showInformationMessage(
+        'MongoDB no tiene claves foráneas entre colecciones.'
+      )
+      return
+    }
+    if (!(await service.open(connection.id))) return
+    const pg = connection.engine === 'postgresql'
+    const schema = node.kind === 'schema' ? node.schema : 'public'
+    const namespace = pg ? schema : node.database
+    const label = kind === 'diagram' ? 'Diagrama' : 'Consulta gráfica'
+    schemaViews.open({
+      kind,
+      title: `${label} · ${pg ? `${node.database}.${schema}` : node.database} (${connection.name})`,
+      connection,
+      ref: pg ? { database: node.database, schema } : node.database,
+      namespace,
+      platform: process.platform,
+      settings: webviewSettings()
+    })
+  }
   command('vortaq.copyName', async (node?: TreeNode) => {
     if (!node) return
     const text =
@@ -459,6 +522,7 @@ export async function activate(
     targets,
     runner: sqlRunner,
     results,
+    schemaViews,
     sqliteProblem,
     setPrompter: (next) => {
       prompter = next

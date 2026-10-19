@@ -1,5 +1,21 @@
 # Cambios
 
+## 0.3.0 — diagrama de relaciones y consulta gráfica (2026-10-19)
+
+- **Diagrama de relaciones** (botón derecho en una base de datos o en un esquema de PostgreSQL ›
+  «Diagrama de relaciones»): todas las tablas con sus columnas y claves, y una línea por clave
+  foránea. Las tablas se colocan solas; puedes moverlas, hacer zoom, ver «Solo claves», buscar una
+  tabla, abrir sus datos con doble clic y exportar el diagrama a PNG o SVG (con el diálogo de
+  guardar del editor).
+- **Consulta gráfica** (mismo menú): añade tablas, que se unen solas por sus claves foráneas, o une
+  columnas arrastrándolas; marca columnas y elige totales, orden y filtros. El SQL se ve mientras se
+  arma; **Abrir en consulta** lo lleva a un documento SQL nuevo con la misma conexión y base de
+  datos, y **Ejecutar** además lo ejecuta allí, con las protecciones de siempre.
+- **Claves foráneas en los resultados:** en una columna con clave foránea, el botón de la celda (o
+  `Alt+↓`) abre las filas de la tabla relacionada, con buscador, para elegir el valor.
+- **ENUM:** se edita con su lista de valores; al escribir, la lista se filtra y autocompleta.
+- El panel «Texto» muestra los valores de un ENUM tal como están definidos.
+
 ## 0.2.0 — copiar y exportar resultados (2026-10-14)
 
 - **Selección en la cuadrícula de resultados**, como en una hoja de cálculo: celdas (clic, `Shift`+clic,

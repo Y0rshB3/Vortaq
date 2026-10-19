@@ -4,7 +4,7 @@
  *
  *   dist/extension.cjs           extension host code + Vortaq's core + the drivers (esbuild, CJS)
  *   dist/sqliteWorker.cjs        SQLite child process for nodeSqliteSpawner (esbuild, CJS)
- *   dist/webview/<view>.js|.css  connection form and results webviews (Vite: Vue + Vuetify,
+ *   dist/webview/<view>.js|.css  connection form, results and diagram/visual query webviews (Vite: Vue + Vuetify,
  *                                reusing the desktop renderer's components; one IIFE per view)
  *   dist/webview/mdi.css         the Material Design Icons the views use, woff2 only
  *   dist/icon.png                Marketplace icon (build/icons)
@@ -44,7 +44,7 @@ export const EXT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const ROOT = resolve(EXT, '..', '..')
 export const DIST = join(EXT, 'dist')
 export const DIST_TEST = join(EXT, 'dist-test')
-const WEBVIEWS = ['connection', 'results']
+const WEBVIEWS = ['connection', 'results', 'schema']
 
 const posix = (p) => p.split(sep).join('/')
 const rel = (p) => posix(relative(ROOT, p))
