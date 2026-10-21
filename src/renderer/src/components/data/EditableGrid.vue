@@ -15,6 +15,7 @@ import {
   regionData,
   type CopyContext
 } from './gridCopy'
+import { planFill, regionCells, skippedMessage, type FillColumn } from './gridFill'
 import {
   NO_SELECTION,
   clickCell as selectCellAt,
@@ -135,6 +136,16 @@ function cellTitle(row: EditableRow, col: number): string {
   return parts.join(' · ')
 }
 const nullable = (col: number): boolean => props.columnInfo?.[col]?.nullable ?? true
+/** What each column accepts when one value goes into several cells (gridFill.ts). */
+const fillColumns = computed<FillColumn[]>(() =>
+  props.columns.map((c, i) => ({
+    name: c.name,
+    temporal: specs.value[i],
+    options: enums.value[i],
+    nullable: nullable(i),
+    primaryKey: props.primaryKey.includes(c.name)
+  }))
+)
 
 /* ---------- column widths (drag the header edge, double-click to fit) ---------- */
 
@@ -203,6 +214,8 @@ const editing = ref<ActiveCell | null>(null)
 const draft = ref('')
 /** True once the user typed in the editor: lets an emptied NULL cell become '' instead of staying NULL. */
 const typed = ref(false)
+/** Every cell the open editor writes to when several are selected; null: just the edited cell. */
+const fill = ref<CellRef[] | null>(null)
 const inputRef = ref<HTMLInputElement[] | HTMLInputElement | null>(null)
 type TemporalEditor = InstanceType<typeof TemporalInput>
 const temporalRef = ref<TemporalEditor[] | TemporalEditor | null>(null)
@@ -237,10 +250,66 @@ function rowHighlighted(uid: string): boolean {
 /**
  * Applies a selection and derives the rows «Eliminar» works on from it:
  * gutter rows or the active cell's row, never a column or «Seleccionar todo».
+ * `cell` is the active cell that goes with it: right after `active.value = …`
+ * the model still reads the previous cell until the parent re-renders.
  */
-function applySelection(next: GridSelection): void {
+function applySelection(next: GridSelection, cell: CellRef | null = active.value): void {
   sel.value = next
-  selected.value = rowsForDeletion(next, active.value)
+  selected.value = rowsForDeletion(next, cell)
+}
+
+/** The cell the grid itself made active last: the active watch leaves its selection alone. */
+let ownActive: CellRef | null = null
+/** Makes `cell` the active cell, with `next` selected (by default that cell alone). */
+function activate(cell: CellRef, next: GridSelection = singleCell(cell)): void {
+  ownActive = cell
+  active.value = cell
+  applySelection(next, cell)
+}
+
+/** Ranges and whole columns take one value in all their cells; gutter rows and «Seleccionar todo» do not. */
+const fillRegion = computed(() =>
+  multi.value && (sel.value.kind === 'cells' || sel.value.kind === 'columns')
+    ? selRegion.value
+    : null
+)
+/** The selected cells a value can go into: no locked column, no deleted row. */
+function fillableCells(): CellRef[] {
+  const region = fillRegion.value
+  return region
+    ? regionCells(region, props.rows, (row, col) => !row.deleted && !isLocked(row, col))
+    : []
+}
+/** Every fillable selected cell when `cell` is one of several; null otherwise. */
+function fillTargets(cell: CellRef): CellRef[] | null {
+  const cells = fillableCells()
+  const inside = cells.some((c) => c.uid === cell.uid && c.col === cell.col)
+  return inside && cells.length > 1 ? cells : null
+}
+/** The cell Enter, F2 or typing edits: the active cell, or else a fillable selected one. */
+function editCell(): CellRef | null {
+  const cell = active.value
+  if (!fillRegion.value) return cell
+  const cells = fillableCells()
+  const own = cell ? cells.find((c) => c.uid === cell.uid && c.col === cell.col) : undefined
+  return own ?? cells.find((c) => c.uid === cell?.uid) ?? cells[0] ?? cell
+}
+
+/** Stages `valueFor(col)` in `targets`, skipping the cells whose column refuses it (gridFill.ts). */
+function fillCells(targets: readonly CellRef[], valueFor: (col: number) => string | null): void {
+  const plan = planFill(targets, props.rows, fillColumns.value, valueFor)
+  for (const e of plan.edits) emit('edit', e.uid, e.col, e.value)
+  const warning = skippedMessage(plan)
+  if (warning) notify.warning(warning)
+}
+
+/** NULL in every selected cell when several are selected; false leaves it to the active cell. */
+function fillNull(): boolean {
+  if (props.readonly || editing.value) return false
+  const cells = fillableCells()
+  if (cells.length < 2) return false
+  fillCells(cells, () => null)
+  return true
 }
 
 /** The selected region, or the active cell alone; null when there is nothing. */
@@ -265,13 +334,16 @@ watch(uids, (list) => {
 })
 // The parent moved the active cell (apply error, new row, reload): select just that cell.
 watch(active, (cell) => {
+  const own = ownActive
+  ownActive = null
+  if (cell && own && own.uid === cell.uid && own.col === cell.col) return
   if (!cell) {
     if (sel.value.kind === 'cells') sel.value = NO_SELECTION
     return
   }
   const s = sel.value
   if (s.kind === 'cells' && s.anchor.uid === cell.uid && s.anchor.col === cell.col) return
-  sel.value = singleCell(cell)
+  applySelection(singleCell(cell), cell)
 })
 
 /* ---------- copy ---------- */
@@ -351,8 +423,7 @@ function clickCell(event: MouseEvent, uid: string, col: number): void {
     applySelection(selectCellAt(sel.value, { uid, col }, { shift: true }, active.value))
     return
   }
-  active.value = { uid, col }
-  applySelection(singleCell({ uid, col }))
+  activate({ uid, col })
 }
 
 function clickHeader(event: MouseEvent, col: number): void {
@@ -377,35 +448,62 @@ function startDrag(event: MouseEvent, uid: string, col: number): void {
 }
 function dragOver(uid: string, col: number): void {
   if (!dragStart) return
-  active.value = dragStart
-  applySelection(dragTo(dragStart, { uid, col }))
+  activate(dragStart, dragTo(dragStart, { uid, col }))
 }
 function endDrag(): void {
   dragStart = null
 }
 onBeforeUnmount(() => window.removeEventListener('mouseup', endDrag))
 
-async function startEdit(uid: string, col: number): Promise<void> {
+/**
+ * Opens the editor of a cell, with its value or with `text` the user started
+ * typing. When the cell is one of several selected (a range or whole
+ * columns), the value is written into all of them (gridFill.ts); a selection
+ * that cannot take it shrinks to the edited cell.
+ */
+async function startEdit(uid: string, col: number, text?: string): Promise<void> {
   const row = props.rows.find((r) => r.uid === uid)
   if (props.readonly || !row || row.deleted || isLocked(row, col)) return
-  active.value = { uid, col }
-  editing.value = { uid, col }
+  const cell = { uid, col }
+  fill.value = fillTargets(cell)
+  activate(cell, fill.value ? sel.value : singleCell(cell))
+  editing.value = cell
   const value = row.values[col]
-  draft.value = value === null ? '' : displayCell(value)
-  typed.value = false
+  draft.value = text ?? (value === null ? '' : displayCell(value))
+  typed.value = text !== undefined
   await nextTick()
+  cellElement(uid, col)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
   if (specs.value[col] || enums.value[col]) return // TemporalInput and EnumInput focus themselves
   const el = Array.isArray(inputRef.value) ? inputRef.value[0] : inputRef.value
   el?.focus()
-  el?.select()
+  if (text === undefined) el?.select()
+  else el?.setSelectionRange(text.length, text.length)
 }
 
-/** Commits a value decided by the temporal editor (validated literal, or null). */
-function commitValue(value: string | null): void {
+const editorLabel = (name: string): string =>
+  fill.value ? `Editar ${name} en ${fill.value.length} celdas` : `Editar ${name}`
+
+function cellElement(uid: string, col: number): HTMLElement | null {
+  const index = props.rows.findIndex((r) => r.uid === uid)
+  return root.value?.querySelector<HTMLElement>(`td[data-test="cell-${index}-${col}"]`) ?? null
+}
+
+/**
+ * Commits a value decided by the temporal or ENUM editor (validated literal,
+ * or null). Into several cells only when the user chose it (`chosen`) or
+ * changed the text: leaving an untouched editor writes nothing there.
+ */
+function commitValue(value: string | null, chosen: boolean): void {
   if (!editing.value) return
   const { uid, col } = editing.value
+  const targets = fill.value
   const row = props.rows.find((r) => r.uid === uid)
   editing.value = null
+  fill.value = null
+  if (targets) {
+    if (chosen || typed.value) fillCells(targets, () => value)
+    return
+  }
   if (!row) return
   const current = row.values[col]
   if (value === null ? current === null : current !== null && displayCell(current) === value) return
@@ -413,8 +511,12 @@ function commitValue(value: string | null): void {
 }
 
 function onTemporalCommit(value: string | null): void {
-  commitValue(value)
-  move(1, 0)
+  const several = !!fill.value
+  const col = editing.value?.col
+  // An ENUM value is always picked; a date only counts once edited (or set to NULL).
+  commitValue(value, value === null || (col !== undefined && !!enums.value[col]))
+  // Several cells: the selection stays, showing what changed.
+  if (!several) move(1, 0)
   root.value?.focus()
 }
 
@@ -447,8 +549,15 @@ function cancelTemporal(): void {
 function commit(): void {
   if (!editing.value) return
   const { uid, col } = editing.value
+  const targets = fill.value
   const row = props.rows.find((r) => r.uid === uid)
   editing.value = null
+  fill.value = null
+  if (targets) {
+    // Into several cells only text the user typed: Enter on an untouched editor writes nothing.
+    if (typed.value) fillCells(targets, () => draft.value)
+    return
+  }
   if (!row) return
   const current = row.values[col]
   if (current !== null && displayCell(current) === draft.value) return
@@ -458,6 +567,7 @@ function commit(): void {
 
 function cancel(): void {
   editing.value = null
+  fill.value = null
 }
 
 function move(dRow: number, dCol: number): void {
@@ -465,8 +575,7 @@ function move(dRow: number, dCol: number): void {
   const idx = props.rows.findIndex((r) => r.uid === active.value!.uid)
   const rowIdx = Math.min(Math.max(idx + dRow, 0), props.rows.length - 1)
   const col = Math.min(Math.max(active.value.col + dCol, 0), props.columns.length - 1)
-  active.value = { uid: props.rows[rowIdx].uid, col }
-  applySelection(singleCell(active.value))
+  activate({ uid: props.rows[rowIdx].uid, col })
 }
 
 function onInputKey(event: KeyboardEvent): void {
@@ -478,8 +587,10 @@ function onInputKey(event: KeyboardEvent): void {
   event.stopPropagation()
   if (event.key === 'Enter') {
     event.preventDefault()
+    const several = !!fill.value
     commit()
-    move(1, 0)
+    // Several cells: the selection stays, showing what changed.
+    if (!several) move(1, 0)
   } else if (event.key === 'Escape') {
     event.preventDefault()
     cancel()
@@ -487,12 +598,21 @@ function onInputKey(event: KeyboardEvent): void {
     event.preventDefault()
     commit()
     move(0, event.shiftKey ? -1 : 1)
-  }
+  } else return
+  // The input goes away: the arrows and typing keep working on the grid.
+  root.value?.focus()
 }
 
 /* ---------- «Elegir de <tabla>» (foreign keys) ---------- */
 
-const picker = ref<{ uid: string; col: number; fk: GridForeignKey; target: Element } | null>(null)
+const picker = ref<{
+  uid: string
+  col: number
+  fk: GridForeignKey
+  target: Element
+  /** Several selected cells of the column: the rows that take the picked key. */
+  rows: string[] | null
+} | null>(null)
 const pickerCurrent = computed(() => {
   const p = picker.value
   const row = p ? props.rows.find((r) => r.uid === p.uid) : undefined
@@ -511,13 +631,28 @@ function openPicker(uid: string, col: number): void {
   const row = props.rows.find((r) => r.uid === uid)
   const fk = fkOf(col)
   if (!fk || !canPick(row, col)) return
-  const index = props.rows.indexOf(row!)
-  const target = root.value?.querySelector(`td[data-test="cell-${index}-${col}"]`)
+  const target = cellElement(uid, col)
   if (!target) return
   editing.value = null
-  active.value = { uid, col }
-  applySelection(singleCell({ uid, col }))
-  picker.value = { uid, col, fk, target }
+  const cell = { uid, col }
+  // Several cells of this column selected: the key goes to each of their rows.
+  const rows = [
+    ...new Set(
+      (fillTargets(cell) ?? [])
+        .filter(
+          (c) =>
+            c.col === col &&
+            canPick(
+              props.rows.find((r) => r.uid === c.uid),
+              col
+            )
+        )
+        .map((c) => c.uid)
+    )
+  ]
+  if (rows.length > 1) activate(cell, sel.value)
+  else activate(cell)
+  picker.value = { uid, col, fk, target, rows: rows.length > 1 ? rows : null }
 }
 
 function closePicker(): void {
@@ -525,11 +660,17 @@ function closePicker(): void {
   void nextTick(() => root.value?.focus())
 }
 
-/** Writes the chosen referenced values into every column of the key (unchanged ones skipped). */
+/**
+ * Writes the chosen referenced values into every column of the key (unchanged
+ * ones skipped), in each selected row when several are.
+ */
 function onPicked(values: (string | null)[]): void {
   const p = picker.value
   const row = p ? props.rows.find((r) => r.uid === p.uid) : undefined
-  if (p && row)
+  if (p?.rows) {
+    const targets = p.rows.flatMap((uid) => p.fk.cols.map((col) => ({ uid, col })))
+    fillCells(targets, (col) => values[p.fk.cols.indexOf(col)] ?? null)
+  } else if (p && row)
     p.fk.cols.forEach((c, i) => {
       const next = values[i] ?? null
       const cur = row.values[c]
@@ -574,6 +715,14 @@ function onGridKey(event: KeyboardEvent): void {
     applySelection(active.value ? singleCell(active.value) : NO_SELECTION)
     return
   }
+  // Enter, F2 or typing a character edits the cell (every selected cell, see startEdit).
+  if (!props.readonly && (event.key === 'Enter' || event.key === 'F2' || isTypedChar(event))) {
+    const cell = editCell()
+    if (!cell) return
+    event.preventDefault()
+    void startEdit(cell.uid, cell.col, isTypedChar(event) ? event.key : undefined)
+    return
+  }
   if (!active.value) return
   const moves: Record<string, [number, number]> = {
     ArrowUp: [-1, 0],
@@ -589,10 +738,17 @@ function onGridKey(event: KeyboardEvent): void {
   } else if (moves[event.key]) {
     event.preventDefault()
     move(...moves[event.key])
-  } else if (event.key === 'Enter' || event.key === 'F2') {
-    event.preventDefault()
-    void startEdit(active.value.uid, active.value.col)
   }
+}
+
+/**
+ * A key that types a character (also AltGr and macOS Option characters),
+ * not a shortcut or a dead key still composing.
+ */
+function isTypedChar(event: KeyboardEvent): boolean {
+  if ([...event.key].length !== 1 || event.metaKey) return false
+  if (!event.ctrlKey && !event.altKey) return true
+  return event.ctrlKey ? event.altKey : isMac()
 }
 
 function sortIcon(column: string): string | null {
@@ -684,10 +840,7 @@ function openMenu(event: MouseEvent, extra: MenuAction[] = [], lead: MenuAction[
 function cellMenu(event: MouseEvent, uid: string, col: number, index: number): void {
   if (editing.value) return
   event.preventDefault()
-  if (!selRegion.value || !inRegionOrSingle(index, col)) {
-    active.value = { uid, col }
-    applySelection(singleCell({ uid, col }))
-  }
+  if (!selRegion.value || !inRegionOrSingle(index, col)) activate({ uid, col })
   const fk = fkOf(col)
   const row = props.rows.find((r) => r.uid === uid)
   const lead: MenuAction[] =
@@ -762,7 +915,7 @@ async function revealError(): Promise<void> {
 }
 watch(() => [props.errorRow, props.errorCol], revealError)
 
-defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
+defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll, fillNull })
 </script>
 
 <template>
@@ -937,9 +1090,11 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 v-model="draft"
                 :spec="specs[c]!"
                 :nullable="nullable(c)"
-                :label="`Editar ${col.name}`"
+                :label="editorLabel(col.name)"
                 :placeholder="row.values[c] === null ? 'NULL' : undefined"
+                :from-typing="typed"
                 autofocus
+                @update:model-value="typed = true"
                 @commit="onTemporalCommit"
                 @cancel="cancelTemporal"
                 @leave="onTemporalLeave"
@@ -951,9 +1106,11 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 v-model="draft"
                 :options="enums[c]!"
                 :nullable="nullable(c)"
-                :label="`Editar ${col.name}`"
+                :label="editorLabel(col.name)"
                 :placeholder="row.values[c] === null ? 'NULL' : undefined"
+                :from-typing="typed"
                 autofocus
+                @update:model-value="typed = true"
                 @commit="onTemporalCommit"
                 @cancel="cancelTemporal"
                 @leave="onTemporalLeave"
@@ -964,13 +1121,17 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 ref="inputRef"
                 v-model="draft"
                 class="cell-input"
-                :aria-label="`Editar ${col.name}`"
+                :aria-label="editorLabel(col.name)"
                 data-test="cell-input"
                 :placeholder="row.values[c] === null ? 'NULL' : undefined"
                 @input="typed = true"
                 @keydown="onInputKey"
                 @blur="commit"
               />
+              <span v-if="fill" class="cell-fill" aria-hidden="true" data-test="cell-fill">
+                <v-icon icon="mdi-checkbox-multiple-outline" size="12" />
+                Se aplica a {{ fill.length }} celdas
+              </span>
             </span>
             <button
               v-else-if="isActive(row.uid, c) && canPick(row, c)"
@@ -1432,6 +1593,23 @@ td.cell-editing {
   border: none;
   outline: none;
   box-shadow: inset 0 0 0 1px var(--nd-accent);
+}
+/* How many selected cells the editor writes to, just above it (lists open below). */
+.cell-fill {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--nd-radius-pill);
+  background: var(--nd-accent);
+  color: var(--nd-on-accent);
+  font-size: var(--nd-fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .cell-input::placeholder {
   color: var(--nd-text-muted);

@@ -1,7 +1,7 @@
 {
   "name": "vortaq",
   "productName": "Vortaq",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Vortaq: independent, open-source desktop database client (connections, object explorer, query editor, backups and automation).",
   "private": true,
   "main": "./out/main/index.js",

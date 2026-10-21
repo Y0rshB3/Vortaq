@@ -1,5 +1,15 @@
 # Cambios
 
+## 0.4.0 — editar varias celdas a la vez (2026-10-21)
+
+- **Varias celdas a la vez** en los resultados editables: con un rango o columnas enteras seleccionados, lo que
+  escribes o eliges (texto, fechas, valores de un ENUM, la fila de una clave foránea o **NULL**) se aplica a todas
+  las celdas seleccionadas como cambio pendiente. Encima del editor se ve a cuántas celdas se aplica. Las columnas
+  bloqueadas, la clave primaria y las celdas que no admiten el valor no cambian, y un aviso dice por qué.
+- Para editar una celda basta con empezar a escribir (también `Enter`, `F2` o doble clic).
+- **Corrección:** «Eliminar» marcaba la fila de la celda pulsada antes y no la de la última (o la de la celda a la
+  que llegabas con las flechas). Ahora es siempre la fila de la celda activa.
+
 ## 0.3.0 — diagrama de relaciones y consulta gráfica (2026-10-19)
 
 - **Diagrama de relaciones** (botón derecho en una base de datos o en un esquema de PostgreSQL ›
@@ -15,6 +25,9 @@
   `Alt+↓`) abre las filas de la tabla relacionada, con buscador, para elegir el valor.
 - **ENUM:** se edita con su lista de valores; al escribir, la lista se filtra y autocompleta.
 - El panel «Texto» muestra los valores de un ENUM tal como están definidos.
+- **Resultados con `JOIN` editables** (de Vortaq 2.4.0): un `SELECT` que une varias tablas se edita si incluye la
+  clave primaria de una de ellas; las columnas de otras tablas y las calculadas se ven atenuadas y no cambian. En
+  PostgreSQL y SQLite escribe las columnas del `JOIN` con su alias (`p.*`, `p.columna`).
 
 ## 0.2.0 — copiar y exportar resultados (2026-10-14)
 

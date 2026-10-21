@@ -17,8 +17,10 @@ const props = withDefaults(
     label: string
     placeholder?: string
     autofocus?: boolean
+    /** Opened by typing a character: the caret goes after it instead of selecting the text. */
+    fromTyping?: boolean
   }>(),
-  { nullable: false, placeholder: undefined, autofocus: false }
+  { nullable: false, placeholder: undefined, autofocus: false, fromTyping: false }
 )
 
 const emit = defineEmits<{
@@ -54,7 +56,9 @@ function focus(select = false): void {
 onMounted(async () => {
   if (!props.autofocus) return
   await nextTick()
-  focus(true)
+  focus(!props.fromTyping)
+  if (props.fromTyping)
+    input.value?.setSelectionRange(props.modelValue.length, props.modelValue.length)
 })
 
 /** Validates the current text; emits commit with the normalised literal when valid. */

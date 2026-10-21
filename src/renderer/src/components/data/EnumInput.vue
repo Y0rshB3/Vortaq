@@ -18,8 +18,10 @@ const props = withDefaults(
     label: string
     placeholder?: string
     autofocus?: boolean
+    /** Opened by typing a character: the list is filtered by it and the caret goes after it. */
+    fromTyping?: boolean
   }>(),
-  { nullable: false, placeholder: undefined, autofocus: false }
+  { nullable: false, placeholder: undefined, autofocus: false, fromTyping: false }
 )
 
 const emit = defineEmits<{
@@ -39,7 +41,7 @@ type Entry = string | typeof NULL_ENTRY
 const input = ref<HTMLInputElement | null>(null)
 const open = ref(false)
 /** False until the user types: the list then shows every value, not just the current one. */
-const typed = ref(false)
+const typed = ref(props.fromTyping)
 /** The user moved through the list with ↑/↓: leaving writes the highlighted value. */
 const moved = ref(false)
 const highlight = ref(-1)
@@ -103,7 +105,9 @@ onMounted(async () => {
   if (!props.autofocus) return
   await nextTick()
   input.value?.focus()
-  input.value?.select()
+  if (props.fromTyping)
+    input.value?.setSelectionRange(props.modelValue.length, props.modelValue.length)
+  else input.value?.select()
   show()
 })
 

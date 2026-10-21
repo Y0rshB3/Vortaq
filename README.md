@@ -20,7 +20,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.3.0/vortaq-0.3.0.vsix) ·
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.4.0/vortaq-0.4.0.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -95,7 +95,7 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
 - **Editor de consultas** con autocompletado, formateo de SQL, varias sentencias y resultados editables cuando
   incluyen la clave primaria de una tabla, también con `JOIN` (se editan las columnas de esa tabla). La
   conexión se puede cambiar desde la propia pestaña.
-- **Vista de datos** con edición de celdas, `NULL`, alta y baja de filas; los cambios se aplican en una
+- **Vista de datos** con edición de celdas (también de varias a la vez), `NULL`, alta y baja de filas; los cambios se aplican en una
   transacción y se deshacen todos si falla uno. Filtro visual por condiciones con paréntesis y perfiles,
   selector de fecha y hora, columnas redimensionables y panel **Texto** con el valor completo de la celda.
 - **Diseñador de tablas** (columnas, índices, claves foráneas) y editor DDL de vistas y rutinas.
@@ -1132,6 +1132,22 @@ Al editar una celda `DATE`, `DATETIME`, `TIMESTAMP`, `TIME` o `YEAR` el editor s
   cambio pendiente. Solo se lee la tabla relacionada; nada se escribe hasta **Aplicar**.
 - Funciona en la vista de datos y en los resultados editables del editor de consultas.
 
+### Editar varias celdas a la vez
+
+- Para editar una celda basta con empezar a escribir (también `Enter`, `F2` o doble clic): lo que escribes
+  sustituye al valor.
+- Con un **rango** seleccionado (arrastrando, `Mayús`+clic o `Mayús`+flechas) o **columnas enteras** (clic en la
+  cabecera), lo que escribes o eliges se aplica a **todas** las celdas seleccionadas: texto, fechas, valores de
+  un `ENUM` y la fila elegida de una clave foránea. Encima del editor se ve a cuántas celdas se aplica; `Enter`
+  confirma y la selección se queda, para ver qué cambió. El botón **NULL** también pone `NULL` en todas.
+- Cada celda queda como cambio pendiente, como siempre: **Aplicar** los guarda y **Descartar** los deshace.
+- No cambian las columnas bloqueadas (de otra tabla o calculadas), las filas marcadas para eliminar, la clave
+  primaria (no puede tener el mismo valor en varias filas) ni las celdas cuya columna no admite el valor (una
+  fecha no válida, un valor que no está en el `ENUM`, `NULL` en una columna que no lo admite). Un aviso dice
+  cuántas celdas se saltaron y por qué.
+- Si cierras el editor sin cambiar nada, no se escribe en las demás celdas. Con filas seleccionadas desde el
+  número de fila, o con **Seleccionar todo**, solo se edita la celda activa.
+
 ### Diagrama de relaciones y consulta gráfica
 
 En la pestaña **Objetos**, con una base de datos (MySQL, MariaDB, SQLite) o un esquema (PostgreSQL) seleccionado,
@@ -1475,7 +1491,7 @@ MongoDB. Su código está en [`extensions/vscode`](extensions/vscode) y tiene su
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.3.0):
+Qué hace (versión 0.4.0):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1484,7 +1500,8 @@ Qué hace (versión 0.3.0):
   de encima del documento). `Cmd+Enter` / `Ctrl+Enter` ejecuta la selección, la sentencia del cursor o el
   documento; `Cmd+Shift+Enter` / `Ctrl+Shift+Enter`, todo; **Detener** cancela.
 - **Resultados** en un panel junto al editor: varias pestañas, Mensajes, filas y tiempos, y **edición** de los
-  resultados de una tabla con clave (Aplicar / Descartar, `NULL`).
+  resultados que incluyen la clave de una tabla, también con `JOIN` (Aplicar / Descartar, `NULL`), y de varias
+  celdas a la vez ([Editar varias celdas a la vez](#editar-varias-celdas-a-la-vez)).
 - **Copiar y exportar**, igual que en escritorio ([Copiar y exportar resultados](#copiar-y-exportar-resultados)):
   selección de celdas, filas o columnas; **Copiar** / **Copiar como** CSV, JSON, `INSERT`, `UPDATE`, lista para
   `IN` o Markdown; **Exportar** a CSV, Excel (`.xlsx`), JSON, SQL, Markdown, HTML o TXT, de la selección, de las
@@ -1512,8 +1529,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`**:
   1. Descarga
-     [**`vortaq-0.3.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.3.0/vortaq-0.3.0.vsix)
-     (versión [`vscode-v0.3.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.3.0), con su
+     [**`vortaq-0.4.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.4.0/vortaq-0.4.0.vsix)
+     (versión [`vscode-v0.4.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.4.0), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1521,17 +1538,17 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.3.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.3.0.vsix     # Cursor
-  codium --install-extension vortaq-0.3.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.3.0.vsix   # Windsurf
+  code --install-extension vortaq-0.4.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.4.0.vsix     # Cursor
+  codium --install-extension vortaq-0.4.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.4.0.vsix   # Windsurf
   ```
 
 - **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
   buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.3.0.vsix`.
+`extensions/vscode/vortaq-0.4.0.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

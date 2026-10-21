@@ -110,6 +110,78 @@ describe('TableDataView', () => {
     expect(useTabsStore().tabs.find((t) => t.id === tab.id)?.dirty).toBe(false)
   })
 
+  it('SAFETY: «Eliminar» marks the row of the cell clicked last, also after moving with the arrows', async () => {
+    const pinia = setupDom()
+    const rows3 = {
+      ...structuredClone(page),
+      rows: [
+        [1, 'a'],
+        [2, 'b'],
+        [3, 'c']
+      ],
+      total: 3
+    }
+    mockBridge({ 'db:tableData': () => structuredClone(rows3) })
+    const tab = openTab({
+      kind: 'tableData',
+      title: 't',
+      connectionId: 'c1',
+      schema: 'shop',
+      objectName: 'items',
+      objectType: 'table'
+    })
+    wrapper = await mountView(TableDataView, tab, pinia)
+    const deleted = () =>
+      [0, 1, 2].filter((i) =>
+        wrapper!.get(`[data-test="row-${i}"]`).classes().includes('row-deleted')
+      )
+
+    await wrapper.get('[data-test="cell-0-1"]').trigger('click')
+    await wrapper.get('[data-test="cell-2-1"]').trigger('click')
+    expect(wrapper.get('[data-test="row-2"]').classes()).toContain('row-selected')
+    expect(wrapper.get('[data-test="row-0"]').classes()).not.toContain('row-selected')
+    await wrapper.get('[data-test="delete-rows"]').trigger('click')
+    expect(deleted()).toEqual([2])
+
+    await wrapper.get('[data-test="delete-rows"]').trigger('click')
+    await wrapper.get('.editable-grid').trigger('keydown', { key: 'ArrowUp' })
+    await wrapper.get('[data-test="delete-rows"]').trigger('click')
+    expect(deleted()).toEqual([1])
+  })
+
+  it('NULL with several cells selected sets every one of them', async () => {
+    const pinia = setupDom()
+    const rows3 = {
+      ...structuredClone(page),
+      rows: [
+        [1, 'a'],
+        [2, 'b'],
+        [3, 'c']
+      ],
+      total: 3
+    }
+    mockBridge({ 'db:tableData': () => structuredClone(rows3) })
+    const tab = openTab({
+      kind: 'tableData',
+      title: 't',
+      connectionId: 'c1',
+      schema: 'shop',
+      objectName: 'items',
+      objectType: 'table'
+    })
+    wrapper = await mountView(TableDataView, tab, pinia)
+
+    await wrapper.get('[data-test="cell-0-1"]').trigger('click')
+    await wrapper.get('[data-test="cell-1-1"]').trigger('click', { shiftKey: true })
+    await wrapper.get('[data-test="set-null"]').trigger('click')
+    expect([0, 1, 2].map((i) => wrapper!.get(`[data-test="cell-${i}-1"]`).text())).toEqual([
+      '(NULL)',
+      '(NULL)',
+      'c'
+    ])
+    expect(wrapper.get('[data-test="pending"]').text()).toContain('2')
+  })
+
   it('discards pending edits and sets NULL on the active cell', async () => {
     const pinia = setupDom()
     mockBridge({ 'db:tableData': () => structuredClone(page) })
