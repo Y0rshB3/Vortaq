@@ -2317,8 +2317,9 @@ STEPS.push(...DIAGRAM_STEPS)
 
 /**
  * Editable JOIN results (VORTAQ_SHOTS_ONLY=53): the columns of one table are
- * edited and the others locked, and a join that repeats rows stays read-only.
- * The `shots_diagram` rows of scripts/seed-grid-shots.mjs.
+ * edited and the others locked, a join that repeats rows stays read-only, and
+ * one value typed over several cells. The `shots_diagram` rows of
+ * scripts/seed-grid-shots.mjs.
  */
 const RUN_JOIN = (name: string, sql: string): string => `
       for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
@@ -2365,6 +2366,29 @@ const JOIN_EDIT_STEPS: Step[] = [
         'ORDER BY c.id'
       ].join('\n')
     )}`
+  },
+  {
+    // Several cells at once (2.5.0): typing over four selected status cells opens
+    // the ENUM list filtered by the typed letter, with the cell count above it.
+    name: '53c-multi-cell-typing',
+    script: `${RUN_JOIN('Pedidos', 'SELECT * FROM orders ORDER BY id')}
+      const first = await H.waitFor('[data-test="cell-0-3"]', 8000)
+      first.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      H.$('[data-test="cell-3-3"]').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+      await H.sleep(200)
+      H.$('.editable-grid').dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }))
+      await H.waitFor('[data-test="cell-fill"]', 8000)
+      await H.settle(S, 700)`
+  },
+  {
+    name: '53d-multi-cell-applied',
+    script: `
+      const field = await H.waitFor('[data-test="enum-input"] input', 8000)
+      for (const key of ['ArrowDown', 'ArrowDown', 'Enter'])
+        field.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      await H.until(() => !H.$('[data-test="enum-input"]'), 8000)
+      await H.settle(S, 700)`,
+    cleanup: `H.$('[data-test="discard"]')?.click()`
   }
 ]
 STEPS.push(...JOIN_EDIT_STEPS)

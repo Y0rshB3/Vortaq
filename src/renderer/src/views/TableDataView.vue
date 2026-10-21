@@ -296,6 +296,10 @@ async function applyChanges(): Promise<void> {
 }
 
 const grid = ref<InstanceType<typeof EditableGrid> | null>(null)
+/** NULL: every selected cell when several are selected, else the active cell. */
+function setNull(): void {
+  if (!grid.value?.fillNull()) editor.setNull()
+}
 
 /* ---------- copy and export ---------- */
 
@@ -431,7 +435,7 @@ defineExpose({ rows, applyChanges, load })
         :applying="applying"
         @add="editor.addRow"
         @delete="editor.deleteSelected"
-        @null="editor.setNull"
+        @null="setNull"
         @discard="editor.discard"
         @apply="applyChanges"
       />

@@ -25,6 +25,23 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.5.0',
+    date: '2026-10-21',
+    highlights: [
+      'Editar varias celdas a la vez: selecciona un rango o columnas enteras y escribe; el valor se aplica a todas (también fechas, ENUM, claves foráneas y NULL)',
+      'Para editar una celda basta con empezar a escribir',
+      'Cada columna comprueba el valor: no cambian las columnas bloqueadas, la clave primaria ni las celdas que no lo admiten, y un aviso dice por qué',
+      'Corregido: «Eliminar» marcaba la fila de la celda pulsada antes, no la de la última; ahora es siempre la de la celda activa'
+    ],
+    tour: [
+      {
+        target: 'connection-tree',
+        title: 'Varias celdas a la vez',
+        text: 'Abre los datos de una tabla, selecciona varias celdas de una columna (arrastrando o con Mayús+clic) y escribe: el valor queda pendiente en todas hasta que pulses Aplicar.'
+      }
+    ]
+  },
+  {
     version: '2.4.0',
     date: '2026-10-20',
     highlights: [
