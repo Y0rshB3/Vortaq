@@ -25,6 +25,23 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.4.0',
+    date: '2026-10-20',
+    highlights: [
+      'Resultados con JOIN editables: si eliges las columnas de una tabla (p.*, p.columna) con su clave primaria, se editan en esa tabla aunque la consulta una otras',
+      'Edición por columna: las columnas de otras tablas y las calculadas se ven atenuadas y no se editan; el resto de la fila sí',
+      'Un JOIN que repite filas o no encuentra la fila (LEFT JOIN), y las consultas con COUNT, SUM…, quedan en solo lectura y dicen por qué',
+      'El botón NULL y el panel «Texto» ya no cambian columnas bloqueadas (rowid y columnas generadas de SQLite)'
+    ],
+    tour: [
+      {
+        target: 'toolbar-query',
+        title: 'Editar resultados con JOIN',
+        text: 'En una pestaña de consulta ejecuta, por ejemplo, SELECT p.*, c.nombre FROM pedidos p JOIN clientes c ON c.id = p.cliente_id: el aviso sobre la rejilla dice en qué tabla se aplican los cambios y cuántas columnas son de solo lectura.'
+      }
+    ]
+  },
+  {
     version: '2.3.0',
     date: '2026-10-19',
     highlights: [

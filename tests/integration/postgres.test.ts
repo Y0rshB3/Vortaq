@@ -22,6 +22,7 @@ import { AiService } from '@main/ai/service'
 import { pgTablePlanner } from '../../src/renderer/src/components/designer/pg/planner'
 import {
   decideEditability,
+  firstEditable,
   resultSource
 } from '../../src/renderer/src/components/query/resultEditability'
 import { POSTGRES_TARGET, describeServer } from './targets'
@@ -535,12 +536,18 @@ describeServer(POSTGRES_TARGET, 'PostgreSQL driver (integration)', (url) => {
       const set = r.resultSet!
       const source = resultSource(set.columns, r.sql, 'postgresql')
       if (!source.ok) return { editable: false, reason: source.reason }
-      const structure = await pg
-        .tableStructure(id, { database: db, schema: source.source.schema }, source.source.table)
-        .catch(() => null)
-      return decideEditability(set.columns, source.source, structure, set.rows, {
-        aliasMetadata: false
+      // Like EditableResult: the first candidate table the rows can be edited in.
+      const chosen = await firstEditable(source.candidates, async (candidate) => {
+        const structure = await pg
+          .tableStructure(id, { database: db, schema: candidate.schema }, candidate.table)
+          .catch(() => null)
+        return {
+          decision: decideEditability(set.columns, candidate, structure, set.rows, {
+            aliasMetadata: false
+          })
+        }
       })
+      return chosen!.decision
     }
     expect(
       await decide('SELECT i.id AS ident, i.name FROM items AS i WHERE i.id > 0')
@@ -560,10 +567,58 @@ describeServer(POSTGRES_TARGET, 'PostgreSQL driver (integration)', (url) => {
       editable: false,
       reason: 'el origen es una vista'
     })
-    expect(await decide('SELECT a.id FROM items a JOIN items b ON a.id = b.id')).toMatchObject({
-      editable: false
-    })
     expect(await decide('SELECT count(*) FROM items')).toMatchObject({ editable: false })
+  })
+
+  it('edits one table of a join by the place of its columns in the select list', async () => {
+    const decide = async (sql: string) => {
+      const [r] = ok(await exec(sql))
+      const set = r.resultSet!
+      const source = resultSource(set.columns, r.sql, 'postgresql')
+      if (!source.ok) return { editable: false as const, reason: source.reason }
+      const chosen = await firstEditable(source.candidates, async (candidate) => {
+        const structure = await pg
+          .tableStructure(id, { database: db, schema: candidate.schema }, candidate.table)
+          .catch(() => null)
+        return {
+          decision: decideEditability(set.columns, candidate, structure, set.rows, {
+            aliasMetadata: false
+          })
+        }
+      })
+      return chosen!.decision
+    }
+    // Without alias metadata both sides of a self-join name items: the select list tells them apart.
+    expect(
+      await decide('SELECT a.id, a.name, b.name AS same FROM items a JOIN items b ON b.id = a.id')
+    ).toMatchObject({
+      editable: true,
+      schema: SCHEMA,
+      table: 'items',
+      locked: [null, null, 'columna de otra tabla (b)']
+    })
+    const withView = await decide(
+      'SELECT i.*, v.name AS via_view FROM items i JOIN v_items v ON v.id = i.id'
+    )
+    expect(withView).toMatchObject({ editable: true, table: 'items' })
+    if (withView.editable) {
+      expect(withView.locked.slice(0, -1).every((l) => l === null)).toBe(true)
+      expect(withView.locked.at(-1)).toMatch(/^columna de otra tabla/)
+    }
+    expect(
+      await decide('SELECT n.b, i.id, i.name FROM nokey n, items i WHERE i.id = n.a')
+    ).toMatchObject({
+      editable: true,
+      table: 'items',
+      locked: ['columna de otra tabla (nokey)', null, null]
+    })
+    expect(await decide('SELECT * FROM items a JOIN ident b ON b.id = a.id')).toEqual({
+      editable: false,
+      reason: 'la consulta usa varias tablas: escribe a.* o a.columna para editar'
+    })
+    expect(
+      await decide('SELECT a.* FROM items a JOIN items b ON b.id <> a.id JOIN items c ON true')
+    ).toMatchObject({ editable: false, reason: 'hay filas repetidas con la misma clave' })
   })
 
   it('pages table data with dialect-aware filters', async () => {

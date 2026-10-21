@@ -77,8 +77,9 @@ describe('EditableResult: read-only multi-table results', () => {
 
   it('renders the selectable grid (not the old plain table) with the read-only chip and footer', async () => {
     const w = await mount('mysql', true)
+    // No alias metadata in this fixture: nothing ties the columns to c or o.
     expect(w.get('[data-test="editability"]').text()).toBe(
-      'Solo lectura · la consulta usa varias tablas'
+      'Solo lectura · la consulta usa varias tablas: escribe c.* o c.columna para editar'
     )
     expect(w.find('.editable-grid').exists()).toBe(true)
     expect(w.find('.result-grid').exists()).toBe(false)

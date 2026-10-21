@@ -1,6 +1,6 @@
 /**
- * SQLite version of selectSource.ts: does a SELECT read exactly one table
- * reference (no CTE, join, subquery source, set operation, grouping or
+ * SQLite version of selectSource.ts: does a SELECT read one table, or plain
+ * tables joined together (no CTE, subquery source, set operation, grouping or
  * DISTINCT)? It uses the shared SQLite lexer (the same tokens as the splitter
  * and the guard) and accepts the three quoting forms ("x", [x], `x`), an
  * attached-database qualifier (`aux.t`) and `INDEXED BY` / `NOT INDEXED`.
@@ -13,13 +13,18 @@ import {
   REASON_CTE,
   REASON_DERIVED,
   REASON_GROUPED,
-  REASON_MULTI,
   REASON_NO_TABLE,
   REASON_NOT_SIMPLE,
   REASON_SUBQUERY,
   REASON_UNION,
   REASON_UNPARSED,
-  type SelectSource
+  aggregateCall,
+  joinedTables,
+  selectItems,
+  type FactorParse,
+  type JoinedSelect,
+  type SelectSource,
+  type TokenReader
 } from './selectSource'
 
 const CLAUSE_WORDS = new Set([
@@ -51,6 +56,8 @@ const CLAUSE_WORDS = new Set([
 const JOIN_WORDS = new Set(['JOIN', 'INNER', 'CROSS', 'LEFT', 'RIGHT', 'NATURAL', 'FULL', 'OUTER'])
 const TAIL_WORDS = new Set(['WHERE', 'ORDER', 'LIMIT', 'WINDOW'])
 const SET_OPS = new Set(['UNION', 'EXCEPT', 'INTERSECT'])
+const STOP_WORDS = new Set([...TAIL_WORDS, 'GROUP', 'HAVING', ...SET_OPS])
+const MODIFIERS = new Set(['ALL'])
 
 const fail = (reason: string): SelectSource => ({ ok: false, reason })
 
@@ -64,6 +71,56 @@ function identifier(t: SqliteToken | undefined): string | null {
   if (t?.kind === 'ident') return t.value
   if (t?.kind === 'word' && !CLAUSE_WORDS.has(t.value.toUpperCase())) return t.value
   return null
+}
+
+/** `[schema.]table [[AS] alias] [INDEXED BY i | NOT INDEXED]` starting at `start`. */
+function tableFactor(tokens: SqliteToken[], start: number): FactorParse {
+  let i = start
+  if (isPunct(tokens[i], '(')) return { ok: false, reason: REASON_DERIVED }
+  const name = identifier(tokens[i])
+  if (name === null) return { ok: false, reason: REASON_UNPARSED }
+  i++
+  let schema: string | null = null
+  let table = name
+  if (isPunct(tokens[i], '.')) {
+    const second = identifier(tokens[i + 1])
+    if (second === null) return { ok: false, reason: REASON_UNPARSED }
+    schema = name
+    table = second
+    i += 2
+    if (isPunct(tokens[i], '.')) return { ok: false, reason: REASON_UNPARSED }
+  }
+  // Table-valued function: FROM pragma_table_info('t'), json_each(x)…
+  if (isPunct(tokens[i], '(')) return { ok: false, reason: REASON_NOT_SIMPLE }
+
+  let alias: string | null = null
+  if (upper(tokens[i]) === 'AS') {
+    alias = identifier(tokens[i + 1])
+    if (alias === null) return { ok: false, reason: REASON_UNPARSED }
+    i += 2
+  } else {
+    alias = identifier(tokens[i])
+    if (alias !== null) i++
+  }
+  if (upper(tokens[i]) === 'INDEXED' && upper(tokens[i + 1]) === 'BY') {
+    if (identifier(tokens[i + 2]) === null && tokens[i + 2]?.kind !== 'word')
+      return { ok: false, reason: REASON_UNPARSED }
+    i += 3
+  } else if (upper(tokens[i]) === 'NOT' && upper(tokens[i + 1]) === 'INDEXED') i += 2
+  return { ok: true, ref: { schema, table, alias }, end: i }
+}
+
+function reader(tokens: SqliteToken[]): TokenReader {
+  return {
+    length: tokens.length,
+    word: (i) => upper(tokens[i]),
+    punct: (i, text) => isPunct(tokens[i], text),
+    ident: (i) => identifier(tokens[i]),
+    member: (i) => {
+      const t = tokens[i]
+      return t?.kind === 'ident' || t?.kind === 'word' ? t.value : null
+    }
+  }
 }
 
 export function sqliteSingleTableSelect(sql: string): SelectSource {
@@ -89,43 +146,31 @@ export function sqliteSingleTableSelect(sql: string): SelectSource {
     else if (depth === 0 && upper(t) === 'FROM') break
   }
   if (i >= tokens.length) return fail(REASON_NO_TABLE)
-  i++
+  const fromAt = i
+  const r = reader(tokens)
+  if (aggregateCall(r, 1, fromAt)) return fail(REASON_GROUPED)
 
-  if (isPunct(tokens[i], '(')) return fail(REASON_DERIVED)
-  const name = identifier(tokens[i])
-  if (name === null) return fail(REASON_UNPARSED)
-  i++
-  let schema: string | null = null
-  let table = name
-  if (isPunct(tokens[i], '.')) {
-    const second = identifier(tokens[i + 1])
-    if (second === null) return fail(REASON_UNPARSED)
-    schema = name
-    table = second
-    i += 2
-    if (isPunct(tokens[i], '.')) return fail(REASON_UNPARSED)
+  const factor = tableFactor(tokens, fromAt + 1)
+  if (!factor.ok) return factor
+  const { ref } = factor
+  i = factor.end
+
+  let joined: JoinedSelect | undefined
+  if (isPunct(tokens[i], ',') || JOIN_WORDS.has(upper(tokens[i]))) {
+    const more = joinedTables(r, factor, (at) => tableFactor(tokens, at), {
+      joinWords: JOIN_WORDS,
+      stopWords: STOP_WORDS
+    })
+    if (!more.ok) return more
+    const items = selectItems(r, 1, fromAt, MODIFIERS)
+    if (!items) return fail(REASON_UNPARSED)
+    joined = { tables: more.tables, items }
+    i = more.end
   }
-  // Table-valued function: FROM pragma_table_info('t'), json_each(x)…
-  if (isPunct(tokens[i], '(')) return fail(REASON_NOT_SIMPLE)
+  const done = (): SelectSource => (joined ? { ok: true, ref, joined } : { ok: true, ref })
 
-  let alias: string | null = null
-  if (upper(tokens[i]) === 'AS') {
-    alias = identifier(tokens[i + 1])
-    if (alias === null) return fail(REASON_UNPARSED)
-    i += 2
-  } else {
-    alias = identifier(tokens[i])
-    if (alias !== null) i++
-  }
-  if (upper(tokens[i]) === 'INDEXED' && upper(tokens[i + 1]) === 'BY') {
-    if (identifier(tokens[i + 2]) === null && tokens[i + 2]?.kind !== 'word')
-      return fail(REASON_UNPARSED)
-    i += 3
-  } else if (upper(tokens[i]) === 'NOT' && upper(tokens[i + 1]) === 'INDEXED') i += 2
-
-  if (i >= tokens.length) return { ok: true, ref: { schema, table, alias } }
+  if (i >= tokens.length) return done()
   const next = tokens[i]
-  if (isPunct(next, ',') || JOIN_WORDS.has(upper(next))) return fail(REASON_MULTI)
   if (upper(next) === 'GROUP' || upper(next) === 'HAVING') return fail(REASON_GROUPED)
   if (SET_OPS.has(upper(next))) return fail(REASON_UNION)
   if (!TAIL_WORDS.has(upper(next))) return fail(REASON_UNPARSED)
@@ -142,5 +187,5 @@ export function sqliteSingleTableSelect(sql: string): SelectSource {
     }
   }
   if (depth !== 0) return fail(REASON_UNPARSED)
-  return { ok: true, ref: { schema, table, alias } }
+  return done()
 }

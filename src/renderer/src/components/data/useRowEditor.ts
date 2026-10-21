@@ -14,6 +14,7 @@ import type { ConfirmItem } from '@renderer/stores/ui'
 import { schemaRef } from '@renderer/utils/schemaRef'
 import {
   buildRowChangeBatch,
+  isLockedCell,
   newRow,
   pendingCount,
   rowsFromPage,
@@ -72,7 +73,7 @@ export function useRowEditor(columns: Readonly<Ref<QueryColumn[]>>) {
 
   function onEdit(uid: string, col: number, value: CellValue): void {
     const row = rows.value.find((r) => r.uid === uid)
-    if (row) setCell(row, col, value)
+    if (row && !isLockedCell(columns.value[col], row)) setCell(row, col, value)
   }
 
   function addRow(): void {
@@ -93,7 +94,7 @@ export function useRowEditor(columns: Readonly<Ref<QueryColumn[]>>) {
     const cell = active.value
     if (!cell) return
     const row = rows.value.find((r) => r.uid === cell.uid)
-    if (!row || row.deleted) return
+    if (!row || row.deleted || isLockedCell(columns.value[cell.col], row)) return
     if (columns.value[cell.col] && row.values[cell.col] !== null) setCell(row, cell.col, null)
   }
 

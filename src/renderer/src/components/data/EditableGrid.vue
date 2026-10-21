@@ -33,7 +33,13 @@ import {
   type GridSelection,
   type GridSelectionSnapshot
 } from './gridSelection'
-import { displayCell, isCellChanged, type ActiveCell, type EditableRow } from './rowEditing'
+import {
+  displayCell,
+  isCellChanged,
+  isLockedCell,
+  type ActiveCell,
+  type EditableRow
+} from './rowEditing'
 import EnumInput from './EnumInput.vue'
 import { enumOptions } from './enumValues'
 import ForeignKeyPicker from './ForeignKeyPicker.vue'
@@ -110,13 +116,9 @@ const STORAGE_LABELS: Record<StorageClass, string> = {
   blob: 'BLOB'
 }
 
-/**
- * A locked column (SQLite rowid, generated column) is never edited on a
- * loaded row; a new row may set its rowid.
- */
+/** See isLockedCell: locked columns are shown dimmed and never edited. */
 function isLocked(row: EditableRow, col: number): boolean {
-  const locked = props.columns[col]?.locked
-  return !!locked && (locked !== 'rowid' || !!row.original)
+  return isLockedCell(props.columns[col], row)
 }
 
 /** Tooltip: the value, plus its SQLite storage class and why it is locked. */
@@ -826,6 +828,15 @@ defineExpose({ startEdit, revealError, autoFit, selectionSnapshot, selectAll })
                 :title="`Clave foránea → ${foreignKeyLabel(fkOf(c)!)}`"
                 :data-test="`fk-icon-${col.name}`"
               />
+              <v-icon
+                v-if="!readonly && col.locked && col.locked !== 'rowid'"
+                icon="mdi-lock-outline"
+                size="12"
+                class="header-cell__lock"
+                :aria-label="`No editable: ${col.locked}`"
+                :title="`No editable: ${col.locked}`"
+                :data-test="`lock-icon-${col.name}`"
+              />
               <span class="header-cell__name">{{ col.name }}</span>
               <button
                 type="button"
@@ -1166,6 +1177,9 @@ th.is-sorted {
 .header-cell__fk {
   color: var(--nd-accent);
   opacity: 0.85;
+}
+.header-cell__lock {
+  color: var(--nd-text-muted);
 }
 /* «Elegir de <tabla>» / ENUM list button of the active cell, over its right edge. */
 td.cell-active {

@@ -70,6 +70,16 @@ export function pendingCount(rows: EditableRow[]): number {
   return rows.filter(isRowChanged).length
 }
 
+/**
+ * A locked column (SQLite rowid or generated column, a query result's column
+ * of another table or computed) is never edited on a loaded row; a new row may
+ * set its rowid.
+ */
+export function isLockedCell(column: QueryColumn | undefined, row: EditableRow): boolean {
+  const locked = column?.locked
+  return !!locked && (locked !== 'rowid' || !!row.original)
+}
+
 export function setCell(row: EditableRow, col: number, value: CellValue): void {
   row.values[col] = value
   if (!row.touched.includes(col)) row.touched.push(col)

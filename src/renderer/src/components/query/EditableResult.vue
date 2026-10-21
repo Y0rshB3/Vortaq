@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { getDialect } from '@shared/dialects'
 import type { SqlDialectId } from '@shared/dialects/types'
 import { checkExportResult } from '@shared/export/statement'
@@ -13,7 +13,7 @@ import type {
   TableStructure
 } from '@shared/types'
 import CellValuePanel from '@renderer/components/data/CellValuePanel.vue'
-import { isCellChanged } from '@renderer/components/data/rowEditing'
+import { isCellChanged, isLockedCell } from '@renderer/components/data/rowEditing'
 import { useValuePanelPref } from '@renderer/components/data/useValuePanelPref'
 import { invokeSilent } from '@renderer/api'
 import ApplyErrorBanner from '@renderer/components/data/ApplyErrorBanner.vue'
@@ -29,17 +29,20 @@ import { useConnectionsStore } from '@renderer/stores/connections'
 import { schemaRef } from '@renderer/utils/schemaRef'
 import {
   decideEditability,
+  firstEditable,
   payloadColumns,
   resultSource,
-  type Editability
+  type Editability,
+  type ResultSource
 } from './resultEditability'
 
 /**
- * One query result set. When its statement is a plain SELECT of exactly one
- * base table and the result carries its whole primary key it can be edited
- * like the table data view; otherwise it stays read-only and says why. Edits
- * are written by key, so a truncated result is still safe to edit. Every
- * result (multi-table ones too) can be selected, copied and exported.
+ * One query result set. When its statement reads base tables directly (one,
+ * or several joined) and the result carries one table's whole primary key, the
+ * columns of that table can be edited like the table data view; columns of
+ * other tables and computed ones stay locked. Otherwise it is read-only and
+ * says why. Edits are written by key, so a truncated result is still safe to
+ * edit. Every result (multi-table ones too) can be selected, copied and exported.
  */
 const props = defineProps<{
   connectionId: string
@@ -69,7 +72,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{ dirty: [value: boolean] }>()
 
-const editor = useRowEditor(toRef(props, 'columns'))
+const editability = ref<Editability | null>(null)
+/** The result's columns, with the ones that are not edited (other tables, computed) locked. */
+const gridColumns = computed<QueryColumn[]>(() => {
+  const state = editability.value
+  if (!state?.editable) return props.columns
+  return props.columns.map((c, i) => (state.locked[i] ? { ...c, locked: state.locked[i]! } : c))
+})
+const editor = useRowEditor(gridColumns)
 const { rows: gridRows, selected, active, applying, applyError, pending, dirty } = editor
 editor.reset(props.rows, props.storage)
 
@@ -92,9 +102,7 @@ const source = resultSource(
   props.sql,
   isPg ? 'postgresql' : isLite ? 'sqlite' : 'mysql'
 )
-const editability = ref<Editability | null>(
-  source.ok ? null : { editable: false, reason: source.reason }
-)
+if (!source.ok) editability.value = { editable: false, reason: source.reason }
 const checking = computed(() => editability.value === null)
 const editable = computed(() => editability.value?.editable === true)
 const keyColumns = computed(() => (editability.value?.editable ? editability.value.keyColumns : []))
@@ -105,12 +113,18 @@ const readOnlyReason = computed(() =>
 const target = computed(() =>
   editability.value?.schema ? `${editability.value.schema}.${editability.value.table}` : null
 )
+/** Columns shown but not edited in an editable result (other tables, computed). */
+const lockedCount = computed(() =>
+  editability.value?.editable ? editability.value.locked.filter(Boolean).length : 0
+)
 
 /** Source table structure (declared types, nullability) once known. */
 const structure = ref<TableStructure | null>(null)
 const columnInfo = computed<(ColumnInfo | null)[]>(() =>
-  props.columns.map((c) => {
+  props.columns.map((c, i) => {
     if (!structure.value || (c.table && c.table !== structure.value.name)) return null
+    // Another reference to the same table (self-join) or a column the statement does not tie to it.
+    if (editability.value?.editable && editability.value.locked[i]) return null
     const name = (c.sourceName ?? c.name).toLowerCase()
     return structure.value.columns.find((i) => i.name.toLowerCase() === name) ?? null
   })
@@ -135,33 +149,51 @@ const activeCell = computed(() => {
   if (!cell || !row) return null
   return { row, col: cell.col, value: row.values[cell.col] as CellValue }
 })
+/** The value panel edits the active cell, unless its column is locked. */
+const panelEditable = computed(
+  () =>
+    editable.value &&
+    !!activeCell.value &&
+    !activeCell.value.row.deleted &&
+    !isLockedCell(gridColumns.value[activeCell.value.col], activeCell.value.row)
+)
 function editFromPanel(value: CellValue): void {
   const cell = activeCell.value
-  if (cell && editable.value && !cell.row.deleted) editor.onEdit(cell.row.uid, cell.col, value)
+  if (cell && panelEditable.value) editor.onEdit(cell.row.uid, cell.col, value)
 }
 
-async function checkEditability(): Promise<void> {
-  if (!source.ok) return
+async function decideFor(
+  candidate: ResultSource
+): Promise<{ decision: Editability; loaded: TableStructure | null }> {
   try {
     const loaded = await invokeSilent(
       'db:tableStructure',
       props.connectionId,
-      schemaRef(source.source.schema, database),
-      source.source.table
+      schemaRef(candidate.schema, database),
+      candidate.table
     )
-    structure.value = loaded
-    editability.value = isPg
-      ? decideEditability(props.columns, source.source, loaded, props.rows, {
-          aliasMetadata: false
-        })
+    const decision = isPg
+      ? decideEditability(props.columns, candidate, loaded, props.rows, { aliasMetadata: false })
       : isLite
-        ? decideEditability(props.columns, source.source, loaded, props.rows, {
+        ? decideEditability(props.columns, candidate, loaded, props.rows, {
             aliasMetadata: false,
             keyFromColumns: true
           })
-        : decideEditability(props.columns, source.source, loaded, props.rows)
+        : decideEditability(props.columns, candidate, loaded, props.rows)
+    return { decision, loaded }
   } catch {
-    editability.value = decideEditability(props.columns, source.source, null)
+    return { decision: decideEditability(props.columns, candidate, null), loaded: null }
+  }
+}
+
+/** The first candidate table the rows can be edited in; otherwise why the first one cannot. */
+async function checkEditability(): Promise<void> {
+  if (!source.ok) return
+  const chosen = await firstEditable(source.candidates, decideFor)
+  structure.value = chosen?.loaded ?? null
+  editability.value = chosen?.decision ?? {
+    editable: false,
+    reason: 'no se pudo comprobar la tabla'
   }
 }
 
@@ -193,7 +225,7 @@ async function applyChanges(): Promise<boolean> {
       table: state.table,
       ...(database !== undefined ? { database } : {})
     },
-    payloadColumns(props.columns),
+    payloadColumns(props.columns, state.locked),
     state.primaryKey
   )
   if (!applied) return false
@@ -232,8 +264,10 @@ function onKeydown(event: KeyboardEvent): void {
 
 /** The one source table of the result (multi-table results have none). */
 const sourceTable = computed<string | null>(() => {
-  if (editability.value?.editable) return editability.value.table
-  if (source.ok) return source.source.table
+  const state = editability.value
+  if (source.ok && !source.source.joined) return state?.editable ? state.table : source.source.table
+  // Joined: only when every column is that table's.
+  if (state?.editable && !state.locked.some(Boolean)) return state.table
   const tables = new Set(props.columns.map((c) => c.table ?? ''))
   return tables.size === 1 && !tables.has('') ? [...tables][0] : null
 })
@@ -291,11 +325,21 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
         v-else-if="editable"
         class="nd-status-pill nd-status-pill--accent editable-result__chip"
         role="status"
-        :title="`Los cambios se aplican en ${target} por su clave primaria`"
+        :title="
+          lockedCount
+            ? `Los cambios se aplican en ${target} por su clave primaria. Las columnas atenuadas son de otra tabla o calculadas y no se editan.`
+            : `Los cambios se aplican en ${target} por su clave primaria`
+        "
         data-test="editability"
       >
         <v-icon icon="mdi-pencil-outline" size="13" aria-hidden="true" />
-        <span class="editable-result__chip-text">Editable · {{ target }}</span>
+        <span class="editable-result__chip-text"
+          >Editable · {{ target
+          }}<template v-if="lockedCount">
+            · {{ lockedCount }} {{ lockedCount === 1 ? 'columna' : 'columnas' }} de solo
+            lectura</template
+          ></span
+        >
       </span>
       <span
         v-else
@@ -366,7 +410,7 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
         ref="grid"
         v-model:selected="selected"
         v-model:active="active"
-        :columns="columns"
+        :columns="gridColumns"
         :rows="gridRows"
         :primary-key="keyColumns"
         :sort="sort"
@@ -387,10 +431,10 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
     </div>
     <CellValuePanel
       v-if="valuePref.open"
-      :column="activeCell ? (columns[activeCell.col] ?? null) : null"
+      :column="activeCell ? (gridColumns[activeCell.col] ?? null) : null"
       :info="activeCell ? columnInfo[activeCell.col] : null"
       :value="activeCell?.value ?? null"
-      :editable="editable && !!activeCell && !activeCell.row.deleted"
+      :editable="panelEditable"
       :changed="!!activeCell && isCellChanged(activeCell.row, activeCell.col)"
       view="query"
       @edit="editFromPanel"
