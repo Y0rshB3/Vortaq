@@ -222,7 +222,7 @@ const STEPS: Step[] = [
       S.workspace.openQuery(c.id, '${SCHEMA}', { sql, name: 'Pedidos por cliente' })
       await H.sleep(900)
       await H.click('[data-test="run"]', 10000)
-      await H.until(() => /Solo lectura/.test(H.$('[data-test="editability"]')?.textContent || ''), 15000)
+      await H.until(() => /Solo lectura|Editable/.test(H.$('[data-test="editability"]')?.textContent || ''), 15000)
       await H.settle(S, 1200)`
   },
   {
@@ -2173,7 +2173,7 @@ const JOIN_RESULT = `
       S.workspace.openQuery(c.id, '${SCHEMA}', { sql, name: 'Pedidos por cliente' })
       await H.sleep(900)
       await H.click('[data-test="run"]', 10000)
-      await H.until(() => /Solo lectura/.test(H.$('[data-test="editability"]')?.textContent || ''), 15000)
+      await H.until(() => /Solo lectura|Editable/.test(H.$('[data-test="editability"]')?.textContent || ''), 15000)
       await H.sleep(500)
       const at = (el, type) => {
         const r = el.getBoundingClientRect()
@@ -2314,6 +2314,60 @@ const DIAGRAM_STEPS: Step[] = [
   }
 ]
 STEPS.push(...DIAGRAM_STEPS)
+
+/**
+ * Editable JOIN results (VORTAQ_SHOTS_ONLY=53): the columns of one table are
+ * edited and the others locked, and a join that repeats rows stays read-only.
+ * The `shots_diagram` rows of scripts/seed-grid-shots.mjs.
+ */
+const RUN_JOIN = (name: string, sql: string): string => `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      await S.tree.expand(S.tree.parse('c:shot-grid-mysql'))
+      if (!S.connections.isOpen('shot-grid-mysql')) throw new Error('could not open the grid connection (run scripts/seed-grid-shots.mjs)')
+      S.workspace.openQuery('shot-grid-mysql', 'shots_diagram', { sql: ${JSON.stringify(sql)}, name: ${JSON.stringify(name)} })
+      await H.sleep(900)
+      await H.click('[data-test="run"]', 10000)
+      await H.until(() => /Editable|Solo lectura/.test(H.$('[data-test="editability"]')?.textContent || ''), 15000)
+      await H.settle(S, 700)`
+const JOIN_EDIT_STEPS: Step[] = [
+  {
+    name: '53a-join-edit-columns',
+    script: `${RUN_JOIN(
+      'Pedidos con cliente',
+      [
+        'SELECT o.*, c.name AS cliente, c.country AS pais',
+        'FROM orders o',
+        'JOIN customers c ON c.id = o.customer_id',
+        "WHERE c.country IN ('ES', 'MX')",
+        'ORDER BY o.id'
+      ].join('\n')
+    )}
+      const cell = await H.waitFor('[data-test="cell-1-5"]', 8000)
+      cell.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      const input = await H.waitFor('[data-test="cell-input"]', 8000)
+      input.value = '129.90'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await H.sleep(300)
+      H.$('[data-test="cell-3-6"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await H.settle(S, 700)`,
+    cleanup: `H.$('[data-test="discard"]')?.click()`
+  },
+  {
+    name: '53b-join-repeated-rows',
+    script: `${RUN_JOIN(
+      'Clientes con pedidos',
+      [
+        'SELECT c.*',
+        'FROM customers c',
+        'JOIN orders o ON o.customer_id = c.id',
+        'ORDER BY c.id'
+      ].join('\n')
+    )}`
+  }
+]
+STEPS.push(...JOIN_EDIT_STEPS)
 
 /**
  * Agents (MCP) (VORTAQ_SHOTS_ONLY=49): Ajustes › Agentes (MCP) with the

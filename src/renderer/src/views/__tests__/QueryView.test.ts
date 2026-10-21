@@ -391,24 +391,55 @@ describe('QueryView', () => {
       expect(call?.[4]).toEqual([{ kind: 'update', key: { id: 1 }, values: { email: 'cmd@x.io' } }])
     })
 
-    it('shows a join as read-only without asking for the table structure', async () => {
+    it('edits the columns of one table of a join and locks the others', async () => {
       const mounted = await mountEditable({
         'db:execute': () =>
           selectResult(
             [
               userColumn('ident', 'id', true),
-              { ...userColumn('total', 'total'), table: 'orders', tableAlias: 'o' }
+              userColumn('email', 'email'),
+              { ...userColumn('total', 'total'), table: 'orders', tableAlias: 'o' },
+              { name: 'n', type: 'BIGINT' }
             ],
-            [[1, 10]],
-            'SELECT u.id AS ident, o.total FROM accounts.user u JOIN orders o ON o.user_id = u.id'
+            [
+              [1, 'a@x.io', 10, 1],
+              [2, 'b@x.io', 20, 2]
+            ],
+            'SELECT u.id AS ident, u.email, o.total, ROW_NUMBER() OVER () AS n FROM accounts.user u JOIN orders o ON o.user_id = u.id'
           )
       })
       wrapper = mounted.wrapper
       expect(wrapper.get('[data-test="editability"]').text()).toBe(
-        'Solo lectura · la consulta usa varias tablas'
+        'Editable · accounts.user · 2 columnas de solo lectura'
       )
-      expect(wrapper.find('[data-test="apply"]').exists()).toBe(false)
-      expect(mounted.invoke.mock.calls.some((c) => c[0] === 'db:tableStructure')).toBe(false)
+      const structureCalls = mounted.invoke.mock.calls.filter((c) => c[0] === 'db:tableStructure')
+      expect(structureCalls.map((c) => c[3])).toEqual(['user'])
+
+      // Another table's column and a computed one are locked: no editor opens.
+      expect(wrapper.get('[data-test="lock-icon-total"]').attributes('title')).toBe(
+        'No editable: columna de otra tabla (o)'
+      )
+      expect(wrapper.find('[data-test="lock-icon-email"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="cell-0-2"]').classes()).toContain('cell-locked')
+      expect(wrapper.get('[data-test="cell-0-3"]').classes()).toContain('cell-locked')
+      await wrapper.get('[data-test="cell-0-2"]').trigger('dblclick')
+      expect(wrapper.find('[data-test="cell-input"]').exists()).toBe(false)
+      // NULL on a locked cell changes nothing.
+      await wrapper.get('[data-test="cell-0-2"]').trigger('click')
+      await wrapper.get('[data-test="set-null"]').trigger('click')
+      expect(wrapper.find('[data-test="pending"]').exists()).toBe(false)
+
+      await wrapper.get('[data-test="cell-1-1"]').trigger('dblclick')
+      await wrapper.get('[data-test="cell-input"]').setValue('join@x.io')
+      await wrapper.get('[data-test="cell-input"]').trigger('keydown', { key: 'Enter' })
+      await wrapper.get('[data-test="apply"]').trigger('click')
+      await flushPromises()
+      const call = mounted.invoke.mock.calls.find((c) => c[0] === 'db:applyRowChanges')
+      expect(call?.slice(2, 5)).toEqual([
+        'accounts',
+        'user',
+        [{ kind: 'update', key: { id: 2 }, values: { email: 'join@x.io' } }]
+      ])
     })
 
     // Regression: MySQL reports the inner alias as orgTable for a merged derived table,
@@ -431,7 +462,7 @@ describe('QueryView', () => {
     })
 
     // Regression: `SELECT i.* FROM items i JOIN orders o` repeated rows and was editable.
-    it('keeps a join that selects one table read-only', async () => {
+    it('keeps a join that repeats rows of the edited table read-only', async () => {
       const mounted = await mountEditable({
         'db:execute': () =>
           selectResult(
@@ -445,7 +476,7 @@ describe('QueryView', () => {
       })
       wrapper = mounted.wrapper
       expect(wrapper.get('[data-test="editability"]').text()).toBe(
-        'Solo lectura · la consulta usa varias tablas'
+        'Solo lectura · hay filas repetidas con la misma clave'
       )
     })
 

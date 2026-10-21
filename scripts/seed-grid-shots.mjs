@@ -3,7 +3,8 @@
  * Seeds a scratch profile and the throwaway test MySQL for the grid editor
  * screenshots (steps 51* of src/main/screenshots.ts): «Elegir de <tabla>» on a
  * foreign key and the list of an ENUM column; and the `shots_diagram` database
- * of the relationship diagram and visual query (steps 52*). Synthetic names only.
+ * of the relationship diagram and visual query (steps 52*), with a few customers and
+ * orders for the editable JOIN results (steps 53*). Synthetic names only.
  *
  *   node scripts/seed-grid-shots.mjs
  *   npm run build
@@ -124,6 +125,29 @@ await conn.query(`
   );
   CREATE TABLE audit_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, action VARCHAR(40) NOT NULL, at DATETIME NOT NULL);
 `)
+// Editable JOIN results (steps 53*): a few customers and their orders.
+const countries = ['ES', 'MX', 'ES', 'AR', 'MX', 'CO']
+await conn.query('INSERT INTO customers (name, email, country, created_at) VALUES ?', [
+  countries.map((country, i) => [names[i], persons[i][2], country, `2025-0${i + 1}-15 10:00:00`])
+])
+const orderRows = [
+  [1, 'paid', '84.50'],
+  [2, 'pending', '120.00'],
+  [1, 'shipped', '39.90'],
+  [3, 'paid', '215.75'],
+  [5, 'cancelled', '18.00'],
+  [4, 'paid', '64.20'],
+  [6, 'pending', '99.99'],
+  [2, 'paid', '45.10']
+]
+await conn.query('INSERT INTO orders (customer_id, status, created_at, total) VALUES ?', [
+  orderRows.map(([customer, status, total], i) => [
+    customer,
+    status,
+    `2026-0${(i % 9) + 1}-1${i % 9} 1${i % 9}:30:00`,
+    total
+  ])
+])
 await conn.end()
 
 rmSync(PROFILE, { recursive: true, force: true })

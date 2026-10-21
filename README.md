@@ -93,7 +93,8 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
   consultas iniciales de sesión.
 - **Explorador de objetos**: tablas, vistas, funciones, procedimientos, eventos y usuarios.
 - **Editor de consultas** con autocompletado, formateo de SQL, varias sentencias y resultados editables cuando
-  vienen de una sola tabla con clave primaria. La conexión se puede cambiar desde la propia pestaña.
+  incluyen la clave primaria de una tabla, también con `JOIN` (se editan las columnas de esa tabla). La
+  conexión se puede cambiar desde la propia pestaña.
 - **Vista de datos** con edición de celdas, `NULL`, alta y baja de filas; los cambios se aplican en una
   transacción y se deshacen todos si falla uno. Filtro visual por condiciones con paréntesis y perfiles,
   selector de fecha y hora, columnas redimensionables y panel **Texto** con el valor completo de la celda.
@@ -466,7 +467,7 @@ MySQL nada cambia.
 - **Datos**: vista de tabla con filtros (`contiene` no distingue mayúsculas, booleanos, JSON y listas),
   edición por clave primaria (las tablas sin clave primaria y las vistas materializadas son de solo lectura),
   inserciones que dejan a `serial`/identidad generar el valor (se devuelve con `RETURNING`) y resultados
-  editables de un `SELECT` de una sola tabla. Fechas, `numeric`, `bigint` y JSON se muestran tal como los
+  editables de un `SELECT` que incluye la clave primaria de una tabla, también con `JOIN`. Fechas, `numeric`, `bigint` y JSON se muestran tal como los
   devuelve el servidor, sin cambios de zona horaria.
 - **Diseñador de tablas**: tipos del servidor (también los tuyos y los de extensiones) con casilla de lista
   (`text[]`), predeterminados como expresiones SQL, identidad, columnas `serial` reconocidas, `USING` al cambiar
@@ -519,8 +520,8 @@ contraseña, SSH ni SSL.
 - **Datos**: SQLite guarda cada valor con su propio tipo (entero, real, texto, blob o NULL), así que cada celda
   lo conserva al editarla; el tooltip lo muestra. Las filas se editan por `rowid` (en tablas `WITHOUT ROWID`,
   por su clave primaria); el `rowid` y las columnas generadas no se editan. Un resultado de consulta se puede
-  editar si viene de una sola tabla e incluye su clave (`SELECT rowid, * FROM t` en tablas sin `INTEGER PRIMARY
-KEY`). El filtro «contiene» usa `LIKE`, que en SQLite no distingue mayúsculas solo en letras ASCII (`á` y `Á` sí
+  editar si incluye la clave de una tabla (`SELECT rowid, * FROM t` en tablas sin `INTEGER PRIMARY KEY`; con
+  `JOIN`, `SELECT t.rowid, t.* …`). El filtro «contiene» usa `LIKE`, que en SQLite no distingue mayúsculas solo en letras ASCII (`á` y `Á` sí
   se distinguen).
 - **Diseñador de tablas**: cuando SQLite no puede cambiar algo con `ALTER TABLE` (tipo, nulos, valor por
   defecto, claves, orden de columnas, `WITHOUT ROWID`/`STRICT`…), Vortaq **reconstruye la tabla** en una sola
@@ -802,9 +803,13 @@ En macOS se usa `Cmd`; en Windows y Linux, `Ctrl`.
 | `Shift+Alt+Cmd/Ctrl+R`          | Recarga la ventana (desarrollo)                                       |
 | `Alt+Cmd/Ctrl+I`                | Herramientas de desarrollo (desarrollo)                               |
 
-En el editor de consultas, un resultado que sale de **una sola tabla** e incluye su clave primaria completa se
-edita igual que la vista de datos. Un aviso sobre la rejilla indica `Editable · esquema.tabla` o `Solo lectura`
-con el motivo (varias tablas, columnas calculadas, vista, sin clave primaria).
+En el editor de consultas, un resultado que incluye la **clave primaria completa de una tabla** se edita igual
+que la vista de datos, también cuando la consulta une otras tablas con `JOIN` para filtrar. Se editan las
+columnas de esa tabla (`r.*`, `r.columna`); las de otras tablas y las calculadas se ven atenuadas y no cambian.
+Un aviso sobre la rejilla indica `Editable · esquema.tabla` (y cuántas columnas son de solo lectura) o
+`Solo lectura` con el motivo (subconsulta, agrupación, filas repetidas por el `JOIN`, vista, sin clave
+primaria…). En PostgreSQL y SQLite escribe las columnas de un `JOIN` con su alias (`p.*`, `p.columna`): el
+servidor no dice de qué alias viene cada una.
 
 ## Copias de seguridad y rollback a local
 

@@ -4,6 +4,7 @@ import {
   buildRowChangeBatch,
   buildRowChanges,
   commitRows,
+  isLockedCell,
   isRowChanged,
   pendingCount,
   newRow,
@@ -97,5 +98,18 @@ describe('rowEditing', () => {
     const batch = buildRowChangeBatch([...rows, added], columns, ['a'])
     expect(batch.changes.map((c) => c.kind)).toEqual(['delete', 'update', 'insert'])
     expect(batch.rowIds).toEqual([rows[1].uid, rows[0].uid, added.uid])
+  })
+
+  it('locks columns on loaded rows; a new row may still set its rowid', () => {
+    const [loaded] = rowsFromPage([[1, 'x']])
+    const added = newRow(2)
+    const rowid: QueryColumn = { name: 'rowid', type: 'INTEGER', locked: 'rowid' }
+    const other: QueryColumn = { name: 't', type: 'TEXT', locked: 'columna de otra tabla (o)' }
+    expect(isLockedCell(rowid, loaded)).toBe(true)
+    expect(isLockedCell(rowid, added)).toBe(false)
+    expect(isLockedCell(other, loaded)).toBe(true)
+    expect(isLockedCell(other, added)).toBe(true)
+    expect(isLockedCell(columns[0], loaded)).toBe(false)
+    expect(isLockedCell(undefined, loaded)).toBe(false)
   })
 })

@@ -20,6 +20,7 @@ import {
 } from '../../src/renderer/src/components/data/rowEditing'
 import {
   decideEditability,
+  firstEditable,
   payloadColumns,
   resultSource,
   type Editability
@@ -257,10 +258,14 @@ describeMysql('mysql module (integration)', ({ url, version, is57 }) => {
         const set = r.resultSet!
         const source = resultSource(set.columns, r.sql)
         if (!source.ok) return { editable: false, reason: source.reason }
-        const structure = await introspect
-          .tableStructure(s, source.source.schema, source.source.table)
-          .catch(() => null)
-        return decideEditability(set.columns, source.source, structure, set.rows)
+        // Like EditableResult: the first candidate table the rows can be edited in.
+        const chosen = await firstEditable(source.candidates, async (candidate) => {
+          const structure = await introspect
+            .tableStructure(s, candidate.schema, candidate.table)
+            .catch(() => null)
+          return { decision: decideEditability(set.columns, candidate, structure, set.rows) }
+        })
+        return chosen!.decision
       } finally {
         await s.release()
       }
@@ -380,13 +385,90 @@ describeMysql('mysql module (integration)', ({ url, version, is57 }) => {
       }
     })
 
-    it('keeps joins read-only even when only one table is selected', async () => {
+    it('edits one table of a join and locks the columns of the others', async () => {
       await expect(
         decide('SELECT i.* FROM ed_items i JOIN ed_decoy o ON o.id = i.id')
-      ).resolves.toEqual({ editable: false, reason: 'la consulta usa varias tablas' })
+      ).resolves.toMatchObject({ editable: true, table: 'ed_items', locked: [null, null] })
       await expect(
         decide('SELECT ed_items.* FROM ed_items, ed_decoy WHERE ed_decoy.id = ed_items.id')
-      ).resolves.toEqual({ editable: false, reason: 'la consulta usa varias tablas' })
+      ).resolves.toMatchObject({ editable: true, table: 'ed_items' })
+
+      const sql =
+        "SELECT i.id, i.name, o.name AS decoy, CONCAT(i.name, '!') AS shout FROM ed_items i JOIN ed_decoy o ON o.id = i.id ORDER BY i.id"
+      const decision = await decide(sql)
+      expect(decision).toMatchObject({
+        editable: true,
+        table: 'ed_items',
+        primaryKey: ['id'],
+        locked: [null, null, 'columna de otra tabla (o)', 'columna calculada']
+      })
+      if (!decision.editable) return
+      const s = await manager.acquire(connectionId, ED)
+      try {
+        const [r] = await executeScript(s, sql)
+        const rows = rowsFromPage(r.resultSet!.rows)
+        setCell(rows[0], 1, 'alpha-joined')
+        const changes = buildRowChanges(
+          rows,
+          payloadColumns(r.resultSet!.columns, decision.locked),
+          decision.primaryKey
+        )
+        expect(changes).toEqual([
+          { kind: 'update', key: { id: 1 }, values: { name: 'alpha-joined' } }
+        ])
+        await applyRowChanges(s, ED, 'ed_items', changes)
+        const [after] = await s.query<{ name: string }>('SELECT name FROM ed_items WHERE id = 1')
+        expect(after.name).toBe('alpha-joined')
+        const [decoy] = await s.query<{ name: string }>('SELECT name FROM ed_decoy WHERE id = 1')
+        expect(decoy.name).toBe('decoy1')
+      } finally {
+        await s.release()
+      }
+    })
+
+    it('tells the sides of a self-join apart and edits the table of a view join', async () => {
+      await expect(
+        decide(
+          'SELECT a.id, a.label, b.label AS other FROM ed_pairs a JOIN ed_pairs b ON b.id = a.ref'
+        )
+      ).resolves.toMatchObject({
+        editable: true,
+        table: 'ed_pairs',
+        locked: [null, null, 'columna de otra tabla (b)']
+      })
+      // The view swaps id and ref: its columns are never taken for the table's.
+      await expect(
+        decide('SELECT p.*, v.id AS swapped FROM ed_pairs p JOIN ed_v_pairs v ON v.label = p.label')
+      ).resolves.toMatchObject({
+        editable: true,
+        table: 'ed_pairs',
+        locked: [null, null, null, 'columna de otra tabla (v)']
+      })
+      await expect(
+        decide('SELECT v.* FROM ed_pairs p JOIN ed_v_pairs v ON v.label = p.label')
+      ).resolves.toMatchObject({ editable: false, reason: 'el origen es una vista' })
+    })
+
+    it('keeps joins that repeat a row or find none read-only', async () => {
+      await expect(
+        decide('SELECT i.* FROM ed_items i JOIN ed_decoy o ON o.id <= i.id')
+      ).resolves.toMatchObject({
+        editable: false,
+        reason: 'hay filas repetidas con la misma clave'
+      })
+      await expect(
+        decide(
+          'SELECT o.id, o.name, i.name AS item FROM ed_items i LEFT JOIN ed_decoy o ON o.id = i.id'
+        )
+      ).resolves.toMatchObject({
+        editable: false,
+        table: 'ed_decoy',
+        reason: 'hay filas sin clave (el JOIN no encontró su fila)'
+      })
+      // Derived tables stay out, joined or not.
+      await expect(
+        decide('SELECT i.* FROM ed_items i JOIN (SELECT id FROM ed_decoy) d ON d.id = i.id')
+      ).resolves.toEqual({ editable: false, reason: 'la consulta lee de una subconsulta' })
     })
 
     it('says a view is a view, whatever its algorithm or columns', async () => {

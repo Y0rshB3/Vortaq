@@ -3,7 +3,6 @@ import {
   REASON_CTE,
   REASON_DERIVED,
   REASON_GROUPED,
-  REASON_MULTI,
   REASON_NO_TABLE,
   REASON_NOT_SIMPLE,
   REASON_SUBQUERY,
@@ -45,9 +44,9 @@ describe('sqliteSingleTableSelect', () => {
     ['SELECT DISTINCT a FROM t', REASON_GROUPED],
     ['SELECT a FROM t GROUP BY a', REASON_GROUPED],
     ['SELECT a FROM t WHERE b HAVING 1', REASON_GROUPED],
-    ['SELECT * FROM a, b', REASON_MULTI],
-    ['SELECT * FROM a JOIN b ON a.id = b.id', REASON_MULTI],
-    ['SELECT * FROM a LEFT JOIN b USING (id)', REASON_MULTI],
+    ['SELECT count(*) FROM t', REASON_GROUPED],
+    ['SELECT a.* FROM a JOIN (SELECT * FROM t) b ON b.id = a.id', REASON_DERIVED],
+    ['SELECT a.* FROM a JOIN json_each(a.j) j', REASON_NOT_SIMPLE],
     ['SELECT * FROM (SELECT * FROM t)', REASON_DERIVED],
     ['SELECT (SELECT 1) AS x, * FROM t', REASON_SUBQUERY],
     ['SELECT a FROM t UNION SELECT a FROM u', REASON_UNION],
@@ -57,6 +56,33 @@ describe('sqliteSingleTableSelect', () => {
     ['SELECT * FROM t WHERE (a = 1', REASON_UNPARSED]
   ])('refuses %s', (sql, reason) => {
     expect(sqliteSingleTableSelect(sql)).toEqual({ ok: false, reason })
+  })
+
+  it('reads joined tables and the select list', () => {
+    expect(sqliteSingleTableSelect('SELECT a.rowid, a.*, b.x AS bx FROM a, [b] b')).toEqual({
+      ok: true,
+      ref: { schema: null, table: 'a', alias: null },
+      joined: {
+        tables: [
+          { schema: null, table: 'a', alias: null },
+          { schema: null, table: 'b', alias: 'b' }
+        ],
+        items: [
+          { kind: 'column', qualifier: ['a'], name: 'rowid' },
+          { kind: 'star', qualifier: ['a'] },
+          { kind: 'column', qualifier: ['b'], name: 'x' }
+        ]
+      }
+    })
+    expect(
+      sqliteSingleTableSelect('SELECT * FROM a LEFT JOIN aux.b USING (id) WHERE a.x = 1')
+    ).toMatchObject({
+      ok: true,
+      joined: {
+        tables: [{ table: 'a' }, { schema: 'aux', table: 'b' }],
+        items: [{ kind: 'star', qualifier: null }]
+      }
+    })
   })
 
   it('keeps REASON_DERIVED for a parenthesised source without SELECT', () => {

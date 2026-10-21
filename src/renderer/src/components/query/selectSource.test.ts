@@ -3,7 +3,6 @@ import {
   REASON_CTE,
   REASON_DERIVED,
   REASON_GROUPED,
-  REASON_MULTI,
   REASON_NO_TABLE,
   REASON_NOT_SIMPLE,
   REASON_SUBQUERY,
@@ -79,17 +78,86 @@ describe('singleTableSelect', () => {
     })
   })
 
-  it('rejects joins and comma joins, even when only one table is selected', () => {
-    expect(ref('SELECT i.* FROM items i JOIN orders o ON o.item_id = i.id')).toEqual({
-      ok: false,
-      reason: REASON_MULTI
+  it('reads joined plain tables and the select list', () => {
+    expect(
+      ref(
+        'SELECT r.*, d.name AS division, NOW() FROM tournament.registration r JOIN tournament.division d ON r.divisionID = d.id ' +
+          "JOIN tournament.tournament t ON d.tournamentID = t.id WHERE t.organizationID = 'x' AND r.waitlist = 1"
+      )
+    ).toEqual({
+      ok: true,
+      ref: { schema: 'tournament', table: 'registration', alias: 'r' },
+      joined: {
+        tables: [
+          { schema: 'tournament', table: 'registration', alias: 'r' },
+          { schema: 'tournament', table: 'division', alias: 'd' },
+          { schema: 'tournament', table: 'tournament', alias: 't' }
+        ],
+        items: [
+          { kind: 'star', qualifier: ['r'] },
+          { kind: 'column', qualifier: ['d'], name: 'name' },
+          { kind: 'expression' }
+        ]
+      }
     })
-    expect(ref('SELECT items.* FROM items, orders WHERE orders.item_id = items.id')).toEqual({
+  })
+
+  it('reads every join form, conditions included', () => {
+    const tables = (sql: string) => {
+      const parsed = ref(sql)
+      return parsed.ok ? parsed.joined?.tables.map((t) => t.alias ?? t.table) : parsed.reason
+    }
+    expect(tables('SELECT items.* FROM items, orders WHERE orders.item_id = items.id')).toEqual([
+      'items',
+      'orders'
+    ])
+    expect(tables('SELECT * FROM items STRAIGHT_JOIN orders')).toEqual(['items', 'orders'])
+    expect(tables('SELECT * FROM items NATURAL LEFT OUTER JOIN orders')).toEqual([
+      'items',
+      'orders'
+    ])
+    expect(
+      tables(
+        'SELECT i.* FROM items i USE INDEX (PRIMARY) CROSS JOIN `my db`.orders AS o FORCE INDEX (k) ' +
+          'INNER JOIN c USING (id) RIGHT JOIN d ON LEFT(d.code, 2) = RIGHT(c.code, 2) AND d.id IN (SELECT id FROM e) LIMIT 5'
+      )
+    ).toEqual(['i', 'o', 'c', 'd'])
+    expect(tables('SELECT DISTINCT SQL_NO_CACHE i.id FROM items i JOIN o ON o.i = i.id')).toEqual([
+      'i',
+      'o'
+    ])
+  })
+
+  it('refuses joins of anything but plain tables', () => {
+    expect(ref('SELECT i.* FROM items i JOIN (SELECT * FROM orders) o ON o.id = i.id')).toEqual({
       ok: false,
-      reason: REASON_MULTI
+      reason: REASON_DERIVED
     })
-    expect(ref('SELECT * FROM items STRAIGHT_JOIN orders')).toMatchObject({ reason: REASON_MULTI })
-    expect(ref('SELECT * FROM items NATURAL JOIN orders')).toMatchObject({ reason: REASON_MULTI })
+    expect(ref('SELECT i.* FROM items i JOIN LATERAL (SELECT 1) x ON TRUE')).toMatchObject({
+      reason: REASON_DERIVED
+    })
+    expect(
+      ref("SELECT i.* FROM items i, JSON_TABLE(i.j, '$[*]' COLUMNS (a INT PATH '$')) j")
+    ).toMatchObject({
+      reason: REASON_DERIVED
+    })
+    expect(ref('SELECT i.* FROM items i JOIN orders o ON o.i = i.id GROUP BY i.id')).toMatchObject({
+      reason: REASON_GROUPED
+    })
+    expect(ref('SELECT i.* FROM items i JOIN orders o ON (o.i = i.id')).toMatchObject({
+      reason: REASON_UNPARSED
+    })
+  })
+
+  it('refuses aggregates, which fold rows even without GROUP BY', () => {
+    expect(ref('SELECT id, COUNT(*) FROM items')).toEqual({ ok: false, reason: REASON_GROUPED })
+    expect(ref('SELECT i.*, MAX(o.total) FROM items i JOIN orders o')).toMatchObject({
+      reason: REASON_GROUPED
+    })
+    // A window function keeps every row.
+    expect(ref('SELECT id, COUNT(*) OVER (PARTITION BY kind) AS n FROM items')).toMatchObject({
+      ok: true
+    })
   })
 
   it('rejects subqueries in the select list', () => {

@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { CellValue, ColumnInfo, ForeignKeyInfo, QueryColumn, SchemaRef } from '@shared/types'
 import { api, invokeSilent } from '@renderer/api'
 import CellValuePanel from '@renderer/components/data/CellValuePanel.vue'
-import { isCellChanged } from '@renderer/components/data/rowEditing'
+import { isCellChanged, isLockedCell } from '@renderer/components/data/rowEditing'
 import { useValuePanelPref } from '@renderer/components/data/useValuePanelPref'
 import EmptyState from '@renderer/components/common/EmptyState.vue'
 import ApplyErrorBanner from '@renderer/components/data/ApplyErrorBanner.vue'
@@ -531,7 +531,12 @@ defineExpose({ rows, applyChanges, load })
         :column="activeCell ? (columns[activeCell.col] ?? null) : null"
         :info="activeCell ? columnInfo[activeCell.col] : null"
         :value="activeCell?.value ?? null"
-        :editable="!!activeCell && !activeCell.row.deleted && !readOnlyNotice"
+        :editable="
+          !!activeCell &&
+          !activeCell.row.deleted &&
+          !readOnlyNotice &&
+          !isLockedCell(columns[activeCell.col], activeCell.row)
+        "
         :changed="!!activeCell && isCellChanged(activeCell.row, activeCell.col)"
         view="table"
         @edit="editFromPanel"

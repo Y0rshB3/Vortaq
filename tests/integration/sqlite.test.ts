@@ -22,6 +22,7 @@ import { inProcessSpawner, type ProcessSpawner } from '@main/sqlite/spawner'
 import { CANCELLED_MESSAGE, OTHER_TAB_TRANSACTION } from '@main/sqlite/errors'
 import {
   decideEditability,
+  firstEditable,
   resultSource
 } from '../../src/renderer/src/components/query/resultEditability'
 import { childProcessSpawner } from './sqliteWorkerProcess'
@@ -299,6 +300,52 @@ describe('SQLite driver (integration, real files)', () => {
           ).editable
         : false
     ).toBe(false)
+  })
+
+  it('edits one table of a join, even next to a view that reports the same table', async () => {
+    const decide = async (sql: string) => {
+      const [r] = ok(await exec(sql))
+      const set = r.resultSet!
+      const source = resultSource(set.columns, r.sql, 'sqlite')
+      if (!source.ok) return { editable: false as const, reason: source.reason }
+      // Like EditableResult: the first candidate table the rows can be edited in.
+      const chosen = await firstEditable(source.candidates, async (candidate) => ({
+        decision: decideEditability(
+          set.columns,
+          candidate,
+          await lite.tableStructure(id, candidate.schema, candidate.table),
+          set.rows,
+          { aliasMetadata: false, keyFromColumns: true }
+        )
+      }))
+      return chosen!.decision
+    }
+    expect(
+      await decide(
+        'SELECT b.rowid, b.*, a.name AS author FROM book b JOIN author a ON a.id = b.author_id'
+      )
+    ).toMatchObject({
+      editable: true,
+      table: 'book',
+      primaryKey: ['rowid'],
+      locked: [null, null, null, null, null, null, 'columna de otra tabla (author)']
+    })
+    // book needs its rowid, but none of its columns is edited here.
+    expect(
+      await decide('SELECT a.id, a.name, b.title FROM author a JOIN book b ON b.author_id = a.id')
+    ).toMatchObject({
+      editable: true,
+      table: 'author',
+      locked: [null, null, 'columna de otra tabla (book)']
+    })
+    // SQLite reports v_books.name as author.name: only the select list tells them apart.
+    expect(
+      await decide('SELECT a.id, v.name AS via FROM author a JOIN v_books v ON v.name = a.name')
+    ).toMatchObject({
+      editable: true,
+      table: 'author',
+      locked: [null, 'columna de otra tabla (v)']
+    })
   })
 
   it('saves grid changes by rowid, keeping storage classes, in one transaction', async () => {
