@@ -9,7 +9,7 @@
 import { randomBytes } from 'node:crypto'
 import * as vscode from 'vscode'
 
-export type WebviewName = 'connection' | 'results'
+export type WebviewName = 'connection' | 'results' | 'schema'
 
 export const newNonce = (): string => randomBytes(18).toString('base64')
 

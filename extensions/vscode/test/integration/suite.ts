@@ -814,6 +814,83 @@ test('runs a query on a SQLite file (or says why SQLite is unavailable)', async 
   await api.runner.closeSession(editor.document.uri.toString())
 })
 
+test('«Diagrama» and «Consulta gráfica» read structure; «Ejecutar» runs the SELECT in a document', async () => {
+  if (api.sqliteProblem) return
+  const file = join(scratch, `it-diagram-${process.pid}.db`)
+  await api.core.invoke('sqlite:createFile', file)
+  const id = await saveConnection(
+    input({
+      name: `IT diagrama ${process.pid}`,
+      engine: 'sqlite',
+      authMode: 'none',
+      sqlite: {
+        filePath: file,
+        readOnly: false,
+        foreignKeys: true,
+        attached: [],
+        busyTimeoutMs: 5000
+      }
+    })
+  )
+  const setup = await sqlDocument(
+    'diagram',
+    `CREATE TABLE cliente (id INTEGER PRIMARY KEY, nombre TEXT);\nCREATE TABLE pedido (id INTEGER PRIMARY KEY, cliente_id INTEGER REFERENCES cliente (id));\nINSERT INTO cliente VALUES (1, 'Ana');\nINSERT INTO pedido VALUES (10, 1);\n`,
+    { connectionId: id, database: 'main' }
+  )
+  assert.equal((await runAndWait(setup, 'vortaq.runAll')).state.notice, null)
+  await api.runner.closeSession(setup.document.uri.toString())
+
+  const node = { kind: 'database' as const, connectionId: id, database: 'main' }
+  await vscode.commands.executeCommand('vortaq.diagram', node)
+  const diagram = await waitFor(
+    'diagram panel',
+    () => api.schemaViews.forConnection(id).find((p) => p.state.kind === 'diagram') ?? null
+  )
+  const tables = await webviewInvoke(diagram, 'db:tables', [id, 'main'])
+  assert.deepEqual((tables.value as { name: string }[]).map((t) => t.name).sort(), [
+    'cliente',
+    'pedido'
+  ])
+  const pedido = await webviewInvoke(diagram, 'db:tableStructure', [id, 'main', 'pedido'])
+  assert.equal(
+    (pedido.value as { foreignKeys: { referencedTable: string }[] }).foreignKeys[0]
+      ?.referencedTable,
+    'cliente'
+  )
+  assert.equal((await webviewInvoke(diagram, 'db:tables', [id, 'temp'])).ok, false)
+  assert.equal(
+    (
+      await webviewInvoke(diagram, 'db:tableData', [
+        id,
+        { schema: 'main', table: 'pedido', limit: 1, offset: 0 }
+      ])
+    ).ok,
+    false
+  )
+
+  await vscode.commands.executeCommand('vortaq.queryBuilder', node)
+  const builder = await waitFor(
+    'visual query panel',
+    () => api.schemaViews.forConnection(id).find((p) => p.state.kind === 'queryBuilder') ?? null
+  )
+  await builder.receive({
+    type: 'openSql',
+    sql: 'SELECT p.id, c.nombre\nFROM pedido AS p\n  INNER JOIN cliente AS c ON c.id = p.cliente_id;\n',
+    run: true
+  })
+  const editor = vscode.window.activeTextEditor
+  assert.ok(editor && editor.document.getText().startsWith('SELECT p.id, c.nombre'))
+  assert.equal(api.targets.get(editor.document.uri.toString())?.database, 'main')
+  const results = await waitFor('results of the visual query', () => {
+    const p = api.results.get(`doc:${editor.document.uri.toString()}`)
+    return p && !p.state.running && p.state.results.length ? p : null
+  })
+  assert.deepEqual(results.state.results[0].resultSet?.rows, [[10, 'Ana']])
+  await api.runner.closeSession(editor.document.uri.toString())
+  diagram.dispose()
+  builder.dispose()
+})
+
 /* ---------- runner ---------- */
 
 export async function run(): Promise<void> {

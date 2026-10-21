@@ -2,7 +2,7 @@
   "name": "vortaq",
   "displayName": "Vortaq",
   "description": "Cliente de bases de datos para VS Code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "y0rshb3",
   "license": "MIT",
   "author": "Y0rshB3",
@@ -129,6 +129,18 @@
         "icon": "$(json)"
       },
       {
+        "command": "vortaq.diagram",
+        "title": "Diagrama de relaciones",
+        "category": "Vortaq",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "vortaq.queryBuilder",
+        "title": "Consulta gráfica",
+        "category": "Vortaq",
+        "icon": "$(symbol-structure)"
+      },
+      {
         "command": "vortaq.copyName",
         "title": "Copiar nombre",
         "category": "Vortaq"
@@ -240,6 +252,16 @@
           "group": "2_query@2"
         },
         {
+          "command": "vortaq.diagram",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(database|schema)\\.sql$/",
+          "group": "2_query@3"
+        },
+        {
+          "command": "vortaq.queryBuilder",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(database|schema)\\.sql$/",
+          "group": "2_query@4"
+        },
+        {
           "command": "vortaq.copyName",
           "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection|database|schema|table|view|collection)/",
           "group": "3_copy@1"
@@ -292,6 +314,14 @@
         },
         {
           "command": "vortaq.viewDocuments",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.diagram",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.queryBuilder",
           "when": "false"
         },
         {

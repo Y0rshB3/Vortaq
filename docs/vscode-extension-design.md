@@ -13,6 +13,7 @@ Phases:
 | 1     | Done. Core usable without Electron, desktop behaviour unchanged.                                                         |
 | 2     | Done (`extensions/vscode`, 0.1.0): connections tree, `.sql` documents, editable results, production guard, editor theme. |
 | 2.1   | Done (0.2.0): selection, «Copiar como» and «Exportar» in the results panel (section 9.9).                                |
+| 2.2   | Done (0.3.0): relationship diagram and visual query panels; foreign key picker and ENUM list in results (9.10).          |
 | 3     | Table designer, `.vqb` backups/restore, MongoDB documents, structure-only schema for the editor's AI.                    |
 | 4     | Publish to the Visual Studio Marketplace and Open VSX.                                                                   |
 
@@ -575,6 +576,28 @@ notifications, «Ver datos», with a fake webview panel), `ResultsApp.web.test.t
 notice filter), `src/core/host.test.ts` and `tests/integration/coreNode.test.ts` (export through
 `createCore` and the bundled core in plain Node: SQLite CSV/XLSX and cancel, MySQL 8.4, PostgreSQL
 17), and the VS Code suite (MySQL on production without a prompt, «Ver datos», SQLite).
+
+### 9.10 Relationship diagram and visual query (0.3.0)
+
+The desktop views were split into host-neutral components, `RelationshipDiagram.vue` and
+`QueryBuilder.vue` (desktop tabs: thin wrappers in `views/DiagramView.vue` and
+`views/QueryBuilderView.vue`). The extension mounts them in one webview, `schema`
+(`webview/schema/SchemaApp.vue`), opened by `vortaq.diagram` / `vortaq.queryBuilder` on a database
+node (MySQL, MariaDB, SQLite; PostgreSQL databases use `public`) or a PostgreSQL schema node, never
+MongoDB. `host/panels/schemaViews.ts` allows only `db:tables` and `db:tableStructure`, for the
+panel's own connection **and** `SchemaRef` (`schemaScope`); `app:saveImage` is a host adapter: the
+image is checked by `src/main/imageExport.ts` (PNG signature, SVG root, 40 MB) and written where
+VS Code's save dialog says. The webview posts two new messages (`protocol.ts`): `openData` («Ver
+datos» of a table of that namespace) and `openSql` (a new untitled SQL document targeted at the
+same connection/database/schema, run with `SqlRunner.run(editor, true)` when `run`, so the runner's
+guards apply). One diagram panel per namespace; every visual query is a new panel. The results
+panel also gained `db:tableData` (structured search only, `tableDataProblem`) for the foreign key
+picker of `EditableResult`.
+
+Tests: `schemaViews.test.ts` (scope, save dialog, messages), `bridge.test.ts` (message parsing),
+`SchemaApp.web.test.ts` (both apps in jsdom with a fake host) and the VS Code suite (SQLite: the
+diagram's reads, a refused other namespace and `db:tableData`, and «Ejecutar» running the SELECT in
+a document). Screenshots: `diagram-*` and `query-builder-*` in the three themes.
 
 ## 10. Left for phase 3 (and later)
 

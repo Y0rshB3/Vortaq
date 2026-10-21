@@ -20,7 +20,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.2.0/vortaq-0.2.0.vsix) ·
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.3.0/vortaq-0.3.0.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -1470,7 +1470,7 @@ MongoDB. Su código está en [`extensions/vscode`](extensions/vscode) y tiene su
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.2.0):
+Qué hace (versión 0.3.0):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1486,6 +1486,11 @@ Qué hace (versión 0.2.0):
   filas cargadas o del **resultado completo** (otra vez en una sesión de solo lectura, sin límite de filas; en «Ver
   datos», toda la tabla). El archivo se elige con el diálogo de guardar del editor, el progreso aparece en el panel
   y en una notificación con **Cancelar**, y al terminar puedes **Abrir** el archivo o **Mostrarlo en la carpeta**.
+- **Claves foráneas y ENUM** en los resultados editables, como en escritorio
+  ([Listas de ENUM y valores de claves foráneas](#listas-de-enum-y-valores-de-claves-foráneas)).
+- **Diagrama de relaciones y consulta gráfica** desde el botón derecho de una base de datos o de un esquema
+  ([Diagrama de relaciones y consulta gráfica](#diagrama-de-relaciones-y-consulta-gráfica)): **Abrir en
+  consulta** y **Ejecutar** llevan el SQL a un documento nuevo con la misma conexión.
 - **Ver datos** de tablas y vistas y **Ver documentos** de MongoDB (de solo lectura en esta versión).
 - **Producción**: cualquier escritura pide escribir el nombre de la conexión, igual que en escritorio.
 - Los paneles siguen el **tema del editor** (claro, oscuro y alto contraste).
@@ -1502,8 +1507,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`**:
   1. Descarga
-     [**`vortaq-0.2.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.2.0/vortaq-0.2.0.vsix)
-     (versión [`vscode-v0.2.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.2.0), con su
+     [**`vortaq-0.3.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.3.0/vortaq-0.3.0.vsix)
+     (versión [`vscode-v0.3.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.3.0), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1511,17 +1516,17 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.2.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.2.0.vsix     # Cursor
-  codium --install-extension vortaq-0.2.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.2.0.vsix   # Windsurf
+  code --install-extension vortaq-0.3.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.3.0.vsix     # Cursor
+  codium --install-extension vortaq-0.3.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.3.0.vsix   # Windsurf
   ```
 
 - **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
   buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.2.0.vsix`.
+`extensions/vscode/vortaq-0.3.0.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

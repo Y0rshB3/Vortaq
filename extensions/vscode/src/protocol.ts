@@ -35,6 +35,10 @@ export type WebviewMessage =
   | { type: 'stop' }
   /** The results webview holds unapplied row edits (or no longer does). */
   | { type: 'dirty'; dirty: boolean }
+  /** Diagram: «Abrir datos» of one of its tables (the host opens «Ver datos»). */
+  | { type: 'openData'; table: string }
+  /** Visual query: open its SELECT in a new SQL document (and run it there when `run`). */
+  | { type: 'openSql'; sql: string; run: boolean }
 
 export type HostMessage<State = unknown> =
   | { type: 'init'; state: State }
@@ -48,6 +52,8 @@ export type HostMessage<State = unknown> =
 export const MAX_INVOKE_ARGS = 8
 /** Longest text copied to the clipboard in one message (50 MB of UTF-16). */
 export const MAX_CLIPBOARD_CHARS = 25_000_000
+/** Longest SELECT the visual query may hand to a SQL document. */
+export const MAX_SQL_CHARS = 200_000
 const MAX_TEXT = 20_000
 const NOTIFY_LEVELS: readonly NotifyLevel[] = ['success', 'info', 'warning', 'error']
 
@@ -110,6 +116,12 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
     }
     case 'dirty':
       return typeof raw.dirty === 'boolean' ? { type: 'dirty', dirty: raw.dirty } : null
+    case 'openData':
+      return shortText(raw.table, 1000) && raw.table ? { type: 'openData', table: raw.table } : null
+    case 'openSql':
+      if (!shortText(raw.sql, MAX_SQL_CHARS) || !raw.sql.trim() || typeof raw.run !== 'boolean')
+        return null
+      return { type: 'openSql', sql: raw.sql, run: raw.run }
     case 'notify':
       if (!NOTIFY_LEVELS.includes(raw.level as NotifyLevel) || !shortText(raw.message)) return null
       return { type: 'notify', level: raw.level as NotifyLevel, message: raw.message }

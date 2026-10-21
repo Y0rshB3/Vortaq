@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MAX_INVOKE_ARGS, parseWebviewMessage } from '../../protocol'
+import { MAX_INVOKE_ARGS, MAX_SQL_CHARS, parseWebviewMessage } from '../../protocol'
 import { confirmDetail, handleWebviewMessage, NOT_ALLOWED, type BridgeOptions } from './bridge'
 
 function options(overrides: Partial<BridgeOptions> = {}) {
@@ -42,6 +42,27 @@ describe('webview messages', () => {
       { type: 'notify', level: 'debug', message: 'x' },
       { type: 'confirm', id: 1, request: { title: 'T' } },
       { type: 'clipboard', text: 42 }
+    ])
+      expect(parseWebviewMessage(bad)).toBeNull()
+  })
+
+  it('accepts the diagram and visual query actions only when well formed', () => {
+    expect(parseWebviewMessage({ type: 'openData', table: 'orders', extra: 1 })).toEqual({
+      type: 'openData',
+      table: 'orders'
+    })
+    expect(parseWebviewMessage({ type: 'openSql', sql: 'SELECT 1;', run: true })).toEqual({
+      type: 'openSql',
+      sql: 'SELECT 1;',
+      run: true
+    })
+    for (const bad of [
+      { type: 'openData', table: '' },
+      { type: 'openData', table: 'x'.repeat(1001) },
+      { type: 'openData' },
+      { type: 'openSql', sql: '   ', run: false },
+      { type: 'openSql', sql: 'SELECT 1', run: 'yes' },
+      { type: 'openSql', sql: 'x'.repeat(MAX_SQL_CHARS + 1), run: false }
     ])
       expect(parseWebviewMessage(bad)).toBeNull()
   })

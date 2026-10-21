@@ -1,7 +1,8 @@
 /**
  * Screenshots of the extension in a real VS Code (dark, light and high-contrast themes): the
  * results panel with an editable result, the grid menu with «Copiar como», the «Exportar»
- * dialog, the production confirmation, the connection form and MongoDB documents. Runs test/integration/shots.ts in the extension host (like
+ * dialog, the production confirmation, the connection form, the relationship diagram, the visual
+ * query and MongoDB documents. Runs test/integration/shots.ts in the extension host (like
  * `npm run ext:test`, same servers and cache folder) and captures the window through the
  * DevTools protocol (--remote-debugging-port), so no screen-recording permission is needed.
  *

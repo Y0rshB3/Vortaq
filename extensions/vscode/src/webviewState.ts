@@ -74,3 +74,16 @@ export interface ResultsState {
   /** «Detener» is offered while running. */
   canStop: boolean
 }
+
+/** «Diagrama de relaciones» and «Consulta gráfica» of one database or schema. */
+export interface SchemaViewState {
+  kind: 'diagram' | 'queryBuilder'
+  title: string
+  connection: ConnectionConfig
+  /** Where the tables are read: MySQL database, PostgreSQL `{ database, schema }`, SQLite alias. */
+  ref: SchemaRef
+  /** Database (MySQL, SQLite) or schema (PostgreSQL) name. */
+  namespace: string
+  platform: string
+  settings: WebviewSettings
+}
