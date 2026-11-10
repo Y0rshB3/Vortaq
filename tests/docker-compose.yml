@@ -19,6 +19,8 @@
 # The replica set needs one `rs.initiate` after its first start (idempotent):
 #   docker compose -f tests/docker-compose.yml exec mongo82rs mongosh --port 57018 --quiet \
 #     --eval 'try { rs.status() } catch (e) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "127.0.0.1:57018" }] }) }'
+# SQL Server 2022 (51433, amd64 only: emulated on Apple Silicon) since 2.6.0:
+#   docker compose -f tests/docker-compose.yml up -d --wait mssql22
 # (The stand-alone containers vortaq-test-mongo / vortaq-test-mongo-rs started with `docker run`
 # use the same ports; run either those or these services.)
 name: electrondb-test
@@ -142,3 +144,27 @@ services:
       timeout: 5s
       retries: 60
       start_period: 5s
+
+  # VORTAQ_TEST_MSSQL_URL=mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test
+  # SQL Server 2022 (16.0.4305.5, pinned by digest) is amd64-only: on Apple Silicon it runs
+  # emulated. The sa password must meet SQL Server's complexity rules, hence Navidog_2026; the
+  # tests create navidog_test themselves. Its TLS certificate is self-signed (trust it in tests).
+  mssql22:
+    image: mcr.microsoft.com/mssql/server:2022-latest@sha256:cf8f0ab2ebe61feec2eed2629061a07d247f791c2a8ddda74a4ac9f06a291718
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: 'Y'
+      MSSQL_SA_PASSWORD: Navidog_2026
+      MSSQL_PID: Developer
+    ports:
+      - '127.0.0.1:51433:1433'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/mssql-tools18/bin/sqlcmd -C -S 127.0.0.1 -U sa -P Navidog_2026 -Q "SELECT 1" -b -o /dev/null'
+        ]
+      interval: 3s
+      timeout: 10s
+      retries: 100
+      start_period: 20s

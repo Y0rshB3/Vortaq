@@ -140,9 +140,13 @@ function literal(value: string, numeric: boolean, d: SqlDialect): string {
   return numeric && NUMBER.test(v) ? v : d.quoteString(value)
 }
 
-/** LIKE pattern with `\`, `%` and `_` escaped, plus its explicit ESCAPE clause. */
+/**
+ * LIKE pattern with `\`, `%` and `_` escaped (and `[`, a wildcard class in SQL
+ * Server), plus its explicit ESCAPE clause.
+ */
 function like(value: string, op: 'contains' | 'beginsWith' | 'endsWith', d: SqlDialect): string {
-  const escaped = value.replace(/[\\%_]/g, (c) => `\\${c}`)
+  const special = d.id === 'sqlserver' ? /[\\%_[]/g : /[\\%_]/g
+  const escaped = value.replace(special, (c) => `\\${c}`)
   const pattern =
     op === 'contains' ? `%${escaped}%` : op === 'beginsWith' ? `${escaped}%` : `%${escaped}`
   return `LIKE ${d.quoteString(pattern)} ESCAPE ${d.quoteString('\\')}`
@@ -232,12 +236,14 @@ export function buildQuery(spec: BuilderSpec, d: SqlDialect): BuiltQuery {
     : []
   const order = columns.filter((c) => c.sort).map((c) => `${expr(c)} ${c.sort}`)
 
-  const lines = [`SELECT${spec.distinct ? ' DISTINCT' : ''}`, select.join(',\n'), ...from]
+  const limited = spec.limit !== null && Number.isInteger(spec.limit) && spec.limit > 0
+  // SQL Server has no LIMIT: TOP (n) goes right after SELECT [DISTINCT].
+  const top = limited && d.id === 'sqlserver' ? ` TOP (${spec.limit})` : ''
+  const lines = [`SELECT${spec.distinct ? ' DISTINCT' : ''}${top}`, select.join(',\n'), ...from]
   if (where.length) lines.push(`WHERE ${where.join('\n  AND ')}`)
   if (groupBy.length) lines.push(`GROUP BY ${groupBy.join(', ')}`)
   if (having.length) lines.push(`HAVING ${having.join('\n  AND ')}`)
   if (order.length) lines.push(`ORDER BY ${order.join(', ')}`)
-  if (spec.limit !== null && Number.isInteger(spec.limit) && spec.limit > 0)
-    lines.push(`LIMIT ${spec.limit}`)
+  if (limited && d.id !== 'sqlserver') lines.push(`LIMIT ${spec.limit}`)
   return { sql: lines.join('\n'), warnings }
 }

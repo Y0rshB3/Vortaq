@@ -9,6 +9,7 @@
  *   documents of a MongoDB collection, read-only in this version).
  * Every write goes through the WriteGuard first.
  */
+import { defaultSchemaOf, selectFirstRows, usesSchemaRef } from '@core'
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
 import type {
@@ -37,7 +38,7 @@ interface Running {
 }
 
 const hasTabSession = (c: Pick<ConnectionConfig, 'engine'>): boolean =>
-  c.engine === 'postgresql' || c.engine === 'sqlite'
+  c.engine === 'postgresql' || c.engine === 'sqlite' || c.engine === 'sqlserver'
 
 /**
  * Where a document's statements run, so «Exportar › Resultado completo» reads
@@ -48,7 +49,7 @@ export function runContext(
   connection: Pick<ConnectionConfig, 'engine'>,
   target: Pick<DocumentTarget, 'database' | 'schema'>
 ): SchemaRef | null {
-  if (connection.engine === 'postgresql')
+  if (usesSchemaRef(connection.engine))
     return { database: target.database ?? '', schema: target.schema ?? '' }
   if (connection.engine === 'sqlite') return null
   return target.database
@@ -192,7 +193,7 @@ export class SqlRunner implements vscode.Disposable {
       maxRows: this.settings().maxRows,
       ...(decision.confirmProduction ? { confirmProduction: true } : {})
     }
-    if (connection.engine === 'postgresql') {
+    if (usesSchemaRef(connection.engine)) {
       options.schema = { database: target.database ?? '', schema: target.schema ?? '' }
     } else if (target.database !== null) options.schema = target.database
     if (executionId) {
@@ -300,8 +301,10 @@ export class SqlRunner implements vscode.Disposable {
     if (!(await this.connections.open(connection.id))) return null
     const dialect = sqlDialectOf(connection)
     const limit = this.settings().maxRows
-    const namespace = connection.engine === 'postgresql' ? (node.schema ?? 'public') : node.database
-    const sql = `SELECT * FROM ${dialect.qualified(namespace, node.name)} LIMIT ${limit}`
+    const namespace = usesSchemaRef(connection.engine)
+      ? (node.schema ?? defaultSchemaOf(connection.engine))
+      : node.database
+    const sql = selectFirstRows(dialect, dialect.qualified(namespace, node.name), limit)
     const where = [node.database, node.schema].filter(Boolean).join('.')
     const key = `data:${connection.id}:${where}:${node.name}`
     if (!(await this.results.mayReplace(key))) return null

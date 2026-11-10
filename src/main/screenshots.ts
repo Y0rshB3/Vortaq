@@ -2453,6 +2453,85 @@ const MCP_STEPS: Step[] = [
 ]
 STEPS.push(...MCP_STEPS)
 
+/**
+ * SQL Server screens (VORTAQ_SHOTS_ONLY=54): need the profile and the database
+ * `tienda` seeded by scripts/seed-sqlserver-shots.mjs (connection «SQL Server
+ * Local» on the throwaway mssql22 container).
+ */
+const MS_ID = 'shot-ms'
+const MS_DB = 'tienda'
+const MS_STEPS: Step[] = [
+  {
+    // «Pegar cadena de conexión»: an Azure ADO.NET string fills the form.
+    name: '54a-sqlserver-paste-connection-string',
+    script: `
+      S.ui.openConnectionDialog(null, 'sqlserver')
+      const field = await H.waitFor('[data-test="conn-ms-string"] input', 8000)
+      field.value = 'Server=tcp:ventas-demo.database.windows.net,1433;Initial Catalog=ventas;Authentication="Active Directory Interactive";User ID=ana@contoso.com;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      await H.sleep(200)
+      await H.click('[data-test="conn-ms-string-apply"]', 5000)
+      await H.sleep(900)`,
+    cleanup: `S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
+  },
+  {
+    name: '54b-sqlserver-tree',
+    script: `
+      S.ui.toggleInfoPanel(true)
+      await S.tree.expand(S.tree.parse('c:${MS_ID}'))
+      if (!S.connections.isOpen('${MS_ID}')) throw new Error('could not open SQL Server Local')
+      await S.tree.expand(S.tree.parse('d:${MS_ID}:${MS_DB}'))
+      S.tree.setExpanded('s:${MS_ID}:dbo:${MS_DB}', true)
+      await S.tree.expand(S.tree.parse('g:${MS_ID}:dbo:tables:${MS_DB}'))
+      await S.tree.expand(S.tree.parse('g:${MS_ID}:dbo:views:${MS_DB}'))
+      await S.tree.expand(S.tree.parse('g:${MS_ID}:dbo:functions:${MS_DB}'))
+      S.tree.select('g:${MS_ID}:dbo:tables:${MS_DB}')
+      S.workspace.showObjects()
+      await H.settle(S, 1500)`
+  },
+  {
+    // A script with GO: each batch is sent whole (DECLARE lives in its batch), PRINT shows up.
+    name: '54c-sqlserver-query-batches',
+    script: `
+      const sql = [
+        "DECLARE @pais nvarchar(40) = N'España';",
+        "PRINT N'Clientes de ' + @pais;",
+        "SELECT id, nombre, saldo, alta FROM dbo.clientes WHERE pais = @pais;",
+        "GO",
+        "SELECT TOP (3) p.id, c.nombre, p.estado, p.total",
+        "FROM dbo.pedidos p JOIN dbo.clientes c ON c.id = p.cliente_id",
+        "ORDER BY p.total DESC;"
+      ].join('\\n')
+      S.workspace.openQuery('${MS_ID}', 'dbo', { sql, name: 'Clientes por país' }, '${MS_DB}')
+      await H.sleep(1200)
+      await H.click('[data-test="run"]', 10000)
+      await H.until(() => document.querySelectorAll('table tbody tr').length > 0, 20000)
+      await H.sleep(900)`
+  },
+  {
+    name: '54d-sqlserver-table-data',
+    script: `
+      for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)
+      S.workspace.openTableData('${MS_ID}', 'dbo', 'clientes', '${MS_DB}')
+      await H.waitFor('table tbody tr', 15000).catch(() => null)
+      await H.settle(S, 1600)`
+  },
+  {
+    name: '54e-sqlserver-designer',
+    script: `
+      S.workspace.openTableDesigner('${MS_ID}', 'dbo', 'pedidos', '${MS_DB}')
+      await H.settle(S, 2000)`
+  },
+  {
+    // The designer's SQL tab: sp_rename, named DEFAULT constraint and one transaction.
+    name: '54f-sqlserver-designer-sql',
+    script: `
+      await H.click('[data-test="tab-sql"]', 5000).catch(() => null)
+      await H.settle(S, 900)`
+  }
+]
+STEPS.push(...MS_STEPS)
+
 function wrap(body: string): string {
   return `(async () => { const S = window.__vortaqShots; const H = window.__ndShotHelpers; ${body}\n; return true })()`
 }

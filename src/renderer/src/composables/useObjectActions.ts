@@ -1680,6 +1680,17 @@ export function useObjectActions() {
             if (uri) void copyText(uri, 'URI')
           }
         },
+        // SQL Server: the ADO.NET string, never with the password.
+        connections.get(c)?.engine === 'sqlserver' && {
+          key: 'copyConnectionString',
+          label: 'Copiar cadena de conexión',
+          icon: 'mdi-link-variant',
+          action: () => {
+            const config = connections.get(c)
+            const text = config ? connectionUri(config) : null
+            if (text) void copyText(text, 'Cadena de conexión')
+          }
+        },
         { key: 'd1', label: '', divider: true },
         {
           key: 'query',

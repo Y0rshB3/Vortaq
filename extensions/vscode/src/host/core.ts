@@ -5,6 +5,7 @@
  * - secrets: keyCodec with the vault key in SecretStorage (vault.ts);
  * - SQLite: nodeSqliteSpawner on VS Code's own Node, only when
  *   sqliteRuntimeProblem() says that Node can run the driver;
+ * - SQL Server's Microsoft Entra sign-in: the editor opens the page (env.openExternal);
  * - logging: the «Vortaq» log output channel (never secrets or row data).
  */
 import { mkdirSync } from 'node:fs'
@@ -12,6 +13,7 @@ import * as vscode from 'vscode'
 import {
   createCore,
   nodeSqliteSpawner,
+  setEntraBrowserOpener,
   sqliteRuntimeProblem,
   type IpcEventChannel,
   type IpcEventMap,
@@ -51,6 +53,11 @@ export async function createExtensionCore(
   const vault = followingCodec(await loadVaultKey(context.secrets), context.secrets)
   context.subscriptions.push(vault)
   const sqliteProblem = sqliteRuntimeProblem()
+  setEntraBrowserOpener(async (url) => {
+    if (!url.startsWith('https://login.microsoftonline.com/'))
+      throw new Error('Dirección de inicio de sesión no válida')
+    await vscode.env.openExternal(vscode.Uri.parse(url))
+  })
   const core = createCore({
     dataDir,
     secrets: { codec: vault.codec, codecName: 'vaultKey' },

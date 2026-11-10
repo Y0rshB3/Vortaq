@@ -34,6 +34,10 @@ import { exportSelectSql } from '../mysql/tableData'
 import { normalizeRow, toQueryColumn } from '../mysql/values'
 import { composeSearchPath, formatSearchPath } from '../postgres/client'
 import { isPgConnection, type PgDriverConnection } from '../postgres/connection'
+import { isMsConnection, type MsDriverConnection } from '../sqlserver/connection'
+import { typeLabel } from '../sqlserver/query'
+import { buildMsExportSelectSql, msFilterColumns } from '../sqlserver/tableData'
+import { normalizeCell as normalizeMsCell, sqlServerTypeKind } from '../sqlserver/values'
 import type { PgSession } from '../postgres/session'
 import { unsupportedStatement } from '../postgres/session'
 import { buildPgExportSelectSql, pgFilterColumns } from '../postgres/tableData'
@@ -120,6 +124,7 @@ export async function openRowSource(
   const connection = await manager.connection(id)
   throwIfAborted(signal)
   if (isPgConnection(connection)) return openPgSource(connection, source, executionId, signal)
+  if (isMsConnection(connection)) return openMsSource(connection, source, executionId, signal)
   if (isSqliteConnection(connection)) {
     const reader = await connection.openReader()
     return openSqliteSource(reader, source, signal)
@@ -325,6 +330,79 @@ async function openPgSource(
     }
     return {
       columns: pgColumns(first.fields),
+      batches: batches(),
+      cancel,
+      close: finish
+    }
+  } catch (err) {
+    await finish()
+    throw signal.aborted ? new ExportError(CANCELLED_EXPORT) : err
+  }
+}
+
+/* ---------- SQL Server ---------- */
+
+/**
+ * A pooled session of the statement's database, inside a transaction that is
+ * always rolled back (the statement already passed the read-only check; this
+ * is the second fence). Rows are streamed and the server pauses between
+ * batches; cancel is an attention on that session.
+ */
+async function openMsSource(
+  connection: MsDriverConnection,
+  source: ExportQuerySource,
+  executionId: string,
+  signal: AbortSignal
+): Promise<RowSource> {
+  const dialect = getDialect('sqlserver')
+  const table = source.kind === 'table' ? source.request : null
+  const ref = table ? table.schema : source.kind === 'statement' ? source.context : null
+  if (typeof ref === 'string' && ref)
+    throw new ExportError('Las conexiones SQL Server necesitan la base de datos y el esquema.')
+  const database =
+    ref && typeof ref === 'object' && ref.database ? ref.database : connection.initialDatabase
+  const schema = ref && typeof ref === 'object' ? ref.schema || null : null
+  if (table && !schema) throw new ExportError('Falta el esquema de la tabla.')
+  const statement = source.kind === 'statement' ? guard(dialect, source.sql) : null
+  const session = await connection.acquire({ database, schema: null })
+  // The transaction and SET options must not survive: the release rolls back and resets.
+  session.usage.userSql = true
+  let dispose = (): void => undefined
+  const finish = async (): Promise<void> => {
+    dispose()
+    connection.unregisterExecution(executionId)
+    await session.release().catch(() => undefined)
+  }
+  try {
+    await session.exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED; BEGIN TRANSACTION')
+    let sql = statement ?? ''
+    if (table) {
+      const target = { schema: schema ?? '', table: table.table }
+      const filterColumns = await msFilterColumns(session, target, table)
+      sql = guard(dialect, buildMsExportSelectSql(table, target, filterColumns))
+    }
+    connection.registerExecution(executionId, session)
+    const cancel = async (): Promise<void> => {
+      await connection.cancel(executionId)
+    }
+    throwIfAborted(signal)
+    dispose = onAbort(signal, cancel)
+    const stream = session.stream(sql, EXPORT_BATCH_ROWS)
+    const columns = await stream.columns()
+    throwIfAborted(signal)
+    if (!columns || !columns.length) throw new ExportError(NO_ROWS)
+    async function* batches(): AsyncGenerator<RowBatch> {
+      for (;;) {
+        const rows = await stream.next()
+        if (!rows) return
+        yield { rows: rows.map((r) => r.map(normalizeMsCell)) }
+      }
+    }
+    return {
+      columns: columns.map((c) => {
+        const type = typeLabel(c)
+        return { name: c.colName, type, typeKind: sqlServerTypeKind(type) }
+      }),
       batches: batches(),
       cancel,
       close: finish

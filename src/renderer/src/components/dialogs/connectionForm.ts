@@ -4,9 +4,11 @@ import {
   ENGINES,
   defaultMongoOptions,
   defaultPostgresOptions,
-  defaultSqliteOptions
+  defaultSqliteOptions,
+  defaultSqlServerOptions
 } from '@shared/engines'
 import { mongoUriOf } from '@shared/mongo/uri'
+import { sqlServerConnectionString } from '@shared/sqlserver/connectionString'
 import type {
   ConnectionConfig,
   ConnectionInput,
@@ -32,6 +34,7 @@ export function emptyConnectionInput(engine: EngineId = 'mysql'): ConnectionInpu
   if (engine === 'sqlite') return emptySqliteInput()
   if (engine === 'mongodb') return emptyMongoInput()
   if (engine === 'mariadb') return { ...emptyMysqlInput(), engine: 'mariadb' }
+  if (engine === 'sqlserver') return emptySqlServerInput()
   return engine === 'postgresql' ? emptyPostgresInput() : emptyMysqlInput()
 }
 
@@ -80,6 +83,20 @@ export function sqliteNameFromPath(path: string): string {
   return dot > 0 ? file.slice(0, dot) : file
 }
 
+/** SQL Server: 127.0.0.1:1433 as sa with a SQL Server login and mandatory TLS. */
+export function emptySqlServerInput(): ConnectionInput {
+  const base = emptyMysqlInput()
+  return {
+    ...base,
+    engine: 'sqlserver',
+    port: ENGINES.sqlserver.defaultPort,
+    username: ENGINES.sqlserver.defaultUser,
+    ssl: { ...base.ssl, enabled: true, verifyServer: true },
+    network: { ...DEFAULT_NETWORK },
+    sqlserver: defaultSqlServerOptions()
+  }
+}
+
 function emptyPostgresInput(): ConnectionInput {
   const base = emptyMysqlInput()
   return {
@@ -119,6 +136,7 @@ export function withSslMode(ssl: ConnectionInput['ssl'], mode: SslMode): Connect
  */
 export function connectionUri(c: ConnectionInput | ConnectionConfig): string | null {
   if (c.engine === 'mongodb') return mongoUriOf(c)
+  if (c.engine === 'sqlserver') return sqlServerConnectionString(c)
   if (c.engine !== 'postgresql') return null
   const user = encodeURIComponent(c.username)
   const db = encodeURIComponent(c.postgres?.initialDatabase || 'postgres')
@@ -172,6 +190,7 @@ export function inputFromConnection(c: ConnectionConfig): ConnectionInput {
     ssh: { ...c.ssh },
     ssl: { ...c.ssl },
     ...(c.postgres ? { postgres: { ...defaultPostgresOptions(), ...c.postgres } } : {}),
+    ...(c.sqlserver ? { sqlserver: { ...defaultSqlServerOptions(), ...c.sqlserver } } : {}),
     ...(c.network ? { network: { ...c.network } } : {}),
     ...(c.mcp ? { mcp: { ...c.mcp } } : {}),
     ...(c.mongo
@@ -230,6 +249,19 @@ export function normalizeConnectionInput(input: ConnectionInput): ConnectionInpu
             initialDatabase: input.postgres.initialDatabase.trim(),
             timeZone: input.postgres.timeZone.trim(),
             searchPath: input.postgres.searchPath.trim()
+          }
+        }
+      : {}),
+    ...(input.sqlserver
+      ? {
+          sqlserver: {
+            ...input.sqlserver,
+            initialDatabase: input.sqlserver.initialDatabase.trim(),
+            domain: input.sqlserver.domain.trim(),
+            instanceName: input.sqlserver.instanceName.trim(),
+            hostNameInCertificate: input.sqlserver.hostNameInCertificate.trim(),
+            tenantId: input.sqlserver.tenantId.trim(),
+            clientId: input.sqlserver.clientId.trim()
           }
         }
       : {}),

@@ -101,11 +101,13 @@ export function sqlLiteral(
   }
   if (isHexBinaryColumn(column)) {
     const hex = HEX.exec(value)
-    // PostgreSQL bytea reads '\x…' (standard_conforming_strings); the others take X'…'.
+    // PostgreSQL bytea reads '\x…' (standard_conforming_strings); SQL Server 0x…; others X'…'.
     if (hex)
       return dialect === 'postgresql'
         ? `'\\x${hex[1].toUpperCase()}'`
-        : `X'${hex[1].toUpperCase()}'`
+        : dialect === 'sqlserver'
+          ? `0x${hex[1].toUpperCase()}`
+          : `X'${hex[1].toUpperCase()}'`
   }
   if (isNumericColumn(column) && DECIMAL.test(value)) return value
   return quote(value)

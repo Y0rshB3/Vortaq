@@ -1,3 +1,4 @@
+import { parseSqlServerConnectionString } from '@shared/sqlserver/connectionString'
 import { existsSync } from 'node:fs'
 import { parseMongoUri } from '@shared/mongo/uri'
 import type { Environment, SshConfig, SslConfig } from '@shared/types'
@@ -22,6 +23,8 @@ import {
   MONGO_URL_PASSWORD_WARNING,
   SQLITE_CHOICE,
   sqliteBlock,
+  SQLSERVER_CHOICE,
+  sqlServerHost,
   stripBom,
   uniqueKey,
   unsupported,
@@ -131,6 +134,8 @@ function engineFor(provider: string, driver: string): { choice: EngineChoice; la
   if (isPostgres(p, d)) return { choice: postgresFamily(`${p} ${d}`), label: 'PostgreSQL' }
   if (p === 'sqlite' || d.includes('sqlite')) return { choice: SQLITE_CHOICE, label: 'SQLite' }
   if (p.includes('mongo') || d.includes('mongo')) return { choice: MONGO_CHOICE, label: 'MongoDB' }
+  if (/sqlserver|mssql/.test(p) || /sqlserver|mssql|azure_sql/.test(d))
+    return { choice: SQLSERVER_CHOICE, label: 'SQL Server' }
   const known = Object.keys(LABELS).find((k) => p.includes(k) || d.includes(k))
   const label = known ? LABELS[known] : driver || provider || 'Desconocido'
   return { choice: unsupported(label), label }
@@ -266,6 +271,8 @@ export function parseDbeaverDataSources(
     }
 
     const postgres = label === 'PostgreSQL'
+    const sqlserver = label === 'SQL Server'
+    let msOptions: ParsedConnection['sqlserver']
     let host: string
     let port: number
     let database: string
@@ -277,6 +284,23 @@ export function parseDbeaverDataSources(
       port = positiveInt(cfg.port, first.port ?? 5432)
       database = str(cfg.database) || fromUrl?.database || ''
       urlSslMode = fromUrl?.sslMode ?? ''
+    } else if (sqlserver) {
+      // jdbc:sqlserver://host[\\instance][:port];databaseName=…;encrypt=…
+      const fromUrl = parseSqlServerConnectionString(str(cfg.url))
+      const server = sqlServerHost(
+        str(cfg.host) || fromUrl?.host || '',
+        positiveInt(cfg.port, fromUrl?.port ?? 1433),
+        warnings
+      )
+      host = server.host
+      port = server.port
+      database = str(cfg.database) || fromUrl?.sqlserver.initialDatabase || ''
+      msOptions = {
+        ...fromUrl?.sqlserver,
+        ...(server.instanceName ? { instanceName: server.instanceName } : {})
+      }
+      delete msOptions.initialDatabase
+      if (fromUrl) warnings.push(...fromUrl.warnings)
     } else {
       const fromUrl = parseJdbcUrl(str(cfg.url))
       host = str(cfg.host) || fromUrl?.host || ''
@@ -309,7 +333,8 @@ export function parseDbeaverDataSources(
       ssh,
       ssl,
       secrets: {},
-      warnings
+      warnings,
+      ...(msOptions ? { sqlserver: msOptions } : {})
     })
   }
   return { connections, notes: [DBEAVER_PASSWORDS_NOTE] }

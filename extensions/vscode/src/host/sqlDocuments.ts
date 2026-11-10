@@ -4,7 +4,13 @@
  * first line or the editor title, and remembered per document (targets.ts).
  */
 import * as vscode from 'vscode'
-import { ENGINES, environmentName, type ConnectionConfig } from '@core'
+import {
+  defaultSchemaOf,
+  ENGINES,
+  environmentName,
+  usesSchemaRef,
+  type ConnectionConfig
+} from '@core'
 import type { ConnectionService } from './connections'
 import { targetLabel, type DocumentTarget, type DocumentTargets } from './targets'
 
@@ -84,14 +90,21 @@ export async function pickTarget(
     database = picked.value
   }
   let schema: string | null = preset?.schema ?? null
-  if (connection.engine === 'postgresql' && database && preset?.schema === undefined) {
+  if (usesSchemaRef(connection.engine) && database && preset?.schema === undefined) {
+    const home = defaultSchemaOf(connection.engine)
     const schemas = (await core.invoke('db:schemas', connection.id, database)).map((s) => s.name)
     const ordered = [...schemas].sort((a, b) =>
-      a === 'public' ? -1 : b === 'public' ? 1 : a.localeCompare(b)
+      a === home ? -1 : b === home ? 1 : a.localeCompare(b)
     )
     const picked = await vscode.window.showQuickPick(
       ordered.map((s) => ({ label: s, value: s })),
-      { title: `Esquema · ${database}`, placeHolder: 'Elige el esquema (primero en search_path)' }
+      {
+        title: `Esquema · ${database}`,
+        placeHolder:
+          connection.engine === 'sqlserver'
+            ? 'Elige el esquema (para el autocompletado y las tablas sin esquema)'
+            : 'Elige el esquema (primero en search_path)'
+      }
     )
     if (!picked) return null
     schema = picked.value
@@ -99,7 +112,7 @@ export async function pickTarget(
   return {
     connectionId: connection.id,
     database,
-    ...(connection.engine === 'postgresql' ? { schema } : {})
+    ...(usesSchemaRef(connection.engine) ? { schema } : {})
   }
 }
 

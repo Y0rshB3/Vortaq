@@ -3,6 +3,7 @@ import type {
   Environment,
   MongoOptions,
   SqliteAttachedDatabase,
+  SqlServerOptions,
   SshConfig,
   SslConfig
 } from '@shared/types'
@@ -45,6 +46,8 @@ export interface ParsedConnection {
   sqlite?: { filePath: string; pathNeedsReview: boolean; attached: SqliteAttachedDatabase[] }
   /** MongoDB: the options the source names (merged over the defaults on import). */
   mongo?: Partial<MongoOptions>
+  /** SQL Server: the options the source names (instance, sign-in, encryption). */
+  sqlserver?: Partial<SqlServerOptions>
 }
 
 /** Existence check for SQLite files named by an import (injected in tests). */

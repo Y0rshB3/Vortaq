@@ -13,6 +13,7 @@ import {
   type PgDdlObjectType
 } from '@renderer/components/designer/pg/ddl'
 import { postgresqlDialect } from '@shared/dialects/postgresql'
+import { sqlserverDialect } from '@shared/dialects/sqlserver'
 import { sqliteDialect } from '@shared/dialects/sqlite'
 import { schemaRef } from '@renderer/utils/schemaRef'
 import {
@@ -36,6 +37,8 @@ const engineUi = useEngineUi(() => props.tab.connectionId)
 const ddl = computed(() => engineUi.value.ddl!)
 /** PostgreSQL: materialized views, routine signatures, trigger tables, no DEFINER. */
 const isPg = computed(() => engineUi.value.id === 'postgresql')
+/** SQL Server: CREATE OR ALTER keeps the object (and its permissions); only renames drop. */
+const isMs = computed(() => engineUi.value.id === 'sqlserver')
 /** SQLite: views and triggers, dropped and recreated inside one transaction. */
 const isLite = computed(() => engineUi.value.id === 'sqlite')
 const canStripDefiner = computed(() => engineUi.value.descriptor.capabilities.definer)
@@ -180,7 +183,9 @@ async function apply(): Promise<void> {
     !!objectName.value &&
     (isPg.value
       ? rename || objectType.value === 'materialized_view' || objectType.value === 'trigger'
-      : isLite.value || objectType.value !== 'view' || rename)
+      : isMs.value
+        ? rename
+        : isLite.value || objectType.value !== 'view' || rename)
   const message = rename
     ? `El nombre cambia: se creará ${typeWithArticle.value} "${newName}" y se eliminará "${objectName.value}". Lo que dependa del nombre anterior dejará de funcionar.`
     : replaces
@@ -191,9 +196,11 @@ async function apply(): Promise<void> {
   // DROP + CREATE of routines/events/triggers, renamed views, or DROPs written by the user.
   const drops = isPg.value
     ? (postgresqlDialect.analyzeDestructive?.(script.value) ?? [])
-    : isLite.value
-      ? (sqliteDialect.analyzeDestructive?.(script.value) ?? [])
-      : analyzeDestructiveScript(script.value)
+    : isMs.value
+      ? (sqlserverDialect.analyzeDestructive?.(script.value) ?? [])
+      : isLite.value
+        ? (sqliteDialect.analyzeDestructive?.(script.value) ?? [])
+        : analyzeDestructiveScript(script.value)
   const article = typeWithArticle.value
   const destructive: DestructiveDetails | undefined = drops.length
     ? {

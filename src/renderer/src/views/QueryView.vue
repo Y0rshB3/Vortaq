@@ -12,6 +12,12 @@ import {
 import type { QueryStatementResult, SchemaRef, TransactionStatus } from '@shared/types'
 import { mariadbDialect } from '@shared/dialects/mariadb'
 import { postgresqlDialect } from '@shared/dialects/postgresql'
+import { sqlserverDialect } from '@shared/dialects/sqlserver'
+import {
+  cachedMs,
+  msCompletionSource,
+  msSearchPath
+} from '@renderer/components/common/editor/msCompletion'
 import { isAttachOrDetach, sqliteDialect } from '@shared/dialects/sqlite'
 import {
   cachedSqlite,
@@ -185,6 +191,44 @@ function makePgProvider() {
 const pgCompletion = shallowRef(makePgProvider())
 const pgSource = computed(() => pgCompletionSource(pgCompletion.value))
 
+/** SQL Server completion metadata, cached per tab database (recreated when it changes). */
+function makeMsProvider() {
+  const ref = (s: string) => ({ database: database.value ?? '', schema: s })
+  return cachedMs({
+    searchPath: () => msSearchPath(schema.value),
+    schemas: async () =>
+      connectionId.value && database.value
+        ? (await invokeSilent('db:schemas', connectionId.value, database.value)).map((s) => s.name)
+        : [],
+    tables: async (s) => {
+      if (!connectionId.value || !database.value) return []
+      const [tables, views] = await Promise.all([
+        invokeSilent('db:tables', connectionId.value, ref(s)),
+        invokeSilent('db:views', connectionId.value, ref(s)).catch(() => [])
+      ])
+      return [
+        ...tables.map((t) => ({ name: t.name, kind: 'table' as PgRelationKind })),
+        ...views.map((v) => ({ name: v.name, kind: 'view' as PgRelationKind }))
+      ]
+    },
+    columns: async (s, t) =>
+      connectionId.value && database.value
+        ? (await invokeSilent('db:columns', connectionId.value, ref(s), t)).map((c) => ({
+            name: c.name,
+            type: c.columnType
+          }))
+        : [],
+    functions: async (s) =>
+      connectionId.value && database.value
+        ? (await invokeSilent('db:routines', connectionId.value, ref(s)))
+            .filter((r) => r.type === 'FUNCTION')
+            .map((f) => ({ name: f.name, signature: '' }))
+        : []
+  })
+}
+const msCompletion = shallowRef(makeMsProvider())
+const msSource = computed(() => msCompletionSource(msCompletion.value))
+
 /** SQLite completion metadata: attached databases, their tables, views and columns. */
 function makeSqliteProvider() {
   return cachedSqlite({
@@ -278,10 +322,15 @@ function onSplitKey(event: KeyboardEvent): void {
 }
 
 const connectionId = computed(() => props.tab.connectionId ?? '')
-const isPg = computed(() => connections.get(connectionId.value)?.engine === 'postgresql')
+const engineId = computed(() => connections.get(connectionId.value)?.engine)
+/** Tabs addressed as database + schema, each with its own server session (PostgreSQL, SQL Server). */
+const schemaTabs = computed(
+  () => engineId.value === 'postgresql' || engineId.value === 'sqlserver'
+)
+const isMs = computed(() => engineId.value === 'sqlserver')
 const isLite = computed(() => connections.get(connectionId.value)?.engine === 'sqlite')
 /** Engines whose query tabs own a session (D12): transaction state, Confirmar/Deshacer, cancel. */
-const tabSession = computed(() => isPg.value || isLite.value)
+const tabSession = computed(() => schemaTabs.value || isLite.value)
 const production = computed(() => connections.isProduction(connectionId.value))
 /** Switching connection (opening it, loading its databases). */
 const switching = ref(false)
@@ -339,7 +388,7 @@ async function confirmDiscardEdits(): Promise<boolean> {
 }
 
 function updateTitle(): void {
-  if (isPg.value) {
+  if (schemaTabs.value) {
     const where = [database.value, schema.value].filter(Boolean).join('.')
     tabs.setTitle(
       props.tab.id,
@@ -364,7 +413,10 @@ async function loadPgDatabases(): Promise<void> {
   if (custom.length) names = names.filter((n) => custom.includes(n))
   pgDatabases.value = names
   if (!database.value) {
-    const initial = conn?.postgres?.initialDatabase
+    const initial =
+      conn?.engine === 'sqlserver'
+        ? conn.sqlserver?.initialDatabase?.trim() || 'master'
+        : conn?.postgres?.initialDatabase
     database.value = (initial && names.includes(initial) ? initial : names[0]) ?? initial ?? null
     if (database.value)
       tabs.setTarget(props.tab.id, connectionId.value, schema.value, database.value)
@@ -386,7 +438,7 @@ async function loadPgSchemas(): Promise<void> {
 
 async function loadSchemas(): Promise<void> {
   if (!connectionId.value) return
-  if (isPg.value) {
+  if (schemaTabs.value) {
     await loadPgDatabases()
     await loadPgSchemas()
     return
@@ -399,9 +451,9 @@ async function loadSchemas(): Promise<void> {
 }
 
 async function loadCompletion(): Promise<void> {
-  if (isPg.value) {
+  if (schemaTabs.value) {
     if (connectionId.value && database.value && schema.value)
-      void pgCompletion.value.tables(schema.value).catch(() => [])
+      void (isMs.value ? msCompletion : pgCompletion).value.tables(schema.value).catch(() => [])
     return
   }
   // Warm the cache for the selected database so the first suggestions are instant.
@@ -412,7 +464,7 @@ watch(schema, (value) => {
   updateTitle()
   void loadCompletion()
   // PostgreSQL: the schema is part of the tab's target (the next run applies it to search_path).
-  if (isPg.value)
+  if (schemaTabs.value)
     tabs.setTarget(props.tab.id, connectionId.value, value, database.value ?? undefined)
 })
 
@@ -427,7 +479,7 @@ function loadPayload(): void {
       queryName.value = saved.name
       sql.value = saved.sql
       savedSql.value = saved.sql
-      if (saved.database && isPg.value) database.value = saved.database
+      if (saved.database && schemaTabs.value) database.value = saved.database
       if (saved.schema) schema.value = saved.schema
       return
     }
@@ -456,11 +508,14 @@ async function run(selectionOnly = false): Promise<void> {
   if (!(await confirmDiscardEdits())) return
   // Allowlist: on production (and the environments of Ajustes › Seguridad) anything not provably
   // read-only (SELECT/SHOW/DESCRIBE/EXPLAIN/USE...) asks for the typed name first.
-  const pg = isPg.value
+  const pg = schemaTabs.value
+  const ms = isMs.value
   const lite = isLite.value
   // MariaDB: its dialect also reads `/*M!` comments and the sequence functions.
   const maria = connections.get(connectionId.value)?.engine === 'mariadb'
-  const check = pg
+  const check = ms
+    ? sqlserverDialect.analyzeWrites(script)
+    : pg
     ? postgresqlDialect.analyzeWrites(script)
     : lite
       ? sqliteDialect.analyzeWrites(script)
@@ -470,7 +525,9 @@ async function run(selectionOnly = false): Promise<void> {
   const confirmProduction = connections.needsTypedConfirm(connectionId.value) && check.writes
   // DROP / TRUNCATE / DELETE / ALTER … DROP / UPDATE without WHERE ask on any connection (setting).
   const drops = settings.settings.confirmDestructiveEverywhere
-    ? pg
+    ? ms
+      ? (sqlserverDialect.analyzeDestructive?.(script) ?? [])
+      : pg
       ? (postgresqlDialect.analyzeDestructive?.(script) ?? [])
       : lite
         ? (sqliteDialect.analyzeDestructive?.(script) ?? [])
@@ -564,6 +621,7 @@ async function run(selectionOnly = false): Promise<void> {
     if (check.writes) {
       completion.value.clear()
       pgCompletion.value.clear()
+      msCompletion.value.clear()
       sqliteCompletion.value.clear()
     }
     // A lost PostgreSQL session reports itself as an error: re-read the state.
@@ -648,6 +706,7 @@ async function changeDatabase(value: string | null): Promise<void> {
   schema.value = null
   tabs.setTarget(props.tab.id, connectionId.value, null, value)
   pgCompletion.value = makePgProvider()
+  msCompletion.value = makeMsProvider()
   updateTitle()
   await loadPgSchemas()
 }
@@ -715,7 +774,7 @@ function persist(name: string, id: string | null): void {
     name,
     sql: sql.value,
     schema: schema.value,
-    ...(isPg.value && database.value ? { database: database.value } : {})
+    ...(schemaTabs.value && database.value ? { database: database.value } : {})
   })
   savedQueryId.value = saved.id
   savedConnectionId.value = cid
@@ -791,7 +850,8 @@ async function switchConnection(id: string): Promise<boolean> {
   try {
     // Opening reports its own error; the tab stays on the current connection.
     if (!(await workspace.ensureOpen(id))) return false
-    if (connections.get(id)?.engine === 'postgresql') {
+    const target = connections.get(id)?.engine
+    if (target === 'postgresql' || target === 'sqlserver') {
       runSeq++
       results.value = []
       pendingEdits.value = {}
@@ -805,6 +865,7 @@ async function switchConnection(id: string): Promise<boolean> {
       completion.value = makeProvider()
       await loadPgDatabases()
       pgCompletion.value = makePgProvider()
+      msCompletion.value = makeMsProvider()
       await loadPgSchemas()
       updateTitle()
       return true
@@ -880,7 +941,7 @@ onMounted(async () => {
   loadPayload()
   updateTitle()
   await Promise.all([loadSchemas(), loadCompletion()])
-  if (isPg.value) updateTitle()
+  if (schemaTabs.value) updateTitle()
   if (tabSession.value) await refreshSessionState()
   runFromPayload()
 })
@@ -920,7 +981,7 @@ const unregisterEditor = registerQueryEditor({
   tabId: props.tab.id,
   connectionId: () => connectionId.value,
   schema: () => schema.value,
-  database: () => (isPg.value ? database.value : null),
+  database: () => (schemaTabs.value ? database.value : null),
   sql: () => sql.value,
   selection: () => editor.value?.getSelection() ?? '',
   insertAtCursor
@@ -1102,7 +1163,7 @@ defineExpose({
         @update:model-value="switchConnection"
       />
       <v-select
-        v-if="isPg"
+        v-if="schemaTabs"
         :model-value="database"
         :items="pgDatabases"
         :disabled="switching || running"
@@ -1120,9 +1181,9 @@ defineExpose({
         v-model="schema"
         :items="schemas"
         :disabled="switching"
-        :placeholder="isPg ? 'Esquema' : 'Base de datos'"
-        :aria-label="isPg ? 'Esquema' : 'Base de datos'"
-        :prepend-inner-icon="isPg ? 'mdi-folder-outline' : 'mdi-database-outline'"
+        :placeholder="schemaTabs ? 'Esquema' : 'Base de datos'"
+        :aria-label="schemaTabs ? 'Esquema' : 'Base de datos'"
+        :prepend-inner-icon="schemaTabs ? 'mdi-folder-outline' : 'mdi-database-outline'"
         density="compact"
         clearable
         hide-details
@@ -1139,7 +1200,9 @@ defineExpose({
           v-model="sql"
           :provider="completion"
           :engine="connections.get(connectionId)?.engine"
-          :completion-source="isPg ? pgSource : isLite ? sqliteSource : undefined"
+          :completion-source="
+            isMs ? msSource : schemaTabs ? pgSource : isLite ? sqliteSource : undefined
+          "
           min-height="80px"
           @run="run()"
           @save="save"

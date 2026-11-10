@@ -1,7 +1,7 @@
 /**
  * Engine → driver registry. Drivers are imported lazily so an engine nobody
  * opens never loads its client library. MySQL and MariaDB (one mysql2 driver), PostgreSQL,
- * SQLite and MongoDB ship drivers.
+ * SQLite, MongoDB and SQL Server ship drivers.
  */
 import { engineAvailabilityError } from '@shared/connectionValidation'
 import { engineOf } from '@shared/engines'
@@ -16,7 +16,8 @@ const LOADERS: Partial<Record<EngineId, DriverLoader>> = {
   mariadb: () => import('../mysql/driver').then((m) => m.mysqlDriver),
   postgresql: () => import('../postgres/driver').then((m) => m.postgresDriver),
   sqlite: () => import('../sqlite/driver').then((m) => m.sqliteDriver),
-  mongodb: () => import('../mongo/driver').then((m) => m.mongoDriver)
+  mongodb: () => import('../mongo/driver').then((m) => m.mongoDriver),
+  sqlserver: () => import('../sqlserver/driver').then((m) => m.sqlserverDriver)
 }
 
 /** True when this build has a driver for the engine. */

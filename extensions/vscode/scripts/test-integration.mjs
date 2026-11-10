@@ -7,6 +7,7 @@
  *   VORTAQ_TEST_MYSQL_URL  mysql://root:navidog@127.0.0.1:33306/navidog_test
  *   VORTAQ_TEST_PG_URL     postgres://postgres:navidog@127.0.0.1:55432/navidog_test
  *   VORTAQ_TEST_MONGO_URL  mongodb://root:navidog@127.0.0.1:57017/?authSource=admin
+ *   VORTAQ_TEST_MSSQL_URL  mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test
  *
  * A server without its URL is skipped; `--required` makes a missing URL fail the run (like
  * `npm run test:integration:required`). SQLite needs no server (a file in a scratch folder).
@@ -29,7 +30,8 @@ import { buildExtension, DIST_TEST, EXT } from './build.mjs'
 export const SERVERS = [
   ['VORTAQ_TEST_MYSQL_URL', 'MySQL'],
   ['VORTAQ_TEST_PG_URL', 'PostgreSQL'],
-  ['VORTAQ_TEST_MONGO_URL', 'MongoDB']
+  ['VORTAQ_TEST_MONGO_URL', 'MongoDB'],
+  ['VORTAQ_TEST_MSSQL_URL', 'SQL Server']
 ]
 
 export function cacheFolder() {

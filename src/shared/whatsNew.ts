@@ -25,6 +25,24 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.6.0',
+    date: '2026-11-10',
+    highlights: [
+      'Nuevo motor: SQL Server y Azure SQL, con usuario de SQL Server, autenticación de Windows o Microsoft Entra ID (navegador con MFA, CLI de Azure o aplicación)',
+      '«Pegar cadena de conexión»: la de Azure, appsettings.json, ODBC o JDBC rellena el formulario',
+      'Scripts con GO, sesión y transacción por pestaña, datos y resultados editables, diseñador y editor de vistas y procedimientos',
+      'DECIMAL, MONEY y fechas se muestran exactos, con todos sus dígitos',
+      'Las conexiones SQL Server de Navicat (.ncx) y DBeaver también se importan'
+    ],
+    tour: [
+      {
+        target: 'toolbar-connection',
+        title: 'SQL Server',
+        text: 'Conexión › Nueva conexión SQL Server… Pega la cadena de conexión que te dio Azure o tu equipo y pulsa Rellenar; luego Probar conexión.'
+      }
+    ]
+  },
+  {
     version: '2.5.0',
     date: '2026-10-21',
     highlights: [

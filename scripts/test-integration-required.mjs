@@ -5,8 +5,9 @@
  * Runs `vitest run --project node` (same as `npm run test:integration`) with
  * VORTAQ_REQUIRE_INTEGRATION=1, so a missing VORTAQ_TEST_MYSQL_URL (MySQL 8.4),
  * VORTAQ_TEST_MYSQL57_URL (MySQL 5.7), VORTAQ_TEST_MARIADB_URL (MariaDB 11),
- * VORTAQ_TEST_PG_URL (PostgreSQL 17), VORTAQ_TEST_MONGO_URL (MongoDB 8.2) or
- * VORTAQ_TEST_MONGO_RS_URL (MongoDB 8.2 replica set) makes the run fail instead of skip
+ * VORTAQ_TEST_PG_URL (PostgreSQL 17), VORTAQ_TEST_MONGO_URL (MongoDB 8.2),
+ * VORTAQ_TEST_MONGO_RS_URL (MongoDB 8.2 replica set) or VORTAQ_TEST_MSSQL_URL (SQL Server
+ * 2022) makes the run fail instead of skip
  * (tests/integration/targets.ts); VORTAQ_TEST_SSH_URL (the PostgreSQL SSH-tunnel test)
  * stays optional. The MCP suites (tests/integration/mcp*.test.ts) use the same servers, and
  * their SQLite suite runs real worker processes without one. Extra arguments are passed to vitest.

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { sqlDialectIdOf } from '@renderer/engines/capabilities'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { CellValue, ColumnInfo, ForeignKeyInfo, QueryColumn, SchemaRef } from '@shared/types'
 import { api, invokeSilent } from '@renderer/api'
@@ -62,9 +63,11 @@ const target = (): [string, SchemaRef, string] => [
   props.tab.objectName ?? ''
 ]
 const connections = useConnectionsStore()
-const isPostgres = computed(
-  () => connections.get(props.tab.connectionId ?? '')?.engine === 'postgresql'
-)
+/** Rows addressed by primary key only, views read-only (PostgreSQL, SQL Server). */
+const isPostgres = computed(() => {
+  const engine = connections.get(props.tab.connectionId ?? '')?.engine
+  return engine === 'postgresql' || engine === 'sqlserver'
+})
 /** SQLite: rows are written by rowid (or the key of a WITHOUT ROWID table); views are read-only. */
 const isSqlite = computed(() => connections.get(props.tab.connectionId ?? '')?.engine === 'sqlite')
 /**
@@ -118,7 +121,9 @@ async function loadColumnInfo(): Promise<void> {
     foreignKeyList.value = structure.foreignKeys ?? []
     if (isPostgres.value)
       pgReadOnlyReason.value = isViewLike(structure)
-        ? 'Vista materializada: solo lectura (usa «Refrescar» para recalcularla).'
+        ? connections.get(connectionId)?.engine === 'sqlserver'
+          ? 'Vista: solo lectura.'
+          : 'Vista materializada: solo lectura (usa «Refrescar» para recalcularla).'
         : null
   } catch {
     // No foreign keys offered; on PostgreSQL the primary-key check below still applies.
@@ -303,10 +308,9 @@ function setNull(): void {
 
 /* ---------- copy and export ---------- */
 
-const dialectId = computed<SqlDialectId>(() => {
-  const engine = connections.get(props.tab.connectionId ?? '')?.engine
-  return engine === 'postgresql' || engine === 'sqlite' || engine === 'mariadb' ? engine : 'mysql'
-})
+const dialectId = computed<SqlDialectId>(() =>
+  sqlDialectIdOf(connections.get(props.tab.connectionId ?? '')?.engine)
+)
 const copyContext = computed<CopyContext>(() => ({
   dialect: dialectId.value,
   table: props.tab.objectName ?? null,

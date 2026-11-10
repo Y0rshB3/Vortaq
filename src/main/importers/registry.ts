@@ -45,8 +45,7 @@ const appDataOf = (env: SourceEnvironment): string =>
 export function dbeaverDataSourcesPath(env: SourceEnvironment): string | null {
   if (!env.home) return null
   const tail = ['workspace6', 'General', '.dbeaver', 'data-sources.json']
-  if (env.platform === 'darwin')
-    return joinFor(env, env.home, 'Library', 'DBeaverData', ...tail)
+  if (env.platform === 'darwin') return joinFor(env, env.home, 'Library', 'DBeaverData', ...tail)
   if (env.platform === 'win32') return joinFor(env, appDataOf(env), 'DBeaverData', ...tail)
   return joinFor(env, env.home, '.local', 'share', 'DBeaverData', ...tail)
 }

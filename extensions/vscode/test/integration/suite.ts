@@ -682,6 +682,62 @@ test(
   'VORTAQ_TEST_PG_URL'
 )
 
+/* ---------- SQL Server ---------- */
+
+test(
+  'runs a SQL Server batch from a .sql document, with exact decimals and dates',
+  async () => {
+    const url = urlParts(process.env.VORTAQ_TEST_MSSQL_URL!)
+    const id = await saveConnection(
+      input({
+        name: `IT SQL Server ${process.pid}`,
+        engine: 'sqlserver',
+        host: url.host,
+        port: url.port,
+        username: url.user,
+        ssl: { enabled: true, verifyServer: false },
+        network: { connectTimeoutMs: 15000, keepAliveSec: 60 },
+        sqlserver: {
+          initialDatabase: 'master',
+          auth: 'sql',
+          domain: '',
+          instanceName: '',
+          encrypt: 'mandatory',
+          trustServerCertificate: true,
+          hostNameInCertificate: '',
+          tenantId: '',
+          clientId: '',
+          showSystemObjects: false,
+          readOnlyIntent: false
+        }
+      }),
+      url.password
+    )
+    const editor = await sqlDocument(
+      'mssql',
+      [
+        'DECLARE @n int = 2',
+        "SELECT DB_NAME() AS db, CAST(12.50 AS decimal(10,2)) AS d, CAST('2026-01-02 03:04:05.1234567' AS datetime2(7)) AS t, @n + 2 AS four",
+        'GO',
+        'SELECT 1 AS second_batch'
+      ].join('\n'),
+      { connectionId: id, database: 'master', schema: 'dbo' }
+    )
+    const panel = await runAndWait(editor)
+    assert.equal(panel.state.notice, null)
+    // The cursor is in the first batch: it runs whole (DECLARE's row count comes first).
+    const sets = panel.state.results.filter((r) => r.resultSet).map((r) => r.resultSet!.rows)
+    assert.deepEqual(sets, [[['master', '12.50', '2026-01-02 03:04:05.1234567', 4]]])
+    const schemas = await api.tree.getChildren({
+      kind: 'database',
+      connectionId: id,
+      database: 'master'
+    })
+    assert.ok(schemas.some((n) => n.kind === 'schema' && n.schema === 'dbo'))
+  },
+  'VORTAQ_TEST_MSSQL_URL'
+)
+
 /* ---------- MongoDB ---------- */
 
 test(

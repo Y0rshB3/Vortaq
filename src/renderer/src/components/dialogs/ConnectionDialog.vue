@@ -20,10 +20,19 @@ import {
   defaultMongoOptions,
   defaultPostgresOptions,
   defaultSqliteOptions,
+  defaultSqlServerOptions,
   pickableEngines
 } from '@shared/engines'
 import { isAbsolutePathFor } from '@shared/connectionValidation'
 import { parseMongoUri } from '@shared/mongo/uri'
+import { parseSqlServerConnectionString } from '@shared/sqlserver/connectionString'
+import {
+  SQLSERVER_AUTH_LABELS,
+  SQLSERVER_AUTH_METHODS,
+  VORTAQ_ENTRA_CLIENT_ID,
+  sqlServerUsesSecret
+} from '@shared/sqlserverAuth'
+import type { SqlServerAuth, SqlServerEncrypt, SqlServerOptions } from '@shared/types'
 import { can } from '@renderer/engines/capabilities'
 import { api } from '@renderer/api'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
@@ -93,6 +102,7 @@ const isPg = computed(() => engine.value === 'postgresql')
 const isSqlite = computed(() => engine.value === 'sqlite')
 const isMongo = computed(() => engine.value === 'mongodb')
 const isMariaDb = computed(() => engine.value === 'mariadb')
+const isMs = computed(() => engine.value === 'sqlserver')
 const engineLabel = computed(() => ENGINES[engine.value]?.label ?? 'MySQL')
 /** Backup folder fields: every engine with backups (.nb3 or .vqb). */
 const showBackupDirs = computed(
@@ -329,6 +339,65 @@ function applyMongoUri(): void {
   }
 }
 
+/* ---------- SQL Server (docs/sqlserver-design.md) ---------- */
+
+const msOptions = computed<SqlServerOptions>(() => ({
+  ...defaultSqlServerOptions(),
+  ...form.value.sqlserver
+}))
+function patchSqlServer(patch: Partial<SqlServerOptions>): void {
+  form.value = { ...form.value, sqlserver: { ...msOptions.value, ...patch } }
+}
+const MS_AUTH_ITEMS = SQLSERVER_AUTH_METHODS.map((value) => ({
+  value,
+  title: SQLSERVER_AUTH_LABELS[value]
+}))
+const MS_ENCRYPT_ITEMS: { value: SqlServerEncrypt; title: string }[] = [
+  { value: 'mandatory', title: 'Obligatorio (TLS)' },
+  { value: 'strict', title: 'Estricto (TDS 8.0: SQL Server 2022+ y Azure)' },
+  { value: 'optional', title: 'Opcional (solo si el servidor lo exige)' }
+]
+const msAuth = computed(() => msOptions.value.auth)
+const msEntra = computed(() => msAuth.value.startsWith('entra-'))
+/** The sign-in method decides whether a password (or an application secret) is sent. */
+function setMsAuth(auth: SqlServerAuth): void {
+  patchSqlServer({ auth })
+  form.value = { ...form.value, authMode: sqlServerUsesSecret(auth) ? 'password' : 'none' }
+}
+/** «Pegar cadena de conexión»: lives only in this field; its password goes to the password field. */
+const msString = ref('')
+const msWarnings = ref<string[]>([])
+function applyMsString(): void {
+  const parsed = parseSqlServerConnectionString(msString.value)
+  if (!parsed) {
+    errors.value = [
+      'No se reconoce la cadena de conexión. Se admiten las de ADO.NET o Azure (Server=…;Database=…), ODBC, JDBC (jdbc:sqlserver://…) y sqlserver://usuario@host:puerto/bd.'
+    ]
+    return
+  }
+  form.value = {
+    ...form.value,
+    host: parsed.host || form.value.host,
+    port: parsed.port ?? (parsed.sqlserver.instanceName ? form.value.port : 1433),
+    username: parsed.username,
+    network: parsed.connectTimeoutMs
+      ? { ...network.value, connectTimeoutMs: parsed.connectTimeoutMs }
+      : form.value.network
+  }
+  patchSqlServer(parsed.sqlserver)
+  if (parsed.sqlserver.auth) setMsAuth(parsed.sqlserver.auth)
+  if (parsed.password !== null) {
+    password.value = parsed.password
+    clearPassword.value = false
+  }
+  if (!form.value.name.trim()) form.value = { ...form.value, name: parsed.host }
+  msWarnings.value = parsed.warnings
+  msString.value = ''
+  errors.value = []
+  testResult.value = null
+  notify.success('Cadena aplicada: revisa los campos antes de guardar')
+}
+
 const pgOptions = computed(() => form.value.postgres ?? defaultPostgresOptions())
 function patchPostgres(patch: Partial<NonNullable<ConnectionInput['postgres']>>): void {
   form.value = { ...form.value, postgres: { ...pgOptions.value, ...patch } }
@@ -393,6 +462,8 @@ async function reset(): Promise<void> {
   clearSslKeyPassword.value = false
   password.value = ''
   mongoUri.value = ''
+  msString.value = ''
+  msWarnings.value = []
   sshPassword.value = ''
   clearPassword.value = false
   clearSshPassword.value = false
@@ -515,13 +586,15 @@ async function save(): Promise<void> {
               : `${editing.host}:${editing.port}`
             : isPg
               ? 'PostgreSQL, con SSH y SSL opcionales'
-              : isSqlite
-                ? 'SQLite: un archivo de base de datos'
-                : isMongo
-                  ? 'MongoDB: independiente, conjunto de réplicas o SRV'
-                  : isMariaDb
-                    ? 'MariaDB, con SSH y SSL opcionales (también cuentas ed25519 y parsec)'
-                    : 'MySQL / MariaDB, con SSH y SSL opcionales'
+              : isMs
+                ? 'SQL Server y Azure SQL: usuario, Windows o Microsoft Entra; SSH opcional'
+                : isSqlite
+                  ? 'SQLite: un archivo de base de datos'
+                  : isMongo
+                    ? 'MongoDB: independiente, conjunto de réplicas o SRV'
+                    : isMariaDb
+                      ? 'MariaDB, con SSH y SSL opcionales (también cuentas ed25519 y parsec)'
+                      : 'MySQL / MariaDB, con SSH y SSL opcionales'
         "
         :danger="form.environment === 'production'"
       />
@@ -557,7 +630,7 @@ async function save(): Promise<void> {
             <span>{{ e.label }}</span>
           </button>
         </div>
-        <div v-else-if="editing && (isPg || isSqlite || isMongo || isMariaDb)" class="mb-2">
+        <div v-else-if="editing && (isPg || isSqlite || isMongo || isMariaDb || isMs)" class="mb-2">
           <v-chip size="small" :prepend-icon="ENGINES[engine].icon" data-test="conn-engine-chip">{{
             engineLabel
           }}</v-chip>
@@ -800,6 +873,43 @@ async function save(): Promise<void> {
                   </div>
                 </v-col>
               </template>
+              <template v-if="isMs">
+                <v-col cols="12">
+                  <div class="d-flex align-start ga-2">
+                    <v-text-field
+                      v-model="msString"
+                      label="Pegar cadena de conexión (opcional)"
+                      placeholder="Server=tcp:servidor,1433;Database=bd;User ID=usuario;…"
+                      persistent-placeholder
+                      prepend-inner-icon="mdi-link-variant"
+                      class="nd-mono-input"
+                      type="password"
+                      autocomplete="off"
+                      hint="ADO.NET / Azure, ODBC, JDBC o sqlserver://. Rellena los campos; la contraseña va a su campo y la cadena no se guarda."
+                      persistent-hint
+                      data-test="conn-ms-string"
+                      @keydown.enter.prevent="applyMsString"
+                    />
+                    <v-btn
+                      size="small"
+                      class="mt-2"
+                      :disabled="!msString.trim()"
+                      data-test="conn-ms-string-apply"
+                      @click="applyMsString"
+                      >Rellenar</v-btn
+                    >
+                  </div>
+                  <v-alert
+                    v-for="w in msWarnings"
+                    :key="w"
+                    type="warning"
+                    variant="tonal"
+                    density="compact"
+                    class="mt-2"
+                    >{{ w }}</v-alert
+                  >
+                </v-col>
+              </template>
               <template v-if="isMongo">
                 <v-col cols="12">
                   <div class="d-flex align-start ga-2">
@@ -901,7 +1011,16 @@ async function save(): Promise<void> {
                 <v-col cols="12" sm="6">
                   <v-text-field
                     v-model="form.username"
-                    label="Usuario"
+                    :label="
+                      isMs && msAuth === 'entra-interactive'
+                        ? 'Cuenta (opcional, p. ej. ana@empresa.com)'
+                        : isMs && msAuth === 'windows'
+                          ? 'Usuario (o DOMINIO\\usuario)'
+                          : 'Usuario'
+                    "
+                    :disabled="
+                      isMs && (msAuth === 'entra-azure-cli' || msAuth === 'entra-service-principal')
+                    "
                     prepend-inner-icon="mdi-account-outline"
                     autocomplete="off"
                     data-test="conn-user"
@@ -917,6 +1036,16 @@ async function save(): Promise<void> {
                     @update:model-value="patchMongo({ authMechanism: $event })"
                   />
                 </v-col>
+                <v-col v-else-if="isMs" cols="12" sm="6">
+                  <v-select
+                    :model-value="msAuth"
+                    :items="MS_AUTH_ITEMS"
+                    label="Autenticación"
+                    prepend-inner-icon="mdi-shield-key-outline"
+                    data-test="conn-ms-auth"
+                    @update:model-value="setMsAuth($event)"
+                  />
+                </v-col>
                 <v-col v-else cols="12" sm="6">
                   <v-select
                     v-model="form.authMode"
@@ -926,7 +1055,7 @@ async function save(): Promise<void> {
                     data-test="conn-auth-mode"
                   />
                 </v-col>
-                <v-col v-if="noPassword && !isMongo" cols="12">
+                <v-col v-if="noPassword && !isMongo && !isMs" cols="12">
                   <v-alert
                     type="info"
                     variant="tonal"
@@ -943,7 +1072,11 @@ async function save(): Promise<void> {
                 <v-col v-if="!noPassword" cols="12" sm="6">
                   <v-text-field
                     v-model="password"
-                    label="Contraseña"
+                    :label="
+                      isMs && msAuth === 'entra-service-principal'
+                        ? 'Secreto de la aplicación'
+                        : 'Contraseña'
+                    "
                     persistent-placeholder
                     prepend-inner-icon="mdi-lock-outline"
                     :type="showPassword ? 'text' : 'password'"
@@ -1080,6 +1213,112 @@ async function save(): Promise<void> {
                   />
                 </v-col>
               </template>
+              <template v-if="isMs">
+                <v-col v-if="msAuth === 'windows'" cols="12" sm="6">
+                  <v-text-field
+                    :model-value="msOptions.domain"
+                    label="Dominio"
+                    class="nd-mono-input"
+                    hint="Vacío si escribes DOMINIO\\usuario. Se inicia sesión por NTLM con usuario y contraseña."
+                    persistent-hint
+                    data-test="conn-ms-domain"
+                    @update:model-value="patchSqlServer({ domain: $event })"
+                  />
+                </v-col>
+                <v-col v-if="msEntra" cols="12" sm="6">
+                  <v-text-field
+                    :model-value="msOptions.tenantId"
+                    label="Inquilino (tenant)"
+                    class="nd-mono-input"
+                    :hint="
+                      msAuth === 'entra-service-principal'
+                        ? 'Obligatorio: ID del directorio o dominio (contoso.onmicrosoft.com)'
+                        : 'Opcional: el directorio de la base de datos si tu cuenta es invitada'
+                    "
+                    persistent-hint
+                    data-test="conn-ms-tenant"
+                    @update:model-value="patchSqlServer({ tenantId: $event })"
+                  />
+                </v-col>
+                <v-col
+                  v-if="msAuth === 'entra-service-principal' || msAuth === 'entra-interactive'"
+                  cols="12"
+                  sm="6"
+                >
+                  <v-text-field
+                    :model-value="msOptions.clientId"
+                    label="ID de aplicación (cliente)"
+                    class="nd-mono-input"
+                    :hint="
+                      msAuth === 'entra-service-principal'
+                        ? 'Obligatorio: la aplicación registrada en Microsoft Entra'
+                        : VORTAQ_ENTRA_CLIENT_ID
+                          ? 'Opcional: vacío = la aplicación de Vortaq'
+                          : 'Una aplicación pública de tu organización en Microsoft Entra (pídela al administrador de Azure)'
+                    "
+                    persistent-hint
+                    data-test="conn-ms-client"
+                    @update:model-value="patchSqlServer({ clientId: $event })"
+                  />
+                </v-col>
+                <v-col v-if="msAuth === 'entra-azure-cli'" cols="12">
+                  <v-alert type="info" variant="tonal" density="compact" icon="mdi-console">
+                    Usa la sesión de la CLI de Azure de este equipo: ejecuta «az login» antes de
+                    conectar. Vortaq no guarda ninguna contraseña.
+                  </v-alert>
+                </v-col>
+                <v-col v-if="msAuth === 'entra-interactive'" cols="12">
+                  <v-alert type="info" variant="tonal" density="compact" icon="mdi-open-in-new">
+                    Al conectar se abre la página de inicio de sesión de Microsoft en el navegador
+                    (con MFA). La sesión dura mientras Vortaq esté abierto.
+                  </v-alert>
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field
+                    :model-value="msOptions.initialDatabase"
+                    label="Base de datos inicial"
+                    prepend-inner-icon="mdi-database-outline"
+                    class="nd-mono-input"
+                    hint="Vacío = la predeterminada del inicio de sesión (master). Obligatoria en Azure SQL si no tienes acceso a master."
+                    persistent-hint
+                    data-test="conn-ms-database"
+                    @update:model-value="patchSqlServer({ initialDatabase: $event })"
+                  />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field
+                    :model-value="msOptions.instanceName"
+                    label="Instancia con nombre"
+                    class="nd-mono-input"
+                    hint="p. ej. SQLEXPRESS. Usa SQL Server Browser en lugar del puerto (no con túnel SSH)."
+                    persistent-hint
+                    data-test="conn-ms-instance"
+                    @update:model-value="patchSqlServer({ instanceName: $event })"
+                  />
+                </v-col>
+                <v-col cols="12">
+                  <v-combobox
+                    v-model="form.customDatabases"
+                    label="Mostrar solo estas bases de datos"
+                    hint="Si no está vacía, solo se muestran estas bases de datos. Pulsa Enter para añadir."
+                    persistent-hint
+                    multiple
+                    chips
+                    closable-chips
+                    data-test="conn-ms-custom-databases"
+                  />
+                </v-col>
+                <v-col cols="12">
+                  <v-checkbox
+                    :model-value="msOptions.showSystemObjects"
+                    label="Mostrar bases de datos y esquemas del sistema"
+                    density="compact"
+                    hide-details
+                    data-test="conn-ms-system"
+                    @update:model-value="patchSqlServer({ showSystemObjects: $event === true })"
+                  />
+                </v-col>
+              </template>
             </v-row>
           </v-window-item>
 
@@ -1170,7 +1409,51 @@ async function save(): Promise<void> {
           </v-window-item>
 
           <v-window-item value="ssl">
-            <template v-if="isPg">
+            <template v-if="isMs">
+              <v-select
+                :model-value="msOptions.encrypt"
+                :items="MS_ENCRYPT_ITEMS"
+                label="Cifrado"
+                prepend-inner-icon="mdi-shield-lock-outline"
+                hint="Azure SQL exige cifrado. Con túnel SSH se comprueba el nombre del servidor real."
+                persistent-hint
+                data-test="conn-ms-encrypt"
+                @update:model-value="patchSqlServer({ encrypt: $event })"
+              />
+              <v-checkbox
+                :model-value="msOptions.trustServerCertificate"
+                label="Confiar en el certificado del servidor (sin verificarlo)"
+                density="compact"
+                class="mt-2"
+                :disabled="msOptions.encrypt === 'strict'"
+                :hint="
+                  msOptions.encrypt === 'strict'
+                    ? 'El cifrado estricto siempre verifica el certificado.'
+                    : 'Para certificados autofirmados (instalaciones locales o Docker). No lo actives en servidores de Internet.'
+                "
+                persistent-hint
+                data-test="conn-ms-trust"
+                @update:model-value="patchSqlServer({ trustServerCertificate: $event === true })"
+              />
+              <v-text-field
+                :model-value="msOptions.hostNameInCertificate"
+                label="Nombre en el certificado (opcional)"
+                class="nd-mono-input mt-3"
+                hint="Si difiere del servidor, p. ej. *.database.windows.net"
+                persistent-hint
+                data-test="conn-ms-cert-name"
+                @update:model-value="patchSqlServer({ hostNameInCertificate: $event })"
+              />
+              <PathPicker
+                v-model="form.ssl.caCertPath"
+                v-path-tail="form.ssl.caCertPath"
+                class="mt-3"
+                kind="file"
+                label="Certificado de CA (opcional)"
+                hint="Además de las CA del sistema, p. ej. la CA de tu empresa"
+              />
+            </template>
+            <template v-else-if="isPg">
               <v-select
                 v-model="sslMode"
                 :items="PG_SSL_MODES"
@@ -1303,7 +1586,7 @@ async function save(): Promise<void> {
 
           <v-window-item value="advanced">
             <v-combobox
-              v-if="!isPg && !isSqlite"
+              v-if="!isPg && !isSqlite && !isMs"
               v-model="form.customDatabases"
               label="Lista de bases de datos personalizada"
               hint="Si no está vacía, solo se muestran estos esquemas. Pulsa Enter para añadir."
@@ -1394,6 +1677,27 @@ async function save(): Promise<void> {
                   persistent-hint
                   data-test="sqlite-busy-timeout"
                   @update:model-value="patchSqlite({ busyTimeoutMs: Number($event) || 0 })"
+                />
+              </v-col>
+            </v-row>
+            <v-row v-if="isMs" dense class="mb-1">
+              <v-col cols="6" sm="3">
+                <v-text-field
+                  v-model.number="connectTimeoutSec"
+                  label="Tiempo de conexión (s)"
+                  type="number"
+                  min="1"
+                  data-test="conn-ms-timeout"
+                />
+              </v-col>
+              <v-col cols="12" sm="9">
+                <v-checkbox
+                  :model-value="msOptions.readOnlyIntent"
+                  label="Intención de solo lectura (ApplicationIntent=ReadOnly, réplicas de grupos de disponibilidad)"
+                  density="compact"
+                  hide-details
+                  data-test="conn-ms-readonly-intent"
+                  @update:model-value="patchSqlServer({ readOnlyIntent: $event === true })"
                 />
               </v-col>
             </v-row>

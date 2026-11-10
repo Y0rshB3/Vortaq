@@ -41,14 +41,14 @@ const mysqlRecord = (overrides: Partial<ConnectionConfig> = {}): ConnectionConfi
   }) as ConnectionConfig
 
 describe('engine descriptors', () => {
-  it('declares the five engines, keyed by their own id', () => {
-    expect(ENGINE_IDS).toEqual(['mysql', 'mariadb', 'postgresql', 'sqlite', 'mongodb'])
+  it('declares the six engines, keyed by their own id', () => {
+    expect(ENGINE_IDS).toEqual(['mysql', 'mariadb', 'postgresql', 'sqlite', 'mongodb', 'sqlserver'])
     for (const id of ENGINE_IDS) expect(ENGINES[id].id).toBe(id)
   })
 
   it('ships every driver; no engine is a preview any more', () => {
     const available = ENGINE_IDS.filter((id) => ENGINES[id].available)
-    expect(available).toEqual(['mysql', 'mariadb', 'postgresql', 'sqlite', 'mongodb'])
+    expect(available).toEqual(['mysql', 'mariadb', 'postgresql', 'sqlite', 'mongodb', 'sqlserver'])
     for (const id of ENGINE_IDS) expect('preview' in ENGINES[id].capabilities).toBe(false)
   })
 
@@ -183,8 +183,24 @@ describe('engine helpers', () => {
       'mariadb',
       'postgresql',
       'sqlite',
-      'mongodb'
+      'mongodb',
+      'sqlserver'
     ])
+  })
+
+  it('SQL Server: database > schema, tab sessions, T-SQL, attention cancel; no backups or jobs yet', () => {
+    const { sqlserver } = ENGINES
+    expect(sqlserver).toMatchObject({ label: 'SQL Server', defaultPort: 1433, defaultUser: 'sa' })
+    expect(sqlserver.capabilities).toMatchObject({
+      hierarchy: 'database>schema',
+      hasSchemas: true,
+      tabSessions: true,
+      sqlDialect: 'sqlserver',
+      cancel: 'attention',
+      supportsBackupsVqb: false,
+      supportsAutomation: false,
+      ai: { reader: 'sqlserver_catalog', explain: 'showplan', scope: 'schemas', language: 'sql' }
+    })
   })
 })
 

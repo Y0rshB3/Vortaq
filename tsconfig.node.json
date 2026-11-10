@@ -36,6 +36,7 @@
     "src/renderer/src/components/query/resultEditability.ts",
     "src/renderer/src/components/query/selectSourcePg.ts",
     "src/renderer/src/components/query/selectSourceSqlite.ts",
+    "src/renderer/src/components/query/selectSourceMs.ts",
     "src/renderer/src/utils/columnMeta.ts",
     "src/renderer/src/components/data/rowEditing.ts",
     "src/renderer/src/components/designer/alterTable.ts",
@@ -45,6 +46,7 @@
     "src/renderer/src/components/designer/pg/types.ts",
     "src/renderer/src/components/designer/sqlite/planner.ts",
     "src/renderer/src/components/designer/mariadb/planner.ts",
+    "src/renderer/src/components/designer/sqlserver/planner.ts",
     "src/renderer/src/components/designer/columnType.ts"
   ]
 }

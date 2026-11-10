@@ -7,7 +7,7 @@ const generate = { mode: 'generateSql' } as AiChatRequest
 describe('prompts', () => {
   it('does not tie the frozen instructions to MySQL', () => {
     expect(SYSTEM_INSTRUCTIONS).not.toMatch(/MySQL client|their own MySQL/)
-    expect(SYSTEM_INSTRUCTIONS).toMatch(/PostgreSQL, SQLite and MongoDB/)
+    expect(SYSTEM_INSTRUCTIONS).toMatch(/PostgreSQL, SQLite, SQL Server and MongoDB/)
   })
 
   it('asks for SQL in the dialect of the connection', () => {

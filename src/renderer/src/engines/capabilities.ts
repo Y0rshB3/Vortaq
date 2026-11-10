@@ -8,9 +8,11 @@ import {
   DEFAULT_ENGINE,
   ENGINES,
   engineOf,
+  isEngineId,
   type BooleanCapability,
   type EngineDescriptor
 } from '@shared/engines'
+import type { SqlDialectId } from '@shared/dialects/types'
 import type { EngineId } from '@shared/types'
 import { ALL_GROUPS, type GroupKind } from '@renderer/utils/objectTypes'
 
@@ -55,4 +57,10 @@ export function groupsFor(connection: EngineHolder): GroupKind[] {
     if (g === 'triggers') return caps.triggers
     return true
   })
+}
+
+/** SQL dialect id of an engine for copy/export literals and parsing (MySQL when unknown or MongoDB). */
+export function sqlDialectIdOf(engine: EngineId | null | undefined): SqlDialectId {
+  const id = engine && isEngineId(engine) ? ENGINES[engine].capabilities.sqlDialect : null
+  return id ?? 'mysql'
 }
