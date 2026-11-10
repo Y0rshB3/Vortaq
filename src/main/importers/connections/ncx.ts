@@ -28,6 +28,8 @@ import {
   mongoReadPreferenceOf,
   mongoTopologyOf,
   sqliteBlock,
+  SQLSERVER_CHOICE,
+  sqlServerHost,
   uniqueKey,
   unsupported,
   type EngineChoice
@@ -104,6 +106,7 @@ function engineFor(connType: string, serviceProvider: string): EngineChoice {
   if (key === 'POSTGRESQL') return postgresFamily(serviceProvider)
   if (key === 'SQLITE') return SQLITE_CHOICE
   if (key === 'MONGODB') return MONGO_CHOICE
+  if (key === 'SQLSERVER') return SQLSERVER_CHOICE
   return unsupported(navicatTypeLabel(connType))
 }
 
@@ -167,8 +170,13 @@ export function parseNcx(
     const hostList = postgres
       ? firstHost(get('Host') ?? '', warnings)
       : { host: (get('Host') ?? '').trim(), port: null }
-    const host = hostList.host
+    const sqlserver = choice.engine === 'sqlserver'
     const defaultPort = hostList.port ?? DEFAULT_PORTS[connType.trim().toLowerCase()] ?? 3306
+    // SQL Server: Host may carry `\\INSTANCE` or `,port` (Navicat's own field).
+    const msServer = sqlserver
+      ? sqlServerHost(hostList.host, positiveInt(get('Port'), defaultPort), warnings)
+      : null
+    const host = msServer ? msServer.host : hostList.host
 
     const sshAuthKey = (get('SSH_AuthenMethod') ?? '').trim().toUpperCase() === 'PUBLICKEY'
     const ssh: SshConfig = bool(get('SSH'))
@@ -227,10 +235,25 @@ export function parseNcx(
       engineLabel: navicatType,
       unsupportedReason: choice.unsupportedReason,
       host,
-      port: positiveInt(get('Port'), defaultPort),
+      port: msServer ? msServer.port : positiveInt(get('Port'), defaultPort),
       username: (get('UserName') ?? '').trim(),
       database:
-        (postgres ? path(get('InitialDatabase')) : undefined) ?? path(get('Database')) ?? null,
+        (postgres || sqlserver ? path(get('InitialDatabase')) : undefined) ??
+        path(get('Database')) ??
+        null,
+      ...(msServer
+        ? {
+            sqlserver: {
+              ...(msServer.instanceName ? { instanceName: msServer.instanceName } : {}),
+              // Unverified attribute names: Windows sign-in only when the file says so.
+              ...(/WINDOWS/i.test(get('AuthenMethod') ?? get('AuthenticationMethod') ?? '')
+                ? { auth: 'windows' as const }
+                : {}),
+              encrypt: ssl.enabled ? ('mandatory' as const) : ('optional' as const),
+              trustServerCertificate: ssl.enabled && !ssl.verifyServer
+            }
+          }
+        : {}),
       color: normalizeColor(get('Color') ?? get('ConnectionColor')),
       environment: inferEnvironment(name, host, ssh.enabled),
       ssh,

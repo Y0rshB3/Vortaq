@@ -8,8 +8,11 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import * as vscode from 'vscode'
 import {
+  defaultSchemaOf,
   ENGINES,
   environmentName,
+  selectFirstRows,
+  usesSchemaRef,
   type ConnectionConfig,
   type EngineId,
   type ProgressEvent
@@ -264,9 +267,10 @@ export async function activate(
     const connection = nodeConnection(node)
     if (node && connection && (node.kind === 'table' || node.kind === 'view')) {
       const dialect = sqlDialectOf(connection)
-      const namespace =
-        connection.engine === 'postgresql' ? (node.schema ?? 'public') : node.database
-      content = `SELECT * FROM ${dialect.qualified(namespace, node.name)} LIMIT 100;\n`
+      const namespace = usesSchemaRef(connection.engine)
+        ? (node.schema ?? defaultSchemaOf(connection.engine))
+        : node.database
+      content = `${selectFirstRows(dialect, dialect.qualified(namespace, node.name), 100)};\n`
     }
     const doc = await vscode.workspace.openTextDocument({ language: 'sql', content })
     const editor = await vscode.window.showTextDocument(doc)
@@ -278,8 +282,8 @@ export async function activate(
         await sqlRunner.setTarget(doc.uri.toString(), {
           connectionId: connection.id,
           database: database ?? defaultDatabase(connection),
-          ...(connection.engine === 'postgresql'
-            ? { schema: schema ?? (database ? 'public' : null) }
+          ...(usesSchemaRef(connection.engine)
+            ? { schema: schema ?? (database ? defaultSchemaOf(connection.engine) : null) }
             : {})
         })
       }
@@ -293,6 +297,8 @@ export async function activate(
   function defaultDatabase(connection: ConnectionConfig): string | null {
     if (connection.engine === 'postgresql')
       return connection.postgres?.initialDatabase || 'postgres'
+    if (connection.engine === 'sqlserver')
+      return connection.sqlserver?.initialDatabase?.trim() || 'master'
     if (connection.engine === 'sqlite') return 'main'
     return connection.customDatabases[0] ?? null
   }
@@ -455,8 +461,9 @@ export async function activate(
       return
     }
     if (!(await service.open(connection.id))) return
-    const pg = connection.engine === 'postgresql'
-    const schema = node.kind === 'schema' ? node.schema : 'public'
+    const pg = usesSchemaRef(connection.engine)
+    const schema =
+      node.kind === 'schema' ? node.schema : (defaultSchemaOf(connection.engine) ?? 'public')
     const namespace = pg ? schema : node.database
     const label = kind === 'diagram' ? 'Diagrama' : 'Consulta gráfica'
     schemaViews.open({

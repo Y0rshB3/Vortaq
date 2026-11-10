@@ -55,6 +55,8 @@ import { toStatementResult } from '../mysql/query'
 import type { PooledSession } from '../mysql/session'
 import { composeSearchPath, formatSearchPath } from '../postgres/client'
 import { isPgConnection } from '../postgres/connection'
+import { isMsConnection } from '../sqlserver/connection'
+import { isSingleMsSelect } from '../ai/msMetadata'
 import { isSqliteConnection } from '../sqlite/connection'
 import { McpToolError } from './access'
 import type { McpConnectionView, McpRuntime, ResolvedConnection } from './runtime'
@@ -117,9 +119,16 @@ export function listConnections(rt: McpRuntime): ToolOutput {
 
 /* ---------- namespaces ---------- */
 
+/** Database of a PostgreSQL or SQL Server call (the connection's initial one by default). */
 function pgDatabase(c: ResolvedConnection, database?: string | null): string {
+  if (c.config.engine === 'sqlserver')
+    return database?.trim() || c.config.sqlserver?.initialDatabase?.trim() || 'master'
   return database?.trim() || c.config.postgres?.initialDatabase || 'postgres'
 }
+
+/** Engines addressed as database + schema (PostgreSQL, SQL Server). */
+const hasSchemas = (engine: string | undefined): boolean =>
+  engine === 'postgresql' || engine === 'sqlserver'
 
 function mongoDatabase(c: ResolvedConnection, database?: string | null): string {
   return database?.trim() || c.config.mongo?.defaultDatabase || 'test'
@@ -165,7 +174,7 @@ export async function listDatabases(
       rows: all.length
     }
   }
-  if (engine === 'postgresql') {
+  if (hasSchemas(engine)) {
     const databases: Record<string, unknown>[] = []
     for (const [i, name] of all.entries()) {
       if (i >= MCP_LIMITS.maxPgDatabases) {
@@ -257,19 +266,20 @@ export async function listTables(
     }))
     return { data: { database, collections: tables }, rows: tables.length }
   }
-  if (engine === 'postgresql') {
+  if (hasSchemas(engine)) {
     const database = pgDatabase(c, args.database)
     const schemas = args.schema?.trim() ? [args.schema.trim()] : await pgSchemas(rt, id, database)
     const tables: TableRow[] = []
     for (const schema of schemas) {
       const ref = { database, schema }
       tables.push(...(await sqlTables(rt, id, ref, schema)))
-      try {
-        const matviews = await rt.invoke('db:objects', id, ref, 'materialized_view')
-        for (const m of matviews) tables.push({ name: m.name, schema, kind: 'materialized_view' })
-      } catch {
-        /* older servers or no privileges: tables and views are enough */
-      }
+      if (engine === 'postgresql')
+        try {
+          const matviews = await rt.invoke('db:objects', id, ref, 'materialized_view')
+          for (const m of matviews) tables.push({ name: m.name, schema, kind: 'materialized_view' })
+        } catch {
+          /* older servers or no privileges: tables and views are enough */
+        }
     }
     return { data: { database, tables }, rows: tables.length }
   }
@@ -433,16 +443,14 @@ export async function describeTable(
     const data = await describeMongo(rt, c, mongoDatabase(c, args.database), table)
     return { data, rows: (data.fields as unknown[]).length }
   }
-  if (engine === 'postgresql') {
+  if (hasSchemas(engine)) {
     const database = pgDatabase(c, args.database)
+    const home = engine === 'sqlserver' ? 'dbo' : 'public'
     let schema = args.schema?.trim()
     if (!schema) {
-      // The schema that holds the table: public first, then the others.
+      // The schema that holds the table: public (dbo) first, then the others.
       const schemas = await pgSchemas(rt, id, database)
-      const ordered = [
-        ...schemas.filter((s) => s === 'public'),
-        ...schemas.filter((s) => s !== 'public')
-      ]
+      const ordered = [...schemas.filter((s) => s === home), ...schemas.filter((s) => s !== home)]
       const found: string[] = []
       for (const s of ordered) {
         const names = (await sqlTables(rt, id, { database, schema: s })).map((t) => t.name)
@@ -452,7 +460,7 @@ export async function describeTable(
         throw new McpToolError(
           `La tabla «${table}» existe en varios esquemas (${found.join(', ')}): indica «schema».`
         )
-      schema = found[0] ?? 'public'
+      schema = found[0] ?? home
     }
     const data: Record<string, unknown> = {
       database,
@@ -524,7 +532,7 @@ async function withTimeout<T>(
 function sqlContext(c: ResolvedConnection, args: QueryArgs): SchemaRef | null {
   const database = args.database?.trim()
   const schema = args.schema?.trim()
-  if (c.config.engine === 'postgresql')
+  if (hasSchemas(c.config.engine))
     return database || schema ? { database: database ?? '', schema: schema ?? '' } : null
   if (c.config.engine === 'sqlite') return null
   return database || null
@@ -861,9 +869,11 @@ export async function explainQuery(
   const single =
     engine === 'postgresql'
       ? isSinglePgSelect(sql)
-      : engine === 'sqlite'
-        ? isSingleSqliteSelect(sql)
-        : isSingleSelect(sql)
+      : engine === 'sqlserver'
+        ? isSingleMsSelect(sql)
+        : engine === 'sqlite'
+          ? isSingleSqliteSelect(sql)
+          : isSingleSelect(sql)
   if (!check.ok || !single) throw new McpToolError(EXPLAIN_ONE_SELECT)
   const statement = check.sql.replace(/;\s*$/, '')
   const timeout = resolveTimeoutMs(args.timeout_seconds)
@@ -898,6 +908,31 @@ export async function explainQuery(
       } finally {
         connection.unregisterExecution(executionId)
         await session.query('ROLLBACK').catch(() => undefined)
+        await session.release().catch(() => undefined)
+      }
+    } else if (isMsConnection(connection)) {
+      // SET SHOWPLAN_TEXT ON: the statement is compiled for its estimated plan, never run.
+      const session = await connection.acquire({
+        database: pgDatabase(c, args.database),
+        schema: null
+      })
+      session.usage.userSql = true
+      const executionId = randomUUID()
+      try {
+        await session.exec('SET SHOWPLAN_TEXT ON')
+        connection.registerExecution(executionId, session)
+        const { value } = await withTimeout(
+          timeout,
+          () => session.queryArrays(statement),
+          () => connection.cancel(executionId)
+        )
+        const lines = value.rows.flatMap((r) => String(r[0] ?? '').split('\n'))
+        plan =
+          lines.slice(0, 200).join('\n') +
+          (lines.length > 200 ? `\n… ${lines.length - 200} líneas más` : '')
+      } finally {
+        connection.unregisterExecution(executionId)
+        await session.exec('SET SHOWPLAN_TEXT OFF').catch(() => undefined)
         await session.release().catch(() => undefined)
       }
     } else if (isSqliteConnection(connection)) {
@@ -1045,10 +1080,9 @@ export async function executeSql(
       }
     } else {
       const executionId = randomUUID()
-      const schema =
-        c.config.engine === 'postgresql'
-          ? { database: pgDatabase(c, args.database), schema: args.schema?.trim() ?? '' }
-          : args.database?.trim() || null
+      const schema = hasSchemas(c.config.engine)
+        ? { database: pgDatabase(c, args.database), schema: args.schema?.trim() ?? '' }
+        : args.database?.trim() || null
       const run = await withTimeout(
         timeout,
         () =>

@@ -50,6 +50,13 @@ export function getAiService(ctx: AppContext): AiService {
       session.usage.userSql = true
       return session
     },
+    isSqlServer: (id) => ctx.connections.get(id)?.engine === 'sqlserver',
+    acquireMs: async (connectionId, database) => {
+      const { isMsConnection } = await import('../sqlserver/connection')
+      const connection = await manager.connection(connectionId)
+      if (!isMsConnection(connection)) throw new Error('La conexión no es SQL Server.')
+      return connection.acquire(database ? { database, schema: null } : null)
+    },
     isMongo: (id) => ctx.connections.get(id)?.engine === 'mongodb',
     engineOf: (id) => ctx.connections.get(id)?.engine ?? null,
     mongoSource: async (connectionId) => {

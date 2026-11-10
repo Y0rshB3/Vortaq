@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { sqlDialectIdOf } from '@renderer/engines/capabilities'
 import { computed, nextTick, onMounted, ref, shallowRef } from 'vue'
 import { getDialect } from '@shared/dialects'
 import type { SqlDialectId } from '@shared/dialects/types'
@@ -55,14 +56,15 @@ const connections = useConnectionsStore()
 const connectionId = computed(() => props.connectionId)
 const namespace = computed(() => props.namespace)
 const engine = computed(() => connections.get(connectionId.value)?.engine)
-const dialectId = computed<SqlDialectId>(() =>
-  engine.value === 'postgresql' || engine.value === 'sqlite' || engine.value === 'mariadb'
-    ? engine.value
-    : 'mysql'
-)
-/** PostgreSQL names the schema (search_path may not hold it); SQLite an attached database. */
+const dialectId = computed<SqlDialectId>(() => sqlDialectIdOf(engine.value))
+/**
+ * PostgreSQL and SQL Server name the schema (search_path / the user's default schema may not
+ * hold it); SQLite an attached database.
+ */
 const qualifier = computed(() =>
-  engine.value === 'postgresql' || (engine.value === 'sqlite' && namespace.value !== 'main')
+  engine.value === 'postgresql' ||
+  engine.value === 'sqlserver' ||
+  (engine.value === 'sqlite' && namespace.value !== 'main')
     ? namespace.value
     : null
 )

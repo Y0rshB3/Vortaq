@@ -1,6 +1,6 @@
 // First: in MCP mode stdout must carry only JSON-RPC, before any other module runs.
 import { MCP_MODE } from './mcpStdio'
-import { app, BrowserWindow, dialog, Menu } from 'electron'
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
 import { applyProfilePath, configureFileLog, createContext, readEnvSwitches } from './bootstrap'
 import { APP_NAME } from './brand'
 import { getLogger } from './log'
@@ -15,6 +15,7 @@ import { migrateImportedMariaDb } from './migration/mariadbEngine'
 import { setSqliteSpawner } from './sqlite/spawner'
 import { electronSqliteSpawner } from './sqlite/electronSpawner'
 import { setAiFetch } from './ai/index'
+import { setEntraBrowserOpener } from './sqlserver/browserOpener'
 import { electronFetch } from './ai/electronFetch'
 import {
   SCREENSHOT_QUERY,
@@ -90,6 +91,12 @@ function startDesktop(): void {
     // processes (src/main/sqlite/worker.ts); AI provider calls use Electron's network stack.
     setSqliteSpawner(electronSqliteSpawner)
     setAiFetch(electronFetch)
+    // SQL Server's Microsoft Entra sign-in opens in the system browser (https only).
+    setEntraBrowserOpener(async (url) => {
+      if (!url.startsWith('https://login.microsoftonline.com/'))
+        throw new Error('Dirección de inicio de sesión no válida')
+      await shell.openExternal(url)
+    })
     registerAllHandlers(ctx)
 
     if (runJobId) {

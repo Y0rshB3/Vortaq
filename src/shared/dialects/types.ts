@@ -11,7 +11,7 @@
  * exists that nothing calls.
  */
 
-export type SqlDialectId = 'mysql' | 'mariadb' | 'postgresql' | 'sqlite'
+export type SqlDialectId = 'mysql' | 'mariadb' | 'postgresql' | 'sqlite' | 'sqlserver'
 
 /**
  * Lexical rules of a dialect. Descriptive data for the shared lexer that new
@@ -19,7 +19,7 @@ export type SqlDialectId = 'mysql' | 'mariadb' | 'postgresql' | 'sqlite'
  * it (design D6).
  */
 export interface LexRules {
-  /** mysql: ['`'] ('"' only with ANSI_QUOTES, which is ignored); pg: ['"']; sqlite: ['"', '[', '`'] */
+  /** mysql: ['`'] ('"' only with ANSI_QUOTES, which is ignored); pg: ['"']; sqlite: ['"', '[', '`']; sqlserver: ['[', '"'] */
   identQuotes: ('`' | '"' | '[')[]
   /** mysql: ["'", '"']; pg/sqlite: ["'"] */
   stringQuotes: ("'" | '"')[]
@@ -46,6 +46,8 @@ export interface SqlStatement {
   sql: string
   /** 1-based line of the first code character of the statement. */
   startLine: number
+  /** SQL Server: `GO n` runs this batch n times (absent = once). */
+  repeat?: number
 }
 
 /** Result of the renderer-side production guard (`SqlDialect.analyzeWrites`). */

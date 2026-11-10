@@ -7,8 +7,10 @@
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import {
+  defaultSchemaOf,
   ENGINES,
   environmentName,
+  usesSchemaRef,
   type ConnectionConfig,
   type MongoCollectionInfo,
   type SchemaRef
@@ -48,13 +50,15 @@ const GROUP_ICONS: Record<GroupKind, string> = {
   mongoViews: 'eye'
 }
 
-/** Address of a database/schema in the db:* channels (PostgreSQL needs the object form). */
+/** Address of a database/schema in the db:* channels (PostgreSQL and SQL Server need the object form). */
 export function schemaRefOf(
   connection: Pick<ConnectionConfig, 'engine'>,
   database: string,
   schema?: string
 ): SchemaRef {
-  return connection.engine === 'postgresql' ? { database, schema: schema ?? 'public' } : database
+  return usesSchemaRef(connection.engine)
+    ? { database, schema: schema ?? defaultSchemaOf(connection.engine) ?? '' }
+    : database
 }
 
 const seg = (s: string): string => encodeURIComponent(s)
@@ -331,7 +335,7 @@ export class ConnectionsTree implements vscode.TreeDataProvider<TreeNode>, vscod
         return databases.map((database) => ({ kind: 'database', connectionId: id, database }))
       }
       case 'database': {
-        if (connection.engine === 'postgresql') {
+        if (usesSchemaRef(connection.engine)) {
           const schemas = await core.invoke('db:schemas', id, node.database)
           return schemas.map((s) => ({
             kind: 'schema',

@@ -28,7 +28,9 @@ export function temporalSpec(
   const declared = (columnType ?? '').trim().toLowerCase()
   const t = (declared || (type ?? '')).trim().toUpperCase()
   const fspMatch = /^\w+\s*\((\d)\)/.exec(declared)
-  const fsp = fspMatch ? Math.min(6, Number(fspMatch[1])) : 0
+  // MySQL's limit is 6; SQL Server's time and datetime2 go to 7 (datetime2 alone means 7).
+  const fsp = fspMatch ? Math.min(7, Number(fspMatch[1])) : 0
+  if (/^DATETIME2\b/.test(t)) return { kind: 'datetime', fsp: fspMatch ? fsp : 7 }
   if (/^(DATETIME|TIMESTAMP)\b/.test(t)) return { kind: 'datetime', fsp }
   if (/^DATE\b/.test(t)) return { kind: 'date', fsp: 0 }
   if (/^TIME\b/.test(t)) return { kind: 'time', fsp }
@@ -81,7 +83,8 @@ export function weekday(year: number, month: number, day: number): number {
 const pad = (n: number, width = 2): string => String(n).padStart(width, '0')
 
 const DATE_RE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/
-const TIME_RE = /^(-)?(\d{1,3}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,6}))?)?$/
+// Up to 7 fraction digits: SQL Server time(7)/datetime2(7) keep 100 ns.
+const TIME_RE = /^(-)?(\d{1,3}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,7}))?)?$/
 
 function parseDate(text: string): DateParts | 'zero' | string {
   const m = DATE_RE.exec(text)

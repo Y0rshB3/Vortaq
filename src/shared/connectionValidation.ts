@@ -7,6 +7,7 @@
  * engine rules only add messages for engines other than MySQL.
  */
 import { engineOf, isEngineId } from './engines'
+import { sqlServerNeedsUser, sqlServerOptionErrors } from './sqlserverAuth'
 import { mcpConfigError } from './mcp'
 import type { ConnectionInput, Environment } from './types'
 
@@ -116,6 +117,8 @@ export function engineBlockErrors(
         )
       }
     }
+  } else if (engine === 'sqlserver') {
+    errors.push(...sqlServerOptionErrors(input.sqlserver, input))
   } else if (engine === 'mongodb') {
     const mongo = input.mongo
     const ssh = input.ssh?.enabled === true
@@ -193,10 +196,11 @@ export function connectionSaveError(
   ) {
     return 'El puerto debe ser un número entre 1 y 65535'
   }
-  // MongoDB may sign in without a user; SQLite has none.
+  // MongoDB may sign in without a user; SQLite has none; SQL Server's Entra methods neither.
   if (
     engine.capabilities.needsHost &&
     !engine.capabilities.passwordOptional &&
+    !(engine.id === 'sqlserver' && !sqlServerNeedsUser(input.sqlserver?.auth)) &&
     !input.username?.trim()
   ) {
     return 'El usuario de la conexión es obligatorio'

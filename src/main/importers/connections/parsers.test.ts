@@ -19,11 +19,7 @@ import {
   parseNcx
 } from './ncx'
 import { IMPORT_FIXTURES } from './testing'
-import {
-  FOREIGN_PATH_WARNING,
-  SQLITE_ENCRYPTED_REASON,
-  sqliteFileReviewWarning
-} from './types'
+import { FOREIGN_PATH_WARNING, SQLITE_ENCRYPTED_REASON, sqliteFileReviewWarning } from './types'
 import {
   MONGO_KERBEROS_REASON,
   MONGO_RETRY_WRITES_WARNING,
@@ -122,11 +118,31 @@ describe('parseNcx', () => {
     expect(win.warnings).toEqual([FOREIGN_PATH_WARNING, HTTP_TUNNEL_WARNING])
     expect(win.ssl.caCertPath).toBe('C:\\Users\\tester\\certs\\ca.pem')
     expect(byName.get('Cache')).toMatchObject({ engine: null, engineLabel: 'Redis', port: 6379 })
+    // SQL Server is a regular engine since 2.6.0.
     expect(byName.get('Legacy MSSQL')).toMatchObject({
-      engine: null,
-      unsupportedReason: 'Motor no soportado en esta versión: SQL Server',
-      port: 1433
+      engine: 'sqlserver',
+      unsupportedReason: null,
+      host: 'mssql.example.test',
+      port: 1433,
+      sqlserver: { encrypt: 'optional', trustServerCertificate: false }
     })
+  })
+
+  it('reads SQL Server instances and ports written in the host (.ncx)', () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Connections Ver="1.5">
+  <Connection ConnectionName="Express" ConnType="SQLSERVER" Host="srv\\SQLEXPRESS" Port="1433" UserName="sa" InitialDatabase="erp" SSL="true" />
+  <Connection ConnectionName="Puerto" ConnType="SQLSERVER" Host="tcp:db.example.test,14330" UserName="ana" />
+</Connections>`
+    const byName = new Map(parseNcx(xml, 'darwin').connections.map((c) => [c.name, c]))
+    expect(byName.get('Express')).toMatchObject({
+      engine: 'sqlserver',
+      host: 'srv',
+      port: 1433,
+      database: 'erp',
+      sqlserver: { instanceName: 'SQLEXPRESS', encrypt: 'mandatory', trustServerCertificate: true }
+    })
+    expect(byName.get('Puerto')).toMatchObject({ host: 'db.example.test', port: 14330 })
   })
 
   it('maps MongoDB connections: seeds, SRV, mechanisms and providers', () => {
@@ -207,6 +223,54 @@ describe('parseNcx', () => {
     expect(() => parseNcx('not xml <')).toThrow(NCX_INVALID_MESSAGE)
     expect(() => parseNcx('<plist version="1.0"><dict/></plist>')).toThrow(NCX_INVALID_MESSAGE)
     expect(() => parseNcx('')).toThrow(NCX_INVALID_MESSAGE)
+  })
+})
+
+describe('parseDbeaverDataSources (SQL Server)', () => {
+  it('imports sqlserver/azure connections from host fields or the JDBC URL', () => {
+    const json = JSON.stringify({
+      connections: {
+        'sqlserver-1': {
+          provider: 'sqlserver',
+          driver: 'microsoft',
+          name: 'ERP',
+          configuration: {
+            host: 'srv\\SQLEXPRESS',
+            port: '1433',
+            database: 'erp',
+            user: 'sa',
+            url: 'jdbc:sqlserver://srv\\SQLEXPRESS:1433;databaseName=erp;encrypt=true;trustServerCertificate=true'
+          }
+        },
+        'azure-1': {
+          provider: 'sqlserver',
+          driver: 'azure_sql_server',
+          name: 'Azure ventas',
+          configuration: {
+            url: 'jdbc:sqlserver://ventas.database.windows.net:1433;databaseName=ventas;encrypt=true;authentication=ActiveDirectoryInteractive',
+            user: 'ana@contoso.com'
+          }
+        }
+      }
+    })
+    const byName = new Map(
+      parseDbeaverDataSources(json, 'linux').connections.map((c) => [c.name, c])
+    )
+    expect(byName.get('ERP')).toMatchObject({
+      engine: 'sqlserver',
+      host: 'srv',
+      port: 1433,
+      database: 'erp',
+      username: 'sa',
+      sqlserver: { instanceName: 'SQLEXPRESS', encrypt: 'mandatory', trustServerCertificate: true }
+    })
+    expect(byName.get('Azure ventas')).toMatchObject({
+      engine: 'sqlserver',
+      host: 'ventas.database.windows.net',
+      database: 'ventas',
+      username: 'ana@contoso.com',
+      sqlserver: { auth: 'entra-interactive' }
+    })
   })
 })
 

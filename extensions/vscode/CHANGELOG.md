@@ -1,5 +1,17 @@
 # Cambios
 
+## 0.5.0 — SQL Server y Azure SQL (2026-11-10)
+
+- **Nuevo motor: SQL Server** (2012 o posterior), **Azure SQL Database** y **Managed Instance**, con los mismos
+  métodos de inicio de sesión que en escritorio: usuario de SQL Server, autenticación de Windows (NTLM), y
+  Microsoft Entra ID en el navegador (se abre con el navegador del sistema, con MFA), con la sesión de la CLI de
+  Azure (`az login`) o con una aplicación (ID y secreto). Instancias con nombre, túnel SSH y cifrado
+  obligatorio, estricto u opcional.
+- **«Pegar cadena de conexión»** en el formulario: la de Azure, `appsettings.json`, ODBC o JDBC rellena los campos.
+- Documentos `.sql` con **lotes `GO`** (cada lote se envía entero, `DECLARE` vive en su lote), sesión y
+  transacción propias por documento, `PRINT` en Mensajes y **Detener** en el servidor.
+- `DECIMAL`, `MONEY`, `datetime2` y `datetimeoffset` se muestran exactos; resultados editables con IDENTITY.
+
 ## 0.4.0 — editar varias celdas a la vez (2026-10-21)
 
 - **Varias celdas a la vez** en los resultados editables: con un rango o columnas enteras seleccionados, lo que

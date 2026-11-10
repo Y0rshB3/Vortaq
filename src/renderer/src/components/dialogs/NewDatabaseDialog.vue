@@ -36,6 +36,12 @@ const isPg = computed(
     !!connectionId.value &&
     descriptorOf(connections.get(connectionId.value))?.capabilities.createDatabase === 'pg'
 )
+/** SQL Server: a name and an optional collation (COLLATE), no charset. */
+const isMs = computed(
+  () =>
+    !!connectionId.value &&
+    descriptorOf(connections.get(connectionId.value))?.capabilities.createDatabase === 'sqlserver'
+)
 /** MongoDB creates a database with its first collection (no charset). */
 const isMongo = computed(
   () =>
@@ -65,7 +71,7 @@ const canSave = computed(
     !!connectionId.value &&
     !!name.value.trim() &&
     !nameError.value &&
-    (isPg.value || isMongo.value || !!charset.value) &&
+    (isPg.value || isMongo.value || isMs.value || !!charset.value) &&
     (!isMongo.value || !!firstCollection.value.trim()) &&
     !saving.value
 )
@@ -101,7 +107,7 @@ watch(
     template.value = ''
     encoding.value = ''
     firstCollection.value = ''
-    if (!isPg.value && !isMongo.value) void loadCharsets()
+    if (!isPg.value && !isMongo.value && !isMs.value) void loadCharsets()
   },
   { immediate: true }
 )
@@ -138,6 +144,15 @@ async function save(): Promise<void> {
         '',
         { confirmProduction: true },
         { collection: firstCollection.value.trim() }
+      )
+    } else if (isMs.value) {
+      await api.invokeSilent(
+        'db:createDatabase',
+        cid,
+        dbName,
+        '',
+        collation.value.trim(),
+        { confirmProduction: true }
       )
     } else if (isPg.value) {
       const engineOptions: Record<string, string> = {}
@@ -191,6 +206,15 @@ async function save(): Promise<void> {
           data-test="newdb-name"
           @keyup.enter="save"
         />
+        <v-text-field
+          v-if="isMs"
+          v-model="collation"
+          label="Intercalación (opcional)"
+          placeholder="La del servidor, p. ej. Modern_Spanish_CI_AS"
+          persistent-placeholder
+          class="nd-mono-input"
+          data-test="newdb-ms-collation"
+        />
         <template v-if="isPg">
           <v-text-field
             v-model="owner"
@@ -222,7 +246,7 @@ async function save(): Promise<void> {
           @keyup.enter="save"
         />
         <v-autocomplete
-          v-if="!isPg && !isMongo"
+          v-if="!isPg && !isMongo && !isMs"
           :model-value="charset"
           :items="charsetItems"
           :loading="loading"
@@ -230,7 +254,7 @@ async function save(): Promise<void> {
           @update:model-value="onCharsetChange"
         />
         <v-autocomplete
-          v-if="!isPg && !isMongo"
+          v-if="!isPg && !isMongo && !isMs"
           v-model="collation"
           :items="collationItems"
           :loading="loading"

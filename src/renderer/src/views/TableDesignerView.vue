@@ -28,6 +28,11 @@ import { useTreeStore } from '@renderer/stores/tree'
 import { emptyColumn, type TableDraft } from '@renderer/utils/tableDesigner'
 import { schemaRef } from '@renderer/utils/schemaRef'
 import { useEngineUi } from '@renderer/engines'
+import {
+  msBuildCreatePlan,
+  msEmptyTable,
+  msTransactionScript
+} from '@renderer/components/designer/sqlserver/planner'
 
 const props = defineProps<{ tab: WorkspaceTab }>()
 
@@ -41,6 +46,10 @@ const isPg = computed(() => engineUi.value.id === 'postgresql')
 const isSqlite = computed(() => engineUi.value.id === 'sqlite')
 /** MariaDB: MySQL's editors plus its own types and system versioning (Opciones). */
 const isMariaDb = computed(() => engineUi.value.id === 'mariadb')
+/** SQL Server: generic editors, schema-addressed like PostgreSQL, transactional save (saveMs). */
+const isMs = computed(() => engineUi.value.id === 'sqlserver')
+/** Table options of the MySQL family only (ENGINE, charset, AUTO_INCREMENT). */
+const mysqlLike = computed(() => !isPg.value && !isSqlite.value && !isMs.value)
 const columnTypes = computed(() => engineUi.value.typeCatalog?.columnTypes)
 
 /** Index methods of PostgreSQL (pg_am); MySQL keeps IndexesEditor's own list. */
@@ -99,6 +108,10 @@ const plan = computed<DesignerAlter>(() => {
       return draft.value.name && draft.value.columns.length
         ? pgBuildCreatePlan(schema.value, draft.value)
         : { statements: [], risks: [], problems: [], drops: [] }
+    if (isMs.value)
+      return draft.value.name && draft.value.columns.length
+        ? msBuildCreatePlan(schema.value, draft.value)
+        : { statements: [], risks: [], problems: [], drops: [] }
     const statements =
       draft.value.name && draft.value.columns.length
         ? [designer.value.buildCreate(schema.value, draft.value)]
@@ -135,6 +148,7 @@ const preStatements = computed(() => plan.value.preStatements ?? [])
 const previewSql = computed(() => {
   if (isSqlite.value) return sqlitePreview()
   if (!statements.value.length && !preStatements.value.length) return '-- Sin cambios'
+  if (isMs.value) return msTransactionScript(statements.value)
   if (!isPg.value) return statements.value.join('\n\n')
   // PostgreSQL: what save() runs, in order (ADD VALUE outside the transaction).
   const parts: string[] = []
@@ -174,6 +188,7 @@ function setCharset(name: string | null): void {
 
 function newTableDraft(): TableDraft {
   if (isPg.value) return pgNewTableDraft()
+  if (isMs.value) return msEmptyTable()
   if (isSqlite.value) return sqliteNewTableDraft()
   const id = {
     ...emptyColumn(),
@@ -240,6 +255,17 @@ async function loadLookups(): Promise<void> {
     schemas.value = [schema.value]
     return
   }
+  if (isMs.value) {
+    // No charsets; the column types come from the engine's catalogue, schemas from the database.
+    try {
+      schemas.value = (await api.db.schemas(connectionId.value, database.value ?? '')).map(
+        (s) => s.name
+      )
+    } catch {
+      schemas.value = [schema.value]
+    }
+    return
+  }
   if (isPg.value) {
     // No charsets in PostgreSQL; types and schemas come from the tab's database.
     const db = database.value ?? ''
@@ -266,7 +292,7 @@ async function save(): Promise<void> {
     return
   }
   const sql =
-    isPg.value || isSqlite.value
+    isPg.value || isSqlite.value || isMs.value
       ? statements.value.length || preStatements.value.length
         ? previewSql.value
         : ''
@@ -305,6 +331,8 @@ async function save(): Promise<void> {
       if (!(await saveSqlite())) return
     } else if (isPg.value) {
       if (!(await savePg())) return
+    } else if (isMs.value) {
+      if (!(await saveMs())) return
     } else {
       const results = await api.invokeSilent('db:execute', connectionId.value, sql, {
         schema: schema.value,
@@ -381,6 +409,26 @@ async function savePg(): Promise<boolean> {
     notify.error(
       `${friendlyError(error)}${plan.value.transactional ? ' No se aplicó ningún cambio: la transacción se deshizo.' : ''}`
     )
+    if (!isNew.value) await loadStructure()
+    return false
+  }
+  return true
+}
+
+/**
+ * SQL Server save: the whole plan in one batch with XACT_ABORT ON inside one
+ * transaction, so any error undoes every change. Returns false (after telling
+ * the user) when something failed.
+ */
+async function saveMs(): Promise<boolean> {
+  if (!statements.value.length) return true
+  const results = await api.invokeSilent('db:execute', connectionId.value, previewSql.value, {
+    schema: ref_.value,
+    confirmProduction: true
+  })
+  const error = firstError(results)
+  if (error) {
+    notify.error(`${friendlyError(error)} No se aplicó ningún cambio: la transacción se deshizo.`)
     if (!isNew.value) await loadStructure()
     return false
   }
@@ -574,7 +622,12 @@ defineExpose({ draft, previewSql, save })
               v-model="draft.columns"
               :without-rowid="draft.options?.withoutRowid === true"
             />
-            <ColumnsEditor v-else v-model="draft.columns" :column-types="columnTypes" />
+            <ColumnsEditor
+              v-else
+              v-model="draft.columns"
+              :column-types="columnTypes"
+              :unsigned="!isMs"
+            />
           </v-window-item>
           <v-window-item value="indexes" class="fill">
             <IndexesEditor
@@ -589,6 +642,12 @@ defineExpose({ draft, previewSql, save })
               v-model="draft.indexes"
               :column-names="columnNames"
               :types="['INDEX']"
+            />
+            <IndexesEditor
+              v-else-if="isMs"
+              v-model="draft.indexes"
+              :column-names="columnNames"
+              :types="['NONCLUSTERED']"
             />
             <IndexesEditor v-else v-model="draft.indexes" :column-names="columnNames" />
           </v-window-item>
@@ -708,7 +767,7 @@ defineExpose({ draft, previewSql, save })
                     MariaDB guarda cada versión de las filas; quitarlo borra el historial.
                   </div>
                 </v-col>
-                <v-col v-if="!isPg && !isSqlite" cols="12" md="6">
+                <v-col v-if="mysqlLike" cols="12" md="6">
                   <v-combobox
                     v-model="draft.engine"
                     :items="tableEngines"
@@ -718,7 +777,7 @@ defineExpose({ draft, previewSql, save })
                     hide-details
                   />
                 </v-col>
-                <v-col v-if="!isPg && !isSqlite" cols="12" md="6">
+                <v-col v-if="mysqlLike" cols="12" md="6">
                   <v-select
                     :model-value="charset"
                     :items="charsets.map((c) => c.charset)"
@@ -727,7 +786,7 @@ defineExpose({ draft, previewSql, save })
                     @update:model-value="setCharset"
                   />
                 </v-col>
-                <v-col v-if="!isPg && !isSqlite" cols="12" md="6">
+                <v-col v-if="mysqlLike" cols="12" md="6">
                   <v-combobox
                     v-model="draft.collation"
                     :items="collationItems"
@@ -737,7 +796,7 @@ defineExpose({ draft, previewSql, save })
                     hide-details
                   />
                 </v-col>
-                <v-col v-if="!isPg && !isSqlite" cols="12" md="6">
+                <v-col v-if="mysqlLike" cols="12" md="6">
                   <v-text-field
                     :model-value="draft.autoIncrement ?? ''"
                     label="Auto incremento"

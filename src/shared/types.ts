@@ -11,12 +11,12 @@ export type Environment = 'local' | 'staging' | 'production' | 'other'
 /* ---------- Engines (multi-engine model; only 'mysql' ships today) ---------- */
 
 /** Database engine of a connection. Fixed once the connection is saved. */
-export type EngineId = 'mysql' | 'mariadb' | 'postgresql' | 'sqlite' | 'mongodb'
+export type EngineId = 'mysql' | 'mariadb' | 'postgresql' | 'sqlite' | 'mongodb' | 'sqlserver'
 
 /** libpq names. 'allow' = try without TLS first, retry with TLS if the server refuses. */
 export type SslMode = 'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
 
-/** Network options shared by PostgreSQL and MongoDB (MySQL ignores them for now). */
+/** Network options shared by PostgreSQL, MongoDB and SQL Server (MySQL ignores them for now). */
 export interface NetworkOptions {
   /** Connect / server-selection timeout. Default 10 000 (Mongo's own default is 30 s). */
   connectTimeoutMs: number
@@ -36,6 +36,55 @@ export interface PostgresOptions {
    * tab's schema is put first and this list (or the server default) follows it.
    */
   searchPath: string
+}
+
+/**
+ * How a SQL Server connection signs in (docs/sqlserver-design.md, «Autenticación»).
+ * - 'sql': a SQL Server login (user + password).
+ * - 'windows': a Windows or domain account over NTLM (domain + user + password).
+ * - 'entra-interactive': Microsoft Entra ID in the system browser (MFA); no password.
+ * - 'entra-azure-cli': the account signed in with the Azure CLI (`az login`); no password.
+ * - 'entra-service-principal': a Microsoft Entra application (client ID + secret).
+ * Entra user + password (ROPC) is not offered: Microsoft deprecated it and it fails with MFA.
+ */
+export type SqlServerAuth =
+  | 'sql'
+  | 'windows'
+  | 'entra-interactive'
+  | 'entra-azure-cli'
+  | 'entra-service-principal'
+
+/**
+ * TLS of the TDS connection: 'strict' (TDS 8.0, SQL Server 2022+ and Azure),
+ * 'mandatory' (TLS after the pre-login, the default) or 'optional' (only when
+ * the server requires it).
+ */
+export type SqlServerEncrypt = 'strict' | 'mandatory' | 'optional'
+
+export interface SqlServerOptions {
+  /** Database opened first; '' = the login's default database (usually master). */
+  initialDatabase: string
+  auth: SqlServerAuth
+  /** Windows authentication: the account's domain (NetBIOS or DNS name). */
+  domain: string
+  /** Named instance resolved through SQL Server Browser (UDP 1434); '' = the port. */
+  instanceName: string
+  encrypt: SqlServerEncrypt
+  /** Accept the server's certificate without verifying it (self-signed certificates). */
+  trustServerCertificate: boolean
+  /** Name expected in the certificate when it differs from `host` (also through SSH). */
+  hostNameInCertificate: string
+  /** Microsoft Entra: tenant (directory) ID or domain; '' = the account's own tenant. */
+  tenantId: string
+  /**
+   * Microsoft Entra: application (client) ID. Required for a service principal; for the
+   * browser sign-in, '' = Vortaq's own public application.
+   */
+  clientId: string
+  /** Show master, model, msdb, tempdb and the system schemas. */
+  showSystemObjects: boolean
+  /** ApplicationIntent=ReadOnly: read-only routing to Availability Group secondaries. */
+  readOnlyIntent: boolean
 }
 
 export interface SqliteAttachedDatabase {
@@ -174,6 +223,7 @@ export interface ConnectionConfig {
   postgres?: PostgresOptions
   sqlite?: SqliteOptions
   mongo?: MongoOptions
+  sqlserver?: SqlServerOptions
   /**
    * «Disponible para agentes (MCP)», off when missing. ConnectionsRepo normalises
    * it (an invalid value means off); importers never set it.

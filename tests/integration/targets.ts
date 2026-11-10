@@ -142,6 +142,12 @@ export function describeServer(spec: ServerSpec, name: string, body: (url: strin
 }
 
 /** MongoDB 8.2 standalone (P4a/P4b), with authentication. */
+export const SQLSERVER_TARGET: ServerSpec = {
+  label: 'SQL Server 2022',
+  envName: 'TEST_MSSQL_URL',
+  example: 'mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test'
+}
+
 export const MONGO_TARGET: ServerSpec = {
   label: 'MongoDB 8.2',
   envName: 'TEST_MONGO_URL',

@@ -5,7 +5,8 @@
  *
  * Every engine ships a driver (`available`) and is offered in the connection
  * pickers: `mysql` and `mariadb` (the same mysql2 driver, P5), `postgresql`,
- * `sqlite` and `mongodb` (regular engines since 2.0.0; there is no preview flag).
+ * `sqlite` and `mongodb` (regular engines since 2.0.0; there is no preview flag) and
+ * `sqlserver` (2.6.0, docs/sqlserver-design.md).
  */
 import type {
   ConnectionConfig,
@@ -14,13 +15,14 @@ import type {
   MongoOptions,
   NetworkOptions,
   PostgresOptions,
-  SqliteOptions
+  SqliteOptions,
+  SqlServerOptions
 } from './types'
 import type { SqlDialectId } from './dialects/types'
 
 export type Hierarchy =
   | 'database' //              conn → database → group → object        (MySQL, MariaDB)
-  | 'database>schema' //       conn → database → schema → group → object (PostgreSQL)
+  | 'database>schema' //       conn → database → schema → group → object (PostgreSQL, SQL Server)
   | 'attached' //              conn → main/temp/aux → group → object   (SQLite)
   | 'database>collection' //   conn → database → group → collection    (MongoDB)
 
@@ -65,7 +67,7 @@ export interface EngineCapabilities {
   tabSessions: boolean
   /** Run SQL on every new session. */
   initialQueries: boolean
-  createDatabase: 'charset' | 'pg' | 'mongo' | false
+  createDatabase: 'charset' | 'pg' | 'mongo' | 'sqlserver' | false
   /** db:charsets, charset/collation pickers. */
   charsets: boolean
   events: boolean
@@ -90,7 +92,8 @@ export interface EngineCapabilities {
   resultAliasMetadata: boolean
   /** Static upper bound; ServerInfo.runtime may lower it. */
   returning: 'none' | 'insert-delete' | 'all'
-  cancel: 'kill-query' | 'pg-cancel' | 'kill-process' | 'kill-op'
+  /** SQL Server: a TDS attention signal on the running session's own connection. */
+  cancel: 'kill-query' | 'pg-cancel' | 'kill-process' | 'kill-op' | 'attention'
   sqlDialect: SqlDialectId | null
   /** MongoDB views instead of SQL views. */
   documentModel: boolean
@@ -110,9 +113,13 @@ export interface AiCapability {
    * pg_catalog (PgMetadataQueryable), sqlite_schema/pragmas
    * (SqliteMetadataQueryable) or sampled field types (MongoStructureSource).
    */
-  reader: 'information_schema' | 'pg_catalog' | 'sqlite_schema' | 'mongo_sample'
-  /** Plan of a single SELECT on user action; MongoDB never (it would run the pipeline). */
-  explain: 'explain' | 'explain-query-plan' | false
+  reader:
+    'information_schema' | 'pg_catalog' | 'sqlite_schema' | 'mongo_sample' | 'sqlserver_catalog'
+  /**
+   * Plan of a single SELECT on user action; MongoDB never (it would run the pipeline).
+   * SQL Server: SET SHOWPLAN_XML ON, the estimated plan (the SELECT is compiled, not run).
+   */
+  explain: 'explain' | 'explain-query-plan' | 'showplan' | false
   /**
    * What «Toda la conexión» covers: every database of the server, the schemas
    * of the current PostgreSQL database, or SQLite main plus its attachments.
@@ -124,7 +131,7 @@ export interface AiCapability {
 
 export interface EngineDescriptor {
   id: EngineId
-  /** 'MySQL', 'MariaDB', 'PostgreSQL', 'SQLite', 'MongoDB' */
+  /** 'MySQL', 'MariaDB', 'PostgreSQL', 'SQLite', 'MongoDB', 'SQL Server' */
   label: string
   /** mdi icon for the tree and the picker. */
   icon: string
@@ -350,6 +357,53 @@ export const ENGINES: Readonly<Record<EngineId, EngineDescriptor>> = {
       designer: 'collection',
       ai: { reader: 'mongo_sample', explain: false, scope: 'databases', language: 'mongo-shell' }
     }
+  },
+  sqlserver: {
+    id: 'sqlserver',
+    label: 'SQL Server',
+    icon: 'mdi-database-cog',
+    defaultPort: 1433,
+    defaultUser: 'sa',
+    groups: ['tables', 'views', 'functions', 'sequences', 'queries'],
+    available: true,
+    capabilities: {
+      family: 'sql',
+      hierarchy: 'database>schema',
+      hasSchemas: true,
+      hasUsers: false,
+      // Copies and jobs come in a later version (docs/sqlserver-design.md, phases).
+      supportsBackupsNb3: false,
+      supportsBackupsVqb: false,
+      supportsAutomation: false,
+      supportsSsh: true,
+      supportsSsl: true,
+      needsHost: true,
+      // Microsoft Entra sign-in in the browser needs no password (connectionValidation.ts).
+      passwordOptional: false,
+      tabSessions: true,
+      initialQueries: true,
+      createDatabase: 'sqlserver',
+      charsets: false,
+      events: false,
+      routines: true,
+      triggers: true,
+      sequences: true,
+      materializedViews: false,
+      definer: false,
+      tableEngines: false,
+      unsignedTypes: false,
+      columnPositions: false,
+      alterColumnInPlace: true,
+      transactionalDdl: true,
+      truncate: { restartIdentity: false, cascade: false },
+      resultAliasMetadata: false,
+      returning: 'all',
+      cancel: 'attention',
+      sqlDialect: 'sqlserver',
+      documentModel: false,
+      designer: 'table',
+      ai: { reader: 'sqlserver_catalog', explain: 'showplan', scope: 'schemas', language: 'sql' }
+    }
   }
 }
 
@@ -368,6 +422,18 @@ export function engineOf(c: { engine?: EngineId | null }): EngineDescriptor {
   const descriptor = isEngineId(id) ? ENGINES[id] : undefined
   if (!descriptor) throw new Error(`Motor de base de datos desconocido: "${String(id)}".`)
   return descriptor
+}
+
+/** Schema a database-and-schema engine starts in (PostgreSQL public, SQL Server dbo); null otherwise. */
+export function defaultSchemaOf(engine: EngineId | null | undefined): string | null {
+  if (engine === 'postgresql') return 'public'
+  if (engine === 'sqlserver') return 'dbo'
+  return null
+}
+
+/** Engines addressed as `{ database, schema }` (PostgreSQL, SQL Server). */
+export function usesSchemaRef(engine: EngineId | null | undefined): boolean {
+  return engine === 'postgresql' || engine === 'sqlserver'
 }
 
 /** MySQL and MariaDB: the engines served by the mysql2 driver (same SQL family, same backups). */
@@ -425,6 +491,20 @@ export const defaultSqliteOptions = (production: boolean): SqliteOptions => ({
   busyTimeoutMs: 5_000
 })
 
+export const defaultSqlServerOptions = (): SqlServerOptions => ({
+  initialDatabase: '',
+  auth: 'sql',
+  domain: '',
+  instanceName: '',
+  encrypt: 'mandatory',
+  trustServerCertificate: false,
+  hostNameInCertificate: '',
+  tenantId: '',
+  clientId: '',
+  showSystemObjects: false,
+  readOnlyIntent: false
+})
+
 export const defaultMongoOptions = (): MongoOptions => ({
   topology: 'standalone',
   srv: false,
@@ -451,7 +531,7 @@ export function withEngineDefaults<T extends ConnectionInput | ConnectionConfig>
   const engine = c.engine ?? DEFAULT_ENGINE
   const patch: Partial<ConnectionConfig> = {}
   if (c.engine !== engine) patch.engine = engine
-  if (engine === 'postgresql' || engine === 'mongodb') {
+  if (engine === 'postgresql' || engine === 'mongodb' || engine === 'sqlserver') {
     const network = { ...DEFAULT_NETWORK, ...c.network }
     if (!sameKeys(c.network, network)) patch.network = network
   }
@@ -464,6 +544,9 @@ export function withEngineDefaults<T extends ConnectionInput | ConnectionConfig>
   } else if (engine === 'mongodb') {
     const mongo = { ...defaultMongoOptions(), ...c.mongo }
     if (!sameKeys(c.mongo, mongo)) patch.mongo = mongo
+  } else if (engine === 'sqlserver') {
+    const sqlserver = { ...defaultSqlServerOptions(), ...c.sqlserver }
+    if (!sameKeys(c.sqlserver, sqlserver)) patch.sqlserver = sqlserver
   }
   return Object.keys(patch).length === 0
     ? (c as T & { engine: EngineId })

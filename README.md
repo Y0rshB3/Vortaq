@@ -6,7 +6,7 @@
 
 **Gestor de bases de datos de escritorio, abierto y en español**
 
-MySQL · MariaDB · PostgreSQL · SQLite · MongoDB
+MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 
 [![Última versión](https://img.shields.io/github/v/release/Y0rshB3/Vortaq?label=%C3%BAltima%20versi%C3%B3n&color=7c3aed&cacheSeconds=300)](https://github.com/Y0rshB3/Vortaq/releases/latest)
 [![Descargas de la última versión](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FY0rshB3%2FVortaq%2Fbadges%2Fdownloads-latest.json)](https://github.com/Y0rshB3/Vortaq/releases/latest)
@@ -20,7 +20,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.4.0/vortaq-0.4.0.vsix) ·
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.5.0/vortaq-0.5.0.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -77,6 +77,12 @@ inglés. Antes se llamaba ElectronDB (y, en sus primeras versiones, Navidog).
 
 ## Funciones
 
+- **SQL Server y Azure SQL** (2.6.0): usuario de SQL Server, autenticación de Windows (dominio), Microsoft
+  Entra ID (inicio de sesión en el navegador con MFA, sesión de la CLI de Azure o aplicación), instancias con
+  nombre, túnel SSH y cifrado TLS; «Pegar cadena de conexión» rellena el formulario desde la cadena de Azure,
+  `appsettings.json`, ODBC o JDBC. Scripts con `GO`, sesión y transacción propias por pestaña, cancelación,
+  datos y resultados editables con `DECIMAL`, `MONEY` y fechas exactos, diseñador (IDENTITY, restricciones
+  `DEFAULT` con nombre, `sp_rename`) y editor de vistas y procedimientos ([SQL Server](#sql-server)).
 - **PostgreSQL**: bases de datos y esquemas, consultas con sesión y transacción propias por pestaña,
   cancelación, datos editables, diseñador y DDL ([PostgreSQL](#postgresql)).
 - **SQLite**: abre un archivo `.db` o crea uno nuevo (nunca se crea por error), bases de datos adjuntas,
@@ -614,6 +620,67 @@ contraseña, SSH ni SSL.
 - **Límites**: sin pantallas de usuarios y roles; sin constructor visual de agregaciones (los `aggregate` se
   escriben en la pestaña de consulta) ni vista de `explain`; sin conjuntos de réplicas ni SRV por túnel SSH; sin
   GSSAPI, AWS ni OIDC.
+
+### SQL Server
+
+**Conexión › Nueva conexión SQL Server…** crea una conexión con SQL Server 2012 o posterior, Azure SQL
+Database o Azure SQL Managed Instance.
+
+- **Pegar cadena de conexión**: pega la que te da Azure («Cadenas de conexión»), la de un `appsettings.json`
+  (`Server=tcp:servidor,1433;Database=bd;User ID=…`), una ODBC, una JDBC (`jdbc:sqlserver://…`) o
+  `sqlserver://usuario@host:puerto/bd`, y pulsa **Rellenar**: se rellenan servidor, puerto o instancia, base de
+  datos, usuario, método de autenticación y cifrado; la contraseña va a su campo y la cadena no se guarda. Lo que
+  Vortaq no puede usar (canalizaciones con nombre, identidad administrada…) sale como aviso. **Copiar cadena de
+  conexión** en el menú de la conexión hace el camino contrario, sin contraseña.
+- **Autenticación**:
+  - **Usuario y contraseña de SQL Server** (por ejemplo `sa`).
+  - **Autenticación de Windows**: usuario y contraseña de una cuenta de dominio (`DOMINIO\usuario`, o el dominio
+    en su campo), por NTLM; funciona también desde macOS y Linux. No puede usar la sesión de Windows abierta sin
+    escribir la contraseña (Kerberos/SSPI).
+  - **Microsoft Entra ID, en el navegador**: abre la página de inicio de sesión de Microsoft (con MFA) y la sesión
+    dura mientras Vortaq esté abierto; nada se guarda en disco. Necesita el **ID de aplicación** de una aplicación
+    pública registrada en Microsoft Entra (pídelo al administrador de Azure).
+  - **Microsoft Entra ID, CLI de Azure**: usa la cuenta con la que hiciste `az login` en este equipo (también con
+    MFA); Vortaq no guarda nada.
+  - **Microsoft Entra ID, aplicación**: inquilino, ID de aplicación y su secreto (en el campo de contraseña).
+  - El usuario y contraseña de Entra sin navegador no se ofrece: Microsoft lo retiró y no funciona con MFA.
+- **Conexión**: servidor y puerto (1433) o **instancia con nombre** (`SQLEXPRESS`, por SQL Server Browser; con
+  túnel SSH escribe el puerto de la instancia), **base de datos inicial** (vacía = la del inicio de sesión) y
+  «Mostrar bases de datos y esquemas del sistema». Pestaña **SSL**: cifrado **Obligatorio**, **Estricto** (TDS
+  8.0, SQL Server 2022+ y Azure) u **Opcional**, «Confiar en el certificado del servidor» para certificados
+  autofirmados, nombre en el certificado y una CA propia (además de las del sistema). Con túnel SSH el servidor
+  recibe su nombre real, como exige Azure. **Avanzado**: tiempo de conexión e intención de solo lectura
+  (`ApplicationIntent=ReadOnly`).
+- **Árbol**: conexión › base de datos › esquema (`dbo` primero) › Tablas, Vistas, Funciones (procedimientos y
+  funciones), Secuencias y Consultas. **Cerrar base de datos** como en PostgreSQL.
+- **Editor de consultas**: base de datos y esquema de la pestaña (el esquema sirve para el autocompletado y para
+  abrir tablas; SQL Server resuelve los nombres sin esquema con el esquema de tu usuario). Los scripts se separan
+  por líneas `GO` (también `GO 5`) y cada lote se envía entero, así que `DECLARE @x` vive en su lote como en SSMS.
+  Cada resultado, recuento de filas, error y `PRINT` sale en orden; un error no detiene el resto del lote. Cada
+  pestaña tiene su sesión: `BEGIN TRAN`, `#temporales` y `SET` se conservan, con **Confirmar** y **Deshacer**.
+  **Detener** cancela en el servidor. Autocompletado con corchetes cuando hace falta (`[Order Details]`).
+- **Datos**: vista de tabla paginada (`OFFSET … FETCH`) con filtros (`contiene` no distingue mayúsculas en ninguna
+  intercalación), edición por clave primaria en una transacción, inserciones que dejan a IDENTITY generar el valor
+  (se devuelve con `OUTPUT`, también con triggers) y resultados editables de un `SELECT` (también con `JOIN` o
+  `TOP`). Las columnas IDENTITY, calculadas y `rowversion` no se editan. `DECIMAL`, `NUMERIC` y `MONEY` se muestran
+  con todos sus dígitos (`12.50`, no `12.5`) y `datetime2`, `datetimeoffset` y `time` con sus 7 decimales y su
+  desplazamiento horario.
+- **Diseñador de tablas**: tipos de SQL Server, IDENTITY(1,1), predeterminados como restricciones con nombre,
+  claves primarias, índices, claves foráneas y descripciones (`MS_Description`); renombres con `sp_rename`. Todo se
+  aplica en **una transacción** con `XACT_ABORT`: si algo falla no cambia nada. Añadir o quitar IDENTITY de un
+  campo existente no se puede en SQL Server y el diseñador lo explica. Editor DDL de vistas, procedimientos,
+  funciones y triggers con `CREATE OR ALTER`.
+- **Exportar, diagrama y consulta gráfica** como en los demás motores (la consulta gráfica escribe `TOP`).
+- **Producción**: SQL Server no tiene sesiones de solo lectura, así que cuenta como escritura cualquier cambio de
+  datos o estructura, `EXEC` de un procedimiento (salvo los de consulta del sistema como `sp_help`), `SELECT …
+INTO`, `NEXT VALUE FOR`, `OPENROWSET`/`OPENQUERY` y `DBCC`; las tablas variables (`@t`) no.
+- **Asistente de IA y agentes (MCP)**: leen solo la estructura de las vistas `sys.*` (nunca filas ni el código de
+  vistas y procedimientos); el plan es el estimado (`SHOWPLAN`), sin ejecutar la consulta.
+- **Importar**: las conexiones SQL Server de los `.ncx` de Navicat (con sus contraseñas) y de DBeaver (también
+  Azure SQL), además de la cadena de conexión.
+- **Límites** de esta versión: sin copias de seguridad ni tareas programadas para SQL Server, sin pantalla de
+  inicios de sesión y usuarios, sin Kerberos ni la sesión de Windows sin contraseña, y sin la sección SQL Server
+  de la carpeta de Navicat (usa su exportación `.ncx`).
 
 ### Importar desde otros gestores
 
@@ -1483,15 +1550,16 @@ sandbox», añade `"--no-sandbox"` a `args`. Desde la carpeta del código el com
 
 Vortaq también existe como extensión para VS Code y los editores basados en él (Cursor, VSCodium,
 Windsurf). Usa el mismo núcleo que la aplicación de escritorio (los mismos drivers, el mismo análisis de SQL y
-la misma protección de producción) y trabaja con los cinco motores: MySQL, MariaDB, PostgreSQL, SQLite y
-MongoDB. Su código está en [`extensions/vscode`](extensions/vscode) y tiene su propia numeración de versiones
+la misma protección de producción) y trabaja con los seis motores: MySQL, MariaDB, PostgreSQL, SQLite,
+MongoDB y SQL Server (desde la 0.5.0, con los mismos métodos de inicio de sesión: el de Microsoft se abre en el
+navegador del sistema). Su código está en [`extensions/vscode`](extensions/vscode) y tiene su propia numeración de versiones
 (empieza en la 0.1.0).
 
 <p align="center">
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.4.0):
+Qué hace (versión 0.5.0):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1529,8 +1597,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`**:
   1. Descarga
-     [**`vortaq-0.4.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.4.0/vortaq-0.4.0.vsix)
-     (versión [`vscode-v0.4.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.4.0), con su
+     [**`vortaq-0.5.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.5.0/vortaq-0.5.0.vsix)
+     (versión [`vscode-v0.5.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.5.0), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1538,17 +1606,17 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.4.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.4.0.vsix     # Cursor
-  codium --install-extension vortaq-0.4.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.4.0.vsix   # Windsurf
+  code --install-extension vortaq-0.5.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.5.0.vsix     # Cursor
+  codium --install-extension vortaq-0.5.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.5.0.vsix   # Windsurf
   ```
 
 - **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
   buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.4.0.vsix`.
+`extensions/vscode/vortaq-0.5.0.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el
@@ -1910,9 +1978,10 @@ docker exec vortaq-test-mongo-rs mongosh --port 57018 --quiet --eval 'rs.initiat
 `docker compose … exec mongo82rs`).
 
 `npm run test:integration:required` es la puerta de calidad: ejecuta las suites de MySQL y de backups contra
-los dos MySQL, las de MariaDB, PostgreSQL y MongoDB contra los suyos, y **falla** (en vez de omitirlas) si falta
-`VORTAQ_TEST_MYSQL_URL`, `VORTAQ_TEST_MYSQL57_URL`, `VORTAQ_TEST_MARIADB_URL`, `VORTAQ_TEST_PG_URL`,
-`VORTAQ_TEST_MONGO_URL` o `VORTAQ_TEST_MONGO_RS_URL`.
+los dos MySQL, las de MariaDB, PostgreSQL, MongoDB y SQL Server contra los suyos, y **falla** (en vez de
+omitirlas) si falta `VORTAQ_TEST_MYSQL_URL`, `VORTAQ_TEST_MYSQL57_URL`, `VORTAQ_TEST_MARIADB_URL`,
+`VORTAQ_TEST_PG_URL`, `VORTAQ_TEST_MONGO_URL`, `VORTAQ_TEST_MONGO_RS_URL` o `VORTAQ_TEST_MSSQL_URL`. SQL Server
+2022 es el servicio `mssql22` del compose (puerto 51433; en Apple Silicon corre emulado).
 `VORTAQ_TEST_SSH_URL` es opcional: sin ella solo se omite el test del túnel SSH de PostgreSQL.
 `npm run test:integration` omite en silencio el servidor que no tenga URL.
 
@@ -1924,6 +1993,7 @@ VORTAQ_TEST_MARIADB_URL='mysql://root:navidog@127.0.0.1:33311/navidog_test' \
 VORTAQ_TEST_PG_URL='postgres://postgres:navidog@127.0.0.1:55432/navidog_test' \
 VORTAQ_TEST_MONGO_URL='mongodb://root:navidog@127.0.0.1:57017/?authSource=admin' \
 VORTAQ_TEST_MONGO_RS_URL='mongodb://127.0.0.1:57018/?replicaSet=rs0' \
+VORTAQ_TEST_MSSQL_URL='mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test' \
 VORTAQ_TEST_SSH_URL='ssh://vortaq:navidog@127.0.0.1:52222' \
 npm run test:integration:required
 ```
@@ -1998,7 +2068,8 @@ VORTAQ_SHOTS_ONLY=21 VORTAQ_WHATS_NEW_FROM=0.1.5 VORTAQ_WHATS_NEW_VERSION=0.1.7 
 Los motores tienen sus propios scripts de semillas (perfil de prueba y servidores desechables):
 `scripts/seed-engine-shots.mjs` (PostgreSQL y MariaDB, pasos `40*`/`41*`, también la copia de MariaDB con
 secuencias), `scripts/seed-sqlite-shots.mjs` (pasos `42*`, con una tarea SQLite y «Recientes») y
-`scripts/seed-mongo-shots.mjs` (pasos `43*`, con una tarea MongoDB y «Duplicar colección»); los pasos `44*`
+`scripts/seed-mongo-shots.mjs` (pasos `43*`, con una tarea MongoDB y «Duplicar colección») y
+`scripts/seed-sqlserver-shots.mjs` (SQL Server, pasos `54*`, base de datos `tienda`); los pasos `44*`
 (menú Conexión con todos los motores) sirven con cualquiera de ellos. Cada script explica cómo lanzarlo.
 
 El asistente **Importar…** (pasos `30*`) usa un archivo de DBeaver y un volcado `.sql` sintéticos que el script
@@ -2026,6 +2097,7 @@ ejecución, y su carpeta debe llamarse `profile`.
 | `VORTAQ_TEST_PG_URL`            | PostgreSQL 17 desechable (`postgres://…:55432/…`) para `npm run test:integration[:required]`.                                                                                                             |
 | `VORTAQ_TEST_MONGO_URL`         | MongoDB 8.2 independiente desechable (`mongodb://root:…@127.0.0.1:57017/?authSource=admin`) para `npm run test:integration[:required]`; también activa el paso de MongoDB de `VORTAQ_SMOKE`.              |
 | `VORTAQ_TEST_MONGO_RS_URL`      | Conjunto de réplicas MongoDB 8.2 de un miembro (`mongodb://127.0.0.1:57018/?replicaSet=rs0`) para las transacciones en `npm run test:integration[:required]`.                                             |
+| `VORTAQ_TEST_MSSQL_URL`         | SQL Server 2022 desechable (`mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test`, servicio `mssql22`) para `npm run test:integration[:required]` y `npm run ext:test`.                                  |
 | `VORTAQ_SMOKE_MONGO_URL`        | Servidor MongoDB desechable para el paso de MongoDB de `VORTAQ_SMOKE` (si falta, se usa `VORTAQ_TEST_MONGO_URL`; sin ninguna, el paso se omite).                                                          |
 | `VORTAQ_TEST_SSH_URL`           | Servidor SSH de prueba (`ssh://usuario:clave@127.0.0.1:52222`, servicio `sshd` del compose) para el test del túnel de PostgreSQL; opcional.                                                               |
 | `VORTAQ_TEST_KEYCHAIN_DIR`      | Carpeta desechable para el test del llavero de macOS en `npm run test:integration`.                                                                                                                       |

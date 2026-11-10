@@ -1,3 +1,4 @@
+import type { MsSession } from '../sqlserver/session'
 import {
   AI_PROVIDER_PRESETS,
   type AiChatRequest,
@@ -35,6 +36,13 @@ import {
   readPgSchemaNames,
   readPgSchemaSnapshot
 } from './pgMetadata'
+import {
+  MsMetadataQueryable,
+  explainMsSelect,
+  isSingleMsSelect,
+  readMsSchemaNames,
+  readMsSchemaSnapshot
+} from './msMetadata'
 import {
   SqliteMetadataQueryable,
   explainSqliteSelect,
@@ -85,6 +93,10 @@ export interface AiServiceDeps {
   isSqlite?(connectionId: string): boolean
   /** A session on the SQLite connection's shared handle. */
   acquireSqlite?(connectionId: string): Promise<BorrowedSession>
+  /** True for SQL Server connections (structure from sys.* catalog views, see msMetadata.ts). */
+  isSqlServer?(connectionId: string): boolean
+  /** A pooled SQL Server session of `database` (null = the initial database). */
+  acquireMs?(connectionId: string, database: string | null): Promise<MsSession>
   /** True for MongoDB connections (structure from mongoMetadata.ts, never documents). */
   isMongo?(connectionId: string): boolean
   /** The structure-only source of a MongoDB connection. */
@@ -118,7 +130,7 @@ const MONGO_CONNECTION_SAMPLE_BUDGET = 120
 export const MARIADB_ENGINE_NOTE =
   'Motor: MariaDB. Escribe SQL de MariaDB: secuencias (NEXT VALUE FOR s, NEXTVAL(s), SETVAL(s, n)), INSERT/DELETE … RETURNING, tablas versionadas (FOR SYSTEM_TIME AS OF / ALL), JSON es un alias de LONGTEXT (funciones JSON_VALUE, JSON_QUERY…), y UUID, INET4 e INET6 son tipos nativos.'
 
-type Reader = 'mysql' | 'pg' | 'sqlite' | 'mongo'
+type Reader = 'mysql' | 'pg' | 'sqlite' | 'mongo' | 'ms'
 const MAX_INPUT_CHARS = 20_000
 const MAX_SQL_CHARS = 100_000
 
@@ -237,6 +249,24 @@ export class AiService {
     return this.deps.isPostgres?.(connectionId) === true && !!this.deps.acquirePg
   }
 
+  private isMs(connectionId: string): boolean {
+    return this.deps.isSqlServer?.(connectionId) === true && !!this.deps.acquireMs
+  }
+
+  /** SQL Server: the same structure-only rule over sys.* (MsMetadataQueryable). */
+  private async withMsMetadata<T>(
+    connectionId: string,
+    database: string | null,
+    fn: (q: MsMetadataQueryable) => Promise<T>
+  ): Promise<T> {
+    const session = await this.deps.acquireMs!(connectionId, database)
+    try {
+      return await fn(new MsMetadataQueryable(session))
+    } finally {
+      await session.release().catch(() => undefined)
+    }
+  }
+
   private isMongo(connectionId: string): boolean {
     return this.deps.isMongo?.(connectionId) === true && !!this.deps.mongoSource
   }
@@ -288,6 +318,7 @@ export class AiService {
   private readerOf(connectionId: string): Reader {
     if (this.isMongo(connectionId)) return 'mongo'
     if (this.isPg(connectionId)) return 'pg'
+    if (this.isMs(connectionId)) return 'ms'
     if (this.isLite(connectionId)) return 'sqlite'
     return 'mysql'
   }
@@ -305,6 +336,8 @@ export class AiService {
           .sort()
       case 'pg':
         return this.withPgMetadata(connectionId, database, (q) => readPgSchemaNames(q))
+      case 'ms':
+        return this.withMsMetadata(connectionId, database, (q) => readMsSchemaNames(q))
       case 'sqlite':
         return (
           await this.withSqliteMetadata(connectionId, (q) => readSqliteDatabaseNames(q))
@@ -333,6 +366,15 @@ export class AiService {
     return String(rows[0]?.name ?? '')
   }
 
+  /** SQL Server: name of the database a request reads (the initial one when none is given). */
+  private async msDatabaseName(connectionId: string, database: string | null): Promise<string> {
+    if (database) return database
+    const rows = await this.withMsMetadata(connectionId, null, (q) =>
+      q.query<{ name: string }>('SELECT d.name FROM sys.databases d WHERE d.database_id = DB_ID()')
+    )
+    return String(rows[0]?.name ?? '')
+  }
+
   /** Words of a whole-connection context for the connection's engine. */
   private async wordingOf(connectionId: string, database: string | null): Promise<ScopeWording> {
     switch (this.readerOf(connectionId)) {
@@ -342,6 +384,16 @@ export class AiService {
         const db = await this.pgDatabaseName(connectionId, database)
         return {
           whole: `Base de datos ${db} completa (todos sus esquemas; PostgreSQL no consulta las demás bases de datos de la conexión)`,
+          plural: 'esquemas',
+          selected: 'Esquema seleccionado',
+          qualified: 'esquema.tabla',
+          others: 'Otros esquemas'
+        }
+      }
+      case 'ms': {
+        const db = await this.msDatabaseName(connectionId, database)
+        return {
+          whole: `Base de datos ${db} completa (todos sus esquemas; las demás bases de datos de la conexión no se incluyen)`,
           plural: 'esquemas',
           selected: 'Esquema seleccionado',
           qualified: 'esquema.tabla',
@@ -371,6 +423,8 @@ export class AiService {
     switch (this.readerOf(connectionId)) {
       case 'pg':
         return `Otros esquemas de la base de datos ${await this.pgDatabaseName(connectionId, database)} ${tail}`
+      case 'ms':
+        return `Otros esquemas de la base de datos ${await this.msDatabaseName(connectionId, database)} ${tail}`
       case 'sqlite':
         return `Otras bases de datos del archivo (main y adjuntas) ${tail}`
       default:
@@ -417,6 +471,10 @@ export class AiService {
       } else if (reader === 'pg') {
         await this.withPgMetadata(connectionId, database, async (q) => {
           for (const schema of missing) keep(schema, await readPgSchemaSnapshot(q, schema))
+        })
+      } else if (reader === 'ms') {
+        await this.withMsMetadata(connectionId, database, async (q) => {
+          for (const schema of missing) keep(schema, await readMsSchemaSnapshot(q, schema))
         })
       } else if (reader === 'sqlite') {
         await this.withSqliteMetadata(connectionId, async (q) => {
@@ -512,13 +570,17 @@ export class AiService {
           ? await this.withPgMetadata(connectionId, database, (q) =>
               readPgSchemaSnapshot(q, input.schema, input.tables)
             )
-          : this.isLite(connectionId)
-            ? await this.withSqliteMetadata(connectionId, (q) =>
-                readSqliteSchemaSnapshot(q, input.schema, input.tables)
+          : this.isMs(connectionId)
+            ? await this.withMsMetadata(connectionId, database, (q) =>
+                readMsSchemaSnapshot(q, input.schema, input.tables)
               )
-            : await this.withMetadata(connectionId, (q) =>
-                readSchemaSnapshot(q, input.schema, input.tables)
-              )
+            : this.isLite(connectionId)
+              ? await this.withSqliteMetadata(connectionId, (q) =>
+                  readSqliteSchemaSnapshot(q, input.schema, input.tables)
+                )
+              : await this.withMetadata(connectionId, (q) =>
+                  readSchemaSnapshot(q, input.schema, input.tables)
+                )
       const found = new Set(snap.tables.map((t) => t.name))
       const lines = snap.tables.map((t) => formatTable(t, input.schema))
       const missing = input.tables.filter((t) => !found.has(t))
@@ -641,6 +703,17 @@ export class AiService {
             await session.release().catch(() => undefined)
           }
         }
+      } else if (this.isMs(request.connectionId)) {
+        if (request.mode === 'explain' && isSingleMsSelect(request.sql)) {
+          // Estimated plan (SHOWPLAN_TEXT compiles the SELECT, never runs it).
+          this.deps.emit('event:aiStatus', { requestId, status: 'Obteniendo el plan estimado…' })
+          const session = await this.deps.acquireMs!(request.connectionId, request.database ?? null)
+          try {
+            plan = await explainMsSelect(session, request.sql ?? '')
+          } finally {
+            await session.release().catch(() => undefined)
+          }
+        }
       } else if (this.isLite(request.connectionId)) {
         if (request.mode === 'explain' && isSingleSqliteSelect(request.sql)) {
           // EXPLAIN QUERY PLAN (never plain EXPLAIN) of one read-only SELECT; nothing else runs.
@@ -684,9 +757,11 @@ export class AiService {
               ? 'mongodb'
               : this.isPg(request.connectionId)
                 ? 'postgresql'
-                : this.isLite(request.connectionId)
-                  ? 'sqlite'
-                  : undefined
+                : this.isMs(request.connectionId)
+                  ? 'sqlserver'
+                  : this.isLite(request.connectionId)
+                    ? 'sqlite'
+                    : undefined
           ),
           effort: settings.aiEffort,
           maxTokens: settings.aiMaxTokens,

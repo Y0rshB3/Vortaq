@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { sqlDialectIdOf } from '@renderer/engines/capabilities'
 import { computed, onMounted, ref, watch } from 'vue'
 import { getDialect } from '@shared/dialects'
 import type { SqlDialectId } from '@shared/dialects/types'
@@ -89,9 +90,9 @@ editor.reset(props.rows, props.storage)
  * skipped) and every call addresses `{ database, schema }`.
  */
 const engine = useConnectionsStore().get(props.connectionId)?.engine
-const dialectId: SqlDialectId =
-  engine === 'postgresql' || engine === 'sqlite' || engine === 'mariadb' ? engine : 'mysql'
-const isPg = engine === 'postgresql'
+const dialectId: SqlDialectId = sqlDialectIdOf(engine)
+/** PostgreSQL and SQL Server: `{ database, schema }` calls, no table alias in the metadata. */
+const isPg = engine === 'postgresql' || engine === 'sqlserver'
 /** SQLite: parsed with the SQLite lexer, keyed by the rowid the driver marked in the result. */
 const isLite = engine === 'sqlite'
 const database = isPg ? props.columns.find((c) => c.database)?.database : undefined
@@ -100,7 +101,7 @@ const database = isPg ? props.columns.find((c) => c.database)?.database : undefi
 const source = resultSource(
   props.columns,
   props.sql,
-  isPg ? 'postgresql' : isLite ? 'sqlite' : 'mysql'
+  engine === 'sqlserver' ? 'sqlserver' : isPg ? 'postgresql' : isLite ? 'sqlite' : 'mysql'
 )
 if (!source.ok) editability.value = { editable: false, reason: source.reason }
 const checking = computed(() => editability.value === null)

@@ -8,6 +8,8 @@
 import { normalize } from '../dialects/mysql'
 import { codeTokens, tokenizePg } from '../dialects/pgLexer'
 import { sqliteCodeTokens, tokenizeSqlite } from '../dialects/sqliteLexer'
+import { statementsOfBatch } from '../dialects/sqlserver'
+import { tokenizeTsql, tsqlCodeTokens } from '../dialects/sqlserverLexer'
 import type { SqlDialect, SqlDialectId } from '../dialects/types'
 
 export type ExportStatementCheck = { ok: true; sql: string } | { ok: false; reason: string }
@@ -17,7 +19,8 @@ const ROW_STATEMENTS: Record<SqlDialectId, ReadonlySet<string>> = {
   mysql: new Set(['SELECT', 'WITH', 'TABLE', 'VALUES', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']),
   mariadb: new Set(['SELECT', 'WITH', 'TABLE', 'VALUES', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']),
   postgresql: new Set(['SELECT', 'WITH', 'TABLE', 'VALUES', 'SHOW', 'EXPLAIN']),
-  sqlite: new Set(['SELECT', 'WITH', 'VALUES', 'PRAGMA', 'EXPLAIN'])
+  sqlite: new Set(['SELECT', 'WITH', 'VALUES', 'PRAGMA', 'EXPLAIN']),
+  sqlserver: new Set(['SELECT', 'WITH'])
 }
 
 /** First keyword of a statement (comments skipped, executable comments unwrapped, `(` skipped). */
@@ -28,7 +31,11 @@ export function leadingWord(dialect: SqlDialectId, sql: string): string {
     return m ? m[1].toUpperCase() : ''
   }
   const tokens =
-    dialect === 'postgresql' ? codeTokens(tokenizePg(sql)) : sqliteCodeTokens(tokenizeSqlite(sql))
+    dialect === 'postgresql'
+      ? codeTokens(tokenizePg(sql))
+      : dialect === 'sqlserver'
+        ? tsqlCodeTokens(tokenizeTsql(sql))
+        : sqliteCodeTokens(tokenizeSqlite(sql))
   const first = tokens.find((t) => !(t.kind === 'punct' && t.value === '('))
   return first && first.kind === 'word' ? first.value.toUpperCase() : ''
 }
@@ -43,8 +50,15 @@ export const EXPORT_SESSION_VARIABLES =
 export const EXPORT_SESSION_SCRIPT =
   'Otra sentencia del script cambia la sesión o los datos (USE, SET, CREATE…): el resultado completo vuelve a ejecutar solo esta consulta en una sesión nueva y podría no coincidir. Ejecuta la consulta sola o exporta las filas cargadas.'
 
-/** MySQL/MariaDB user variables (`@x`, `@'x'`; not `@@system`) outside strings and comments. */
+/**
+ * MySQL/MariaDB user variables (`@x`, `@'x'`; not `@@system`) outside strings and comments;
+ * SQL Server `@x` variables (declared in another statement of the batch, never in the new one).
+ */
 function usesUserVariables(dialect: SqlDialectId, sql: string): boolean {
+  if (dialect === 'sqlserver')
+    return tsqlCodeTokens(tokenizeTsql(sql)).some(
+      (t) => t.kind === 'variable' && !t.value.startsWith('@@')
+    )
   if (dialect !== 'mysql' && dialect !== 'mariadb') return false
   const text = normalize(dialect === 'mariadb' ? sql.split('/*M!').join('/*!') : sql)
   return /(^|[^@\w$])@(?!@)[\w$'"`]/.test(text)
@@ -55,6 +69,9 @@ export function checkExportStatement(dialect: SqlDialect, script: string): Expor
   if (statements.length === 0) return { ok: false, reason: 'No hay ninguna consulta que exportar.' }
   if (statements.length > 1) return { ok: false, reason: EXPORT_ONE_STATEMENT }
   const sql = statements[0].sql
+  // A SQL Server batch can hold several statements without `;` between them.
+  if (dialect.id === 'sqlserver' && statementsOfBatch(sql).length > 1)
+    return { ok: false, reason: EXPORT_ONE_STATEMENT }
   if (!ROW_STATEMENTS[dialect.id].has(leadingWord(dialect.id, sql)))
     return { ok: false, reason: EXPORT_NOT_A_QUERY }
   if (usesUserVariables(dialect.id, sql)) return { ok: false, reason: EXPORT_SESSION_VARIABLES }

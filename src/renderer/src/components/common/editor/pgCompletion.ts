@@ -444,14 +444,18 @@ const KIND_LABEL: Record<PgRelationKind, string> = {
   foreign: 'tabla externa'
 }
 
+/** How a completion label is quoted (`force`: the user started a quoted name). */
+export type QuoteLabel = (name: string, force: boolean) => string
+
 function relationOptions(
   rels: { name: string; kind: PgRelationKind }[],
   schema: string,
   boost: number,
-  quoted: boolean
+  quoted: boolean,
+  quote: QuoteLabel
 ): Completion[] {
   return rels.map((r) => ({
-    label: pgQuoteIdent(r.name, quoted),
+    label: quote(r.name, quoted),
     displayLabel: r.name,
     type: r.kind === 'table' || r.kind === 'foreign' ? 'class' : 'type',
     detail: `${KIND_LABEL[r.kind] ?? 'tabla'} · ${schema}`,
@@ -464,10 +468,11 @@ function columnOptions(
   cols: { name: string; type: string }[],
   table: string,
   boost: number,
-  quoted: boolean
+  quoted: boolean,
+  quote: QuoteLabel
 ): Completion[] {
   return cols.map((c) => ({
-    label: pgQuoteIdent(c.name, quoted),
+    label: quote(c.name, quoted),
     displayLabel: c.name,
     type: 'property',
     detail: `${c.type} · ${table}`,
@@ -480,7 +485,8 @@ function functionOptions(
   fns: { name: string; signature: string }[],
   schema: string,
   boost: number,
-  quoted: boolean
+  quoted: boolean,
+  quote: QuoteLabel
 ): Completion[] {
   const seen = new Set<string>()
   const out: Completion[] = []
@@ -488,7 +494,7 @@ function functionOptions(
     if (seen.has(f.name)) continue
     seen.add(f.name)
     out.push({
-      label: pgQuoteIdent(f.name, quoted),
+      label: quote(f.name, quoted),
       displayLabel: f.name,
       type: 'function',
       detail: `${f.name}(${f.signature}) · ${schema}`,
@@ -503,8 +509,12 @@ function functionOptions(
  * Context-aware PostgreSQL completion: relations of the search_path and schema
  * names for a bare word, relations after `schema.`, columns after `rel.`,
  * `alias.` or `schema.rel.`, and columns of relations used in the statement.
+ * `quote` writes the labels (SQL Server passes its bracket rule).
  */
-export function pgCompletionSource(provider: PgSchemaProvider): CompletionSource {
+export function pgCompletionSource(
+  provider: PgSchemaProvider,
+  quote: QuoteLabel = pgQuoteIdent
+): CompletionSource {
   const schemaOf = async (name: string): Promise<string | null> =>
     pick(await safe(provider.schemas(), []), name, (s) => s) ?? null
   /** Schema + real name of a relation; unqualified names go through the search_path. */
@@ -547,7 +557,7 @@ export function pgCompletionSource(provider: PgSchemaProvider): CompletionSource
     if (qualifiers.length === 2) {
       const found = await columnsOf(qualifiers[0], qualifiers[1])
       if (!found) return null
-      return { from, options: columnOptions(found.cols, found.table, 0, quoted), validFor }
+      return { from, options: columnOptions(found.cols, found.table, 0, quoted, quote), validFor }
     }
 
     if (qualifiers.length === 1) {
@@ -558,13 +568,13 @@ export function pgCompletionSource(provider: PgSchemaProvider): CompletionSource
         r.alias ? r.alias === q || r.alias.toLowerCase() === lower : r.table.toLowerCase() === lower
       )
       const found = ref ? await columnsOf(ref.schema, ref.table) : await columnsOf(null, q)
-      if (found) options.push(...columnOptions(found.cols, found.table, 2, quoted))
+      if (found) options.push(...columnOptions(found.cols, found.table, 2, quoted, quote))
       const schema = await schemaOf(q)
       if (schema) {
-        options.push(...relationOptions(await safe(provider.tables(schema), []), schema, 1, quoted))
+        options.push(...relationOptions(await safe(provider.tables(schema), []), schema, 1, quoted, quote))
         if (provider.functions)
           options.push(
-            ...functionOptions(await safe(provider.functions(schema), []), schema, 0, quoted)
+            ...functionOptions(await safe(provider.functions(schema), []), schema, 0, quoted, quote)
           )
       }
       return options.length ? { from, options, validFor } : null
@@ -584,14 +594,14 @@ export function pgCompletionSource(provider: PgSchemaProvider): CompletionSource
       // An earlier schema shadows the same name later in the path.
       const rels = relLists[i].filter((r) => !seenRel.has(r.name))
       rels.forEach((r) => seenRel.add(r.name))
-      options.push(...relationOptions(rels, s, 3 - i * 0.1, quoted))
+      options.push(...relationOptions(rels, s, 3 - i * 0.1, quoted, quote))
     })
     fnLists.forEach((fns, i) =>
-      options.push(...functionOptions(fns, searchPath[i], -1 - i * 0.1, quoted))
+      options.push(...functionOptions(fns, searchPath[i], -1 - i * 0.1, quoted, quote))
     )
     options.push(
       ...schemas.map((s) => ({
-        label: pgQuoteIdent(s, quoted),
+        label: quote(s, quoted),
         displayLabel: s,
         type: 'namespace',
         detail: 'esquema',
@@ -609,7 +619,7 @@ export function pgCompletionSource(provider: PgSchemaProvider): CompletionSource
       if (lookups.length >= MAX_REFS) break
     }
     for (const found of await Promise.all(lookups))
-      if (found) options.push(...columnOptions(found.cols, found.table, 1, quoted))
+      if (found) options.push(...columnOptions(found.cols, found.table, 1, quoted, quote))
     return { from, options, validFor }
   }
 }

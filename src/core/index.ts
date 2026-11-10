@@ -139,7 +139,9 @@ export {
   mariadbDialect,
   mysqlDialect,
   postgresqlDialect,
+  selectFirstRows,
   sqliteDialect,
+  sqlserverDialect,
   type DestructiveStatementInfo,
   type SqlDialect,
   type SqlDialectId,
@@ -153,7 +155,9 @@ export {
   DEFAULT_NETWORK,
   defaultMongoOptions,
   defaultPostgresOptions,
+  defaultSchemaOf,
   defaultSqliteOptions,
+  defaultSqlServerOptions,
   ENGINE_IDS,
   ENGINES,
   engineOf,
@@ -161,6 +165,7 @@ export {
   isEngineId,
   isMysqlFamilyEngine,
   pickableEngines,
+  usesSchemaRef,
   withEngineDefaults,
   type EngineCapabilities,
   type EngineDescriptor
@@ -172,6 +177,12 @@ export {
 } from '@shared/connectionValidation'
 export { detectMysqlFlavor, isMariaDbVersion } from '@shared/serverFlavor'
 export { MongoUriError, mongoUriOf, parseMongoUri } from '@shared/mongo/uri'
+export {
+  parseSqlServerConnectionString,
+  sqlServerConnectionString
+} from '@shared/sqlserver/connectionString'
+/* SQL Server's Microsoft Entra sign-in opens the host's browser (VS Code: env.openExternal). */
+export { setEntraBrowserOpener } from '@main/sqlserver/browserOpener'
 export * as mongoShellFormat from '@shared/mongo/shellFormat'
 
 /* ---------- SQLite runtime ---------- */

@@ -15,8 +15,10 @@ const props = withDefaults(
   defineProps<{
     /** Type list of the engine (MariaDB adds uuid/inet types); MySQL's by default. */
     columnTypes?: string[]
+    /** «Sin signo» column (MySQL family); SQL Server has no unsigned types. */
+    unsigned?: boolean
   }>(),
-  { columnTypes: () => COLUMN_TYPES }
+  { columnTypes: () => COLUMN_TYPES, unsigned: true }
 )
 const model = defineModel<ColumnDraft[]>({ required: true })
 const selected = ref<number | null>(null)
@@ -123,7 +125,7 @@ function move(delta: number): void {
             <th class="w-check text-center" title="Clave primaria">Clave</th>
             <th class="w-default">Predeterminado</th>
             <th class="w-check text-center" title="Auto incremento">A.I.</th>
-            <th class="w-check text-center">Sin signo</th>
+            <th v-if="props.unsigned" class="w-check text-center">Sin signo</th>
             <th>Comentario</th>
           </tr>
         </thead>
@@ -206,7 +208,7 @@ function move(delta: number): void {
                 @change="patch(i, { autoIncrement: !col.autoIncrement, defaultValue: null })"
               />
             </td>
-            <td class="text-center">
+            <td v-if="props.unsigned" class="text-center">
               <input
                 type="checkbox"
                 :checked="col.unsigned"

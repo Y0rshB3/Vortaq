@@ -10,7 +10,12 @@ import type {
   ImportSourceId
 } from '@shared/importers'
 import { engineAvailabilityError } from '@shared/connectionValidation'
-import { DEFAULT_NETWORK, defaultMongoOptions, defaultSqliteOptions } from '@shared/engines'
+import {
+  DEFAULT_NETWORK,
+  defaultMongoOptions,
+  defaultSqliteOptions,
+  defaultSqlServerOptions
+} from '@shared/engines'
 import type { ConnectionConfig, ConnectionInput, EngineId, Environment } from '@shared/types'
 import type { AppContext } from '../../context'
 import type { ConnectionSecretKind } from '../../credentials/store'
@@ -194,6 +199,22 @@ function sqliteBlock(
   return { sqlite }
 }
 
+/** SQL Server block: the file's database and options over the defaults (and an earlier import's). */
+function sqlServerBlock(
+  parsed: ParsedConnection,
+  existing: ConnectionConfig | null
+): Pick<ConnectionInput, 'sqlserver' | 'network'> {
+  return {
+    sqlserver: {
+      ...defaultSqlServerOptions(),
+      ...existing?.sqlserver,
+      ...parsed.sqlserver,
+      initialDatabase: parsed.database || existing?.sqlserver?.initialDatabase || ''
+    },
+    network: { ...DEFAULT_NETWORK, ...existing?.network }
+  }
+}
+
 /** MongoDB block: the file's options over the defaults (and an earlier import's options). */
 function mongoBlock(
   parsed: ParsedConnection,
@@ -220,6 +241,7 @@ function toInput(
     ...(engine === 'postgresql' ? postgresBlock(parsed, existing) : {}),
     ...(engine === 'sqlite' ? sqliteBlock(parsed, existing, environment) : {}),
     ...(engine === 'mongodb' ? mongoBlock(parsed, existing) : {}),
+    ...(engine === 'sqlserver' ? sqlServerBlock(parsed, existing) : {}),
     name: existing?.name ?? parsed.name,
     color: parsed.color ?? existing?.color ?? null,
     environment,

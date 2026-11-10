@@ -1,3 +1,4 @@
+import { serverOf } from '@shared/sqlserver/connectionString'
 import { isAbsolutePathFor } from '@shared/connectionValidation'
 import type {
   EngineId,
@@ -173,6 +174,28 @@ export function firstHost(raw: string, warnings: string[]): { host: string; port
   const host = (m?.[1] ?? first).replace(/^\[|\]$/g, '')
   warnings.push(multiHostWarning(host))
   return { host, port: m?.[2] ? Number(m[2]) : null }
+}
+
+/* ---------- SQL Server ---------- */
+
+export const SQLSERVER_CHOICE: EngineChoice = {
+  engine: 'sqlserver',
+  unsupportedReason: null,
+  warning: null
+}
+
+/**
+ * Host field of a SQL Server connection as managers store it: `host`,
+ * `host,port`, `host\\INSTANCE`, `tcp:host`, `(local)`… Named pipes and LocalDB add
+ * a warning (Vortaq connects over TCP).
+ */
+export function sqlServerHost(
+  raw: string,
+  port: number,
+  warnings: string[]
+): { host: string; port: number; instanceName: string } {
+  const server = serverOf(raw, warnings)
+  return { host: server.host, port: server.port ?? port, instanceName: server.instance }
 }
 
 /* ---------- SQLite ---------- */

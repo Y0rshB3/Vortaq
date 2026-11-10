@@ -14,6 +14,7 @@ import { buildFilterWhere } from '../mysql/tableFilter'
 import { listUsers } from '../mysql/users'
 import { createPgDbHandlers, PG_REFUSED } from './dbPostgres'
 import { createSqliteDbHandlers, SQLITE_REFUSED } from './dbSqlite'
+import { createMsDbHandlers, MS_REFUSED } from './dbSqlServer'
 import {
   createMongoHandlers,
   MONGO_REFUSED,
@@ -46,6 +47,7 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
   const manager = getConnectionManager(ctx)
   const pg = createPgDbHandlers(ctx, manager)
   const lite = createSqliteDbHandlers(ctx, manager)
+  const ms = createMsDbHandlers(ctx, manager)
   const mongo = createMongoHandlers(ctx, manager)
   registerChannels(handle, mongo.channels)
 
@@ -53,6 +55,8 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
   const isPg = (id: string): boolean => ctx.connections.get(id)?.engine === 'postgresql'
   /** True for SQLite connections: their db:* calls go to dbSqlite.ts. */
   const isLite = (id: string): boolean => ctx.connections.get(id)?.engine === 'sqlite'
+  /** True for SQL Server connections: their db:* calls go to dbSqlServer.ts. */
+  const isMs = (id: string): boolean => ctx.connections.get(id)?.engine === 'sqlserver'
   /** True for MongoDB connections: their shared db:* calls go to mongo.ts, the rest are refused. */
   const isMongo = (id: string): boolean => ctx.connections.get(id)?.engine === 'mongodb'
   /** Splitter of a MySQL-family connection: MariaDB's also runs `/*M!` statements. */
@@ -107,34 +111,42 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     }) as typeof fn)
 
   dbHandle('db:databases', (id) =>
-    isMongo(id)
-      ? mongo.databases(id)
-      : isPg(id)
-        ? pg.databases(id)
-        : isLite(id)
-          ? lite.databases(id)
-          : withSession(id, null, (s) => introspect.listDatabases(s))
+    isMs(id)
+      ? ms.databases(id)
+      : isMongo(id)
+        ? mongo.databases(id)
+        : isPg(id)
+          ? pg.databases(id)
+          : isLite(id)
+            ? lite.databases(id)
+            : withSession(id, null, (s) => introspect.listDatabases(s))
   )
   dbHandle('db:tables', (id, schema) =>
-    isPg(id)
-      ? pg.tables(id, schema)
-      : isLite(id)
-        ? lite.tables(id, schema)
-        : withSession(id, null, (s) => introspect.listTables(s, mysqlSchema(schema)))
+    isMs(id)
+      ? ms.tables(id, schema)
+      : isPg(id)
+        ? pg.tables(id, schema)
+        : isLite(id)
+          ? lite.tables(id, schema)
+          : withSession(id, null, (s) => introspect.listTables(s, mysqlSchema(schema)))
   )
   dbHandle('db:views', (id, schema) =>
-    isPg(id)
-      ? pg.views(id, schema)
-      : isLite(id)
-        ? lite.views(id, schema)
-        : withSession(id, null, (s) => introspect.listViews(s, mysqlSchema(schema)))
+    isMs(id)
+      ? ms.views(id, schema)
+      : isPg(id)
+        ? pg.views(id, schema)
+        : isLite(id)
+          ? lite.views(id, schema)
+          : withSession(id, null, (s) => introspect.listViews(s, mysqlSchema(schema)))
   )
   dbHandle('db:routines', (id, schema) =>
-    isPg(id)
-      ? pg.routines(id, schema)
-      : isLite(id)
-        ? Promise.resolve([])
-        : withSession(id, null, (s) => introspect.listRoutines(s, mysqlSchema(schema)))
+    isMs(id)
+      ? ms.routines(id, schema)
+      : isPg(id)
+        ? pg.routines(id, schema)
+        : isLite(id)
+          ? Promise.resolve([])
+          : withSession(id, null, (s) => introspect.listRoutines(s, mysqlSchema(schema)))
   )
   dbHandle('db:events', (id, schema) => {
     // Main mirrors the UI: engines without scheduled events are refused (MySQL has them).
@@ -143,27 +155,34 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     return withSession(id, null, (s) => introspect.listEvents(s, mysqlSchema(schema)))
   })
   dbHandle('db:triggers', (id, schema) =>
-    isPg(id)
-      ? pg.triggers(id, schema)
-      : isLite(id)
-        ? lite.triggers(id, schema)
-        : withSession(id, null, (s) => introspect.listTriggers(s, mysqlSchema(schema)))
+    isMs(id)
+      ? ms.triggers(id, schema)
+      : isPg(id)
+        ? pg.triggers(id, schema)
+        : isLite(id)
+          ? lite.triggers(id, schema)
+          : withSession(id, null, (s) => introspect.listTriggers(s, mysqlSchema(schema)))
   )
   dbHandle('db:columns', (id, schema, table) =>
-    isPg(id)
-      ? pg.columns(id, schema, table)
-      : isLite(id)
-        ? lite.columns(id, schema, table)
-        : withSession(id, null, (s) => introspect.listColumns(s, mysqlSchema(schema), table))
+    isMs(id)
+      ? ms.columns(id, schema, table)
+      : isPg(id)
+        ? pg.columns(id, schema, table)
+        : isLite(id)
+          ? lite.columns(id, schema, table)
+          : withSession(id, null, (s) => introspect.listColumns(s, mysqlSchema(schema), table))
   )
   dbHandle('db:tableStructure', (id, schema, table) =>
-    isPg(id)
-      ? pg.tableStructure(id, schema, table)
-      : isLite(id)
-        ? lite.tableStructure(id, schema, table)
-        : withSession(id, null, (s) => introspect.tableStructure(s, mysqlSchema(schema), table))
+    isMs(id)
+      ? ms.tableStructure(id, schema, table)
+      : isPg(id)
+        ? pg.tableStructure(id, schema, table)
+        : isLite(id)
+          ? lite.tableStructure(id, schema, table)
+          : withSession(id, null, (s) => introspect.tableStructure(s, mysqlSchema(schema), table))
   )
   dbHandle('db:showCreate', (id, schema, type, name) => {
+    if (isMs(id)) return ms.showCreate(id, schema, type, name)
     if (isPg(id)) return pg.showCreate(id, schema, type, name)
     if (isLite(id)) return lite.showCreate(id, schema, type, name)
     if (type === 'sequence') {
@@ -183,11 +202,13 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     )
   })
   dbHandle('db:schemas', (id, database) => {
+    if (isMs(id)) return ms.schemas(id, database)
     refuseOnLite(id)
     if (!isPg(id)) throw new DbUserError(CHANNEL_NOT_FOR_MYSQL)
     return pg.schemas(id, database)
   })
   dbHandle('db:objects', (id, schema, type) => {
+    if (isMs(id)) return ms.objects(id, schema, type)
     if (isMongo(id)) return mongo.objects(id, schema, type)
     if (isLite(id)) return lite.objects(id, schema, type)
     if (isPg(id)) return pg.objects(id, schema, type)
@@ -197,30 +218,36 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     return withSession(id, null, (s) => introspect.listSequences(s, mysqlSchema(schema)))
   })
   dbHandle('db:closeDatabase', (id, database) => {
+    if (isMs(id)) return ms.closeDatabase(id, database)
     refuseOnLite(id)
     if (!isPg(id)) throw new DbUserError(CHANNEL_NOT_FOR_MYSQL)
     return pg.closeDatabase(id, database)
   })
   dbHandle('db:extensions', (id, database) => {
+    if (isMs(id)) throw new DbUserError(MS_REFUSED.extensions, 'E_CAPABILITY')
     refuseOnLite(id)
     if (!isPg(id)) throw new DbUserError(CHANNEL_NOT_FOR_MYSQL)
     return pg.extensions(id, database)
   })
   dbHandle('db:dataTypes', (id, database) => {
+    if (isMs(id)) return ms.dataTypes(id, database)
     refuseOnLite(id)
     if (!isPg(id)) throw new DbUserError(CHANNEL_NOT_FOR_MYSQL)
     return pg.dataTypes(id, database)
   })
   dbHandle('db:tableData', (id, request) =>
-    isPg(id)
-      ? pg.tableData(id, request)
-      : isLite(id)
-        ? lite.tableData(id, request)
-        : withSession(id, null, (s) =>
-            fetchTableData(s, { ...request, schema: mysqlSchema(request.schema) })
-          )
+    isMs(id)
+      ? ms.tableData(id, request)
+      : isPg(id)
+        ? pg.tableData(id, request)
+        : isLite(id)
+          ? lite.tableData(id, request)
+          : withSession(id, null, (s) =>
+              fetchTableData(s, { ...request, schema: mysqlSchema(request.schema) })
+            )
   )
   dbHandle('db:tableFilterSql', (id, schema, table, filter) => {
+    if (isMs(id)) return ms.tableFilterSql(id, schema, table, filter)
     if (isPg(id)) return pg.tableFilterSql(id, schema, table, filter)
     if (isLite(id)) return lite.tableFilterSql(id, schema, table, filter)
     const db = mysqlSchema(schema)
@@ -229,6 +256,7 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     )
   })
   dbHandle('db:applyRowChanges', (id, schema, table, changes, options) => {
+    if (isMs(id)) return ms.applyRowChanges(id, schema, table, changes, options)
     if (isPg(id)) return pg.applyRowChanges(id, schema, table, changes, options)
     if (isLite(id)) return lite.applyRowChanges(id, schema, table, changes, options)
     const db = mysqlSchema(schema)
@@ -241,6 +269,7 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     })
   })
   dbHandle('db:execute', async (id, sql, options) => {
+    if (isMs(id)) return ms.execute(id, sql, options)
     if (isPg(id)) return pg.execute(id, sql, options)
     if (isLite(id)) return lite.execute(id, sql, options)
     // Open first: a `mysql` connection whose server is MariaDB becomes `mariadb` when it opens,
@@ -263,42 +292,49 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     )
   })
   dbHandle('db:cancel', (id, executionId) =>
-    isMongo(id)
-      ? mongo.cancel(id, executionId)
-      : isPg(id)
-        ? pg.cancel(id, executionId)
-        : isLite(id)
-          ? lite.cancel(id, executionId)
-          : false
+    isMs(id)
+      ? ms.cancel(id, executionId)
+      : isMongo(id)
+        ? mongo.cancel(id, executionId)
+        : isPg(id)
+          ? pg.cancel(id, executionId)
+          : isLite(id)
+            ? lite.cancel(id, executionId)
+            : false
   )
   dbHandle('db:sessionState', (id, key) =>
-    isMongo(id)
-      ? mongo.sessionState(id, key)
-      : isPg(id)
-        ? pg.sessionState(id, key)
-        : isLite(id)
-          ? lite.sessionState(id, key)
-          : {
-              open: false,
-              transactionStatus: 'idle' as const,
-              effectiveSchema: null,
-              database: null
-            }
+    isMs(id)
+      ? ms.sessionState(id, key)
+      : isMongo(id)
+        ? mongo.sessionState(id, key)
+        : isPg(id)
+          ? pg.sessionState(id, key)
+          : isLite(id)
+            ? lite.sessionState(id, key)
+            : {
+                open: false,
+                transactionStatus: 'idle' as const,
+                effectiveSchema: null,
+                database: null
+              }
   )
   dbHandle('db:commit', (id, key, options) => {
+    if (isMs(id)) return ms.commit(id, key, options)
     if (isMongo(id)) return mongo.commit(id, key, options)
     if (isLite(id)) return lite.commit(id, key, options)
     if (!isPg(id)) throw new DbUserError(CHANNEL_NOT_FOR_MYSQL)
     return pg.commit(id, key, options)
   })
   dbHandle('db:rollback', (id, key) => {
+    if (isMs(id)) return ms.rollback(id, key)
     if (isMongo(id)) return mongo.rollback(id, key)
     if (isLite(id)) return lite.rollback(id, key)
     if (!isPg(id)) throw new DbUserError(CHANNEL_NOT_FOR_MYSQL)
     return pg.rollback(id, key)
   })
   dbHandle('db:closeSession', async (id, key) => {
-    if (isMongo(id)) await mongo.closeSession(id, key)
+    if (isMs(id)) await ms.closeSession(id, key)
+    else if (isMongo(id)) await mongo.closeSession(id, key)
     else if (isPg(id)) await pg.closeSession(id, key)
     else if (isLite(id)) await lite.closeSession(id, key)
   })
@@ -308,12 +344,15 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
       throw new DbUserError(
         connection.engine === 'sqlite'
           ? SQLITE_REFUSED.notAvailable
-          : PG_REFUSED.users(connection.name),
+          : connection.engine === 'sqlserver'
+            ? MS_REFUSED.users(connection.name)
+            : PG_REFUSED.users(connection.name),
         'E_CAPABILITY'
       )
     return withSession(id, null, (s) => listUsers(s))
   })
   dbHandle('db:dropObject', (id, schema, type, name, options) => {
+    if (isMs(id)) return ms.dropObject(id, schema, type, name, options)
     if (isMongo(id)) return mongo.dropObject(id, schema, type, name, options)
     if (isPg(id)) return pg.dropObject(id, schema, type, name, options)
     if (isLite(id)) return lite.dropObject(id, schema, type, name, options)
@@ -335,6 +374,11 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     )
   })
   dbHandle('db:createDatabase', (id, name, charset, collation, options, engineOptions) => {
+    if (isMs(id))
+      return ms.createDatabase(id, name, options, {
+        ...(collation ? { collation } : {}),
+        ...engineOptions
+      })
     if (isMongo(id)) return mongo.createDatabase(id, name, options, engineOptions)
     if (isPg(id)) return pg.createDatabase(id, name, options, engineOptions)
     if (isLite(id)) throw new DbUserError(SQLITE_REFUSED.createDatabase, 'E_CAPABILITY')
@@ -342,6 +386,7 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     return withSession(id, null, (s) => introspect.createDatabase(s, name, charset, collation))
   })
   dbHandle('db:dropDatabase', (id, name, options) => {
+    if (isMs(id)) return ms.dropDatabase(id, name, options)
     if (isMongo(id)) return mongo.dropDatabase(id, name, options)
     if (isPg(id)) return pg.dropDatabase(id, name, options)
     if (isLite(id)) throw new DbUserError(SQLITE_REFUSED.dropDatabase, 'E_CAPABILITY')
@@ -349,6 +394,7 @@ export function registerDbHandlers(ctx: AppContext, handle: HandleFn): void {
     return withSession(id, null, (s) => introspect.dropDatabase(s, name))
   })
   dbHandle('db:charsets', (id) => {
+    if (isMs(id)) throw new DbUserError(MS_REFUSED.charsets, 'E_CAPABILITY')
     if (isPg(id)) throw new DbUserError(PG_REFUSED.charsets, 'E_CAPABILITY')
     refuseOnLite(id)
     return withSession(id, null, (s) => introspect.listCharsets(s))

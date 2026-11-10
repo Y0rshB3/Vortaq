@@ -408,11 +408,17 @@ const MARIADB_GROUP_COLUMNS: Partial<Record<GroupKind, ObjectColumn<unknown>[]>>
   ]
 }
 
+/** SQL Server: MySQL's table/view/routine columns fit its catalog; sequences like PostgreSQL. */
+const MS_GROUP_COLUMNS: Partial<Record<GroupKind, ObjectColumn<unknown>[]>> = {
+  sequences: PG_GROUP_COLUMNS.sequences
+}
+
 /** Columns of a group for a connection's engine (MySQL: GROUP_COLUMNS unchanged). */
 export function columnsFor(group: GroupKind, engine?: EngineId | null): ObjectColumn<unknown>[] {
   if (engine === 'mariadb') return MARIADB_GROUP_COLUMNS[group] ?? GROUP_COLUMNS[group]
   if (engine === 'postgresql') return PG_GROUP_COLUMNS[group] ?? GROUP_COLUMNS[group]
   if (engine === 'sqlite') return SQLITE_GROUP_COLUMNS[group] ?? GROUP_COLUMNS[group]
+  if (engine === 'sqlserver') return MS_GROUP_COLUMNS[group] ?? GROUP_COLUMNS[group]
   if (engine === 'mongodb') return MONGO_GROUP_COLUMNS[group] ?? GROUP_COLUMNS[group]
   return GROUP_COLUMNS[group]
 }

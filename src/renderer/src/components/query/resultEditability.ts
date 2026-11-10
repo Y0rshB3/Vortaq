@@ -9,6 +9,7 @@ import {
   type TableRef
 } from './selectSource'
 import { pgSingleTableSelect } from './selectSourcePg'
+import { msSingleTableSelect } from './selectSourceMs'
 import { sqliteSingleTableSelect } from './selectSourceSqlite'
 
 /**
@@ -161,10 +162,10 @@ export function resultSource(
   columns: QueryColumn[],
   sql: string,
   /**
-   * 'postgresql' and 'sqlite' parse with their dialect's lexer; anything else
-   * keeps the MySQL parser.
+   * 'postgresql', 'sqlite' and 'sqlserver' parse with their dialect's lexer;
+   * anything else keeps the MySQL parser.
    */
-  dialect: 'mysql' | 'postgresql' | 'sqlite' = 'mysql'
+  dialect: 'mysql' | 'postgresql' | 'sqlite' | 'sqlserver' = 'mysql'
 ): SourceCheck {
   if (!columns.length) return fail('el resultado no tiene columnas')
   const parsed =
@@ -172,7 +173,9 @@ export function resultSource(
       ? pgSingleTableSelect(sql)
       : dialect === 'sqlite'
         ? sqliteSingleTableSelect(sql)
-        : singleTableSelect(sql)
+        : dialect === 'sqlserver'
+          ? msSingleTableSelect(sql)
+          : singleTableSelect(sql)
   if (!parsed.ok) return fail(parsed.reason)
   if (parsed.joined) return joinedCandidates(columns, parsed.joined, dialect === 'mysql')
   const { ref } = parsed
