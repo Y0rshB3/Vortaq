@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  mainWebPreferences,
   TOOLBAR_HEIGHT,
   titleBarOverlayFor,
   usesTitleBarOverlay,
@@ -58,5 +59,23 @@ describe('windowIconPath', () => {
   it('points at an existing PNG in development', () => {
     const path = windowIconPath({ ...base, platform: 'linux', packaged: false })
     expect(path && existsSync(path)).toBe(true)
+  })
+})
+
+describe('main window webPreferences', () => {
+  it('keeps the renderer contained, with every value written out', () => {
+    expect(mainWebPreferences('/app/out/preload/index.js')).toEqual({
+      preload: '/app/out/preload/index.js',
+      contextIsolation: true,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
+      spellcheck: false
+    })
   })
 })

@@ -6,7 +6,7 @@ import { APP_NAME } from './brand'
 import { getLogger } from './log'
 import { registerAllHandlers } from './ipc/register'
 import { buildAppMenuTemplate } from './menu'
-import { createMainWindow, watchSmoke } from './window'
+import { createMainWindow, guardWebContents, watchSmoke } from './window'
 import { aboutPanelOptions } from './licenses'
 import { windowIconPath } from './windowOptions'
 import { quitVetoed, restoreQuitPrompt, vetoQuit } from './quitGuard'
@@ -62,6 +62,8 @@ function startDesktop(): void {
   }
 
   app.setName(APP_NAME)
+  // Before any window: no webContents may leave the app's page or open another window.
+  guardWebContents()
   // Before 'ready': Chromium storage must also follow the alternative profile.
   const userDataPath = applyProfilePath(switches)
   configureFileLog(userDataPath)
