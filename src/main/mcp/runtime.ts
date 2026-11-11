@@ -20,7 +20,7 @@ import { registerDbHandlers } from '../ipc/db'
 import { typedConfirmEnvironments } from '../ipc/productionGuard'
 import { HandlerRegistry } from '../ipc/router'
 import { MAX_OPEN_SQLITE } from '../sqlite/driver'
-import { MCP_DISABLED, McpToolError, unknownConnection } from './access'
+import { DESKTOP_MCP_WORDING, McpToolError, unknownConnection, type McpWording } from './access'
 import { dataScrubberFor, redactorFor, type Redactor } from './redact'
 
 /** What list_connections shows of a connection: never host, port, user, path or databases. */
@@ -48,6 +48,8 @@ export interface ResolvedConnection {
 export interface McpRuntimeOptions {
   /** Why the profile cannot be used yet (pending migration), checked on every call. */
   profileProblem?: () => string | null
+  /** Where the messages send the user (default: the desktop app). */
+  wording?: McpWording
 }
 
 const SECRET_KINDS_TO_REDACT: SecretKind[] = [DB_PASSWORD, 'ssh', 'sslKey']
@@ -61,12 +63,14 @@ export class McpRuntime {
   private readonly lastUse = new Map<string, number>()
   private readonly busy = new Map<string, number>()
   private readonly profileProblem: () => string | null
+  readonly wording: McpWording
 
   constructor(
     readonly ctx: AppContext,
     options: McpRuntimeOptions = {}
   ) {
     this.profileProblem = options.profileProblem ?? (() => null)
+    this.wording = options.wording ?? DESKTOP_MCP_WORDING
     this.manager = getConnectionManager(ctx)
     registerDbHandlers(ctx, this.registry.handle)
   }
@@ -83,7 +87,7 @@ export class McpRuntime {
   assertAvailable(): void {
     const problem = this.profileProblem()
     if (problem) throw new McpToolError(problem)
-    if (this.ctx.settings.get().mcpEnabled !== true) throw new McpToolError(MCP_DISABLED)
+    if (this.ctx.settings.get().mcpEnabled !== true) throw new McpToolError(this.wording.disabled)
   }
 
   /** Connections available to agents, with their effective level. */
@@ -129,7 +133,7 @@ export class McpRuntime {
       available.find((c) => c.id === wanted) ??
       available.find((c) => c.name === wanted) ??
       (byName.length === 1 ? byName[0] : undefined)
-    if (!config) throw new McpToolError(unknownConnection(wanted))
+    if (!config) throw new McpToolError(unknownConnection(wanted, this.wording))
     const access = effectiveMcpAccess(config, environments) as McpAccess
     const requested = normalizeMcpConfig(config.mcp)?.access ?? access
     const secrets = this.secretsOf(config)

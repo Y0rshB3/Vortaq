@@ -43,7 +43,8 @@ describe('«Importar de Vortaq» (desktop profile)', () => {
       'Analítica (producción)',
       'Eventos',
       'Notas',
-      'Tienda local'
+      'Tienda local',
+      'Ventas (SQL Server)'
     ])
     expect(preview.skipped).toEqual([
       { name: 'Sin host', reason: 'El host de la conexión es obligatorio' }
@@ -55,6 +56,8 @@ describe('«Importar de Vortaq» (desktop profile)', () => {
       expect(input.backupDir).toBe('')
       expect(input.extraBackupDirs).toEqual([])
       expect(JSON.stringify(input)).not.toMatch(/must-never-be-copied|not-a-field/)
+      // Agents are chosen again in the editor: the desktop's level never comes along.
+      expect(input).not.toHaveProperty('mcp')
     }
   })
 
@@ -100,6 +103,21 @@ describe('«Importar de Vortaq» (desktop profile)', () => {
           extraOptions: { appName: 'vortaq-example' }
         }
       }
+    })
+  })
+
+  it('keeps the SQL Server sign-in method, instance and certificate settings', () => {
+    const ventas = readDesktopConnections(dir, 'darwin').connections.find(
+      (c) => c.name === 'Ventas (SQL Server)'
+    )!
+    expect(ventas.engine).toBe('sqlserver')
+    expect(ventas.input.sqlserver).toMatchObject({
+      initialDatabase: 'ventas',
+      auth: 'windows',
+      domain: 'OFICINA',
+      instanceName: 'SQLEXPRESS',
+      encrypt: 'mandatory',
+      trustServerCertificate: true
     })
   })
 

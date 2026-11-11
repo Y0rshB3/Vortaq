@@ -92,6 +92,19 @@ const SSL_KEYS = [
 const NETWORK_KEYS = ['connectTimeoutMs', 'keepAliveSec']
 const POSTGRES_KEYS = ['initialDatabase', 'showSystemSchemas', 'timeZone', 'searchPath']
 const SQLITE_KEYS = ['filePath', 'pathNeedsReview', 'readOnly', 'foreignKeys', 'busyTimeoutMs']
+const SQLSERVER_KEYS = [
+  'initialDatabase',
+  'auth',
+  'domain',
+  'instanceName',
+  'encrypt',
+  'trustServerCertificate',
+  'hostNameInCertificate',
+  'tenantId',
+  'clientId',
+  'showSystemObjects',
+  'readOnlyIntent'
+]
 const MONGO_KEYS = [
   'topology',
   'srv',
@@ -147,7 +160,12 @@ function inputOf(record: Json): ConnectionInput {
     ...(record.network !== undefined ? { network: pick(record.network, NETWORK_KEYS) } : {}),
     ...(record.postgres !== undefined ? { postgres: pick(record.postgres, POSTGRES_KEYS) } : {}),
     ...(sqlite ? { sqlite } : {}),
-    ...(record.mongo !== undefined ? { mongo: pick(record.mongo, MONGO_KEYS) } : {})
+    ...(record.mongo !== undefined ? { mongo: pick(record.mongo, MONGO_KEYS) } : {}),
+    // Sign-in method, instance and TLS of SQL Server (0.5.0 left them at the defaults).
+    ...(record.sqlserver !== undefined
+      ? { sqlserver: pick(record.sqlserver, SQLSERVER_KEYS) }
+      : {})
+    // `mcp` is never copied: agents are chosen again in the editor (Vortaq: Agentes (MCP)…).
   } as ConnectionInput
   return withEngineDefaults(input)
 }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   claudeCodeCommand,
+  claudeCodeHttpCommand,
   claudeDesktopConfig,
   codexConfig,
+  codexHttpConfig,
   cursorConfig,
   effectiveMcpAccess,
   genericClientInfo,
@@ -11,6 +13,7 @@ import {
   isMcpEnabled,
   mcpClientSnippets,
   mcpConfigError,
+  mcpHttpClientSnippets,
   mcpLaunchOf,
   MCP_WRITE_BLOCKED,
   normalizeMcpConfig,
@@ -205,5 +208,65 @@ describe('MCP launch command and client snippets', () => {
     expect(where(win, 'gemini')).toMatch(/^%USERPROFILE%\\\.gemini\\settings\.json /)
     expect(where(mac, 'antigravity')).toMatch(/^~\/\.gemini\/config\/mcp_config\.json /)
     expect(where(win, 'opencode')).toContain('%USERPROFILE%\\.config\\opencode\\opencode.json')
+  })
+})
+
+describe('MCP snippets for the editor extension (HTTP on 127.0.0.1)', () => {
+  const mac = { url: 'http://127.0.0.1:39291/mcp', key: 'k-123_ABC', platform: 'darwin' }
+  const win = { ...mac, platform: 'win32' }
+
+  it('passes the key as a Bearer header in every format, never in the URL', () => {
+    expect(claudeCodeHttpCommand(mac)).toBe(
+      'claude mcp add --transport http vortaq http://127.0.0.1:39291/mcp --header "Authorization: Bearer k-123_ABC"'
+    )
+    expect(codexHttpConfig(mac)).toBe(
+      [
+        '[mcp_servers.vortaq]',
+        'url = "http://127.0.0.1:39291/mcp"',
+        'http_headers = { "Authorization" = "Bearer k-123_ABC" }',
+        'tool_timeout_sec = 130'
+      ].join('\n')
+    )
+    const snippets = mcpHttpClientSnippets(mac)
+    expect(snippets.map((s) => s.id)).toEqual([
+      'claudeCode',
+      'codex',
+      'gemini',
+      'antigravity',
+      'cursor',
+      'vscode',
+      'opencode',
+      'other'
+    ])
+    const text = (id: string): string => snippets.find((s) => s.id === id)!.text
+    const auth = { Authorization: 'Bearer k-123_ABC' }
+    expect(JSON.parse(text('gemini')).mcpServers.vortaq).toEqual({
+      httpUrl: mac.url,
+      headers: auth
+    })
+    expect(JSON.parse(text('antigravity')).mcpServers.vortaq).toEqual({
+      serverUrl: mac.url,
+      headers: auth
+    })
+    expect(JSON.parse(text('cursor')).mcpServers.vortaq).toEqual({ url: mac.url, headers: auth })
+    expect(JSON.parse(text('vscode')).servers.vortaq).toEqual({
+      type: 'http',
+      url: mac.url,
+      headers: auth
+    })
+    expect(JSON.parse(text('opencode')).mcp.vortaq).toEqual({
+      type: 'remote',
+      url: mac.url,
+      headers: auth,
+      oauth: false
+    })
+    expect(text('other')).toContain('Cabecera: Authorization: Bearer k-123_ABC')
+    for (const s of snippets) expect(s.text).not.toContain('?')
+  })
+
+  it('writes Windows locations and quoting for Windows', () => {
+    expect(claudeCodeHttpCommand(win)).toContain('--header "Authorization: Bearer k-123_ABC"')
+    const where = mcpHttpClientSnippets(win).find((s) => s.id === 'cursor')!.where
+    expect(where).toContain('%USERPROFILE%\\.cursor\\mcp.json')
   })
 })

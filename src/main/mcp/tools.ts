@@ -110,7 +110,7 @@ export function listConnections(rt: McpRuntime): ToolOutput {
       ...(connections.length
         ? {}
         : {
-            note: 'El usuario no ha activado ninguna conexión para agentes: en Vortaq, editar la conexión › Agentes (MCP).'
+            note: `El usuario no ha activado ninguna conexión para agentes: se activan en ${rt.wording.enablePlace}.`
           })
     },
     rows: connections.length

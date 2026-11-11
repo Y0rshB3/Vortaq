@@ -17,6 +17,7 @@ import {
   readFileSync,
   writeFileSync
 } from 'node:fs'
+import { request as httpRequest } from 'node:http'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import type { ConnectionInput, ProgressEvent, QueryStatementResult } from '@core'
@@ -268,7 +269,7 @@ test('imports the desktop connections without passwords', async () => {
   const preview = api.readDesktopImport()
   assert.deepEqual(
     preview.connections.map((c) => c.name),
-    ['Analítica (producción)', 'Eventos', 'Notas', 'Tienda local']
+    ['Analítica (producción)', 'Eventos', 'Notas', 'Tienda local', 'Ventas (SQL Server)']
   )
   const tienda = preview.connections.find((c) => c.name === 'Tienda local')!
   const count = await api.importConnections([tienda])
@@ -633,6 +634,113 @@ test(
       assert.equal(readFileSync(csv, 'utf8').trimEnd().split('\r\n').length, 3)
     } finally {
       await config.update('maxRows', undefined, vscode.ConfigurationTarget.Global)
+    }
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
+/* ---------- Agents (MCP): the server inside the editor ---------- */
+
+interface McpAnswer {
+  status: number
+  json: { result?: { content: { text: string }[]; isError?: boolean } } | null
+}
+
+function mcpPost(url: string, key: string, body: unknown): Promise<McpAnswer> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream'
+        }
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c: Buffer) => chunks.push(c))
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8')
+          resolve({ status: res.statusCode ?? 0, json: text ? JSON.parse(text) : null })
+        })
+      }
+    )
+    req.on('error', reject)
+    req.end(JSON.stringify(body))
+  })
+}
+
+const callTool = (name: string, args: Record<string, unknown>) => ({
+  jsonrpc: '2.0',
+  id: Date.now(),
+  method: 'tools/call',
+  params: { name, arguments: args }
+})
+
+test(
+  '«Agentes (MCP)»: the editor serves only the connections made available, until it is turned off',
+  async () => {
+    const config = vscode.workspace.getConfiguration('vortaq')
+    const port = 47000 + (process.pid % 1000)
+    await api.core.invoke('connections:setMcp', mysqlId, { enabled: true, access: 'read' })
+    // Write is refused where the typed name applies (production).
+    await assert.rejects(
+      api.core.invoke('connections:setMcp', mysqlProdId, { enabled: true, access: 'write' }),
+      /Lectura y escritura/
+    )
+    await config.update('mcp.port', port, vscode.ConfigurationTarget.Global)
+    await config.update('mcp.enabled', true, vscode.ConfigurationTarget.Global)
+    try {
+      await waitFor('the MCP server', () => api.mcp.current.kind === 'serving')
+      const endpoint = api.mcp.endpoint()!
+      assert.equal(endpoint.url, `http://127.0.0.1:${port}/mcp`)
+      const listed = await mcpPost(endpoint.url, endpoint.key, callTool('list_connections', {}))
+      assert.equal(listed.status, 200)
+      const names = JSON.parse(listed.json!.result!.content[0].text).connections.map(
+        (c: { name: string }) => c.name
+      )
+      assert.deepEqual(names, [`IT MySQL ${process.pid}`])
+      const rows = await mcpPost(
+        endpoint.url,
+        endpoint.key,
+        callTool('run_query', {
+          connection: `IT MySQL ${process.pid}`,
+          database: DB,
+          sql: 'SELECT name FROM item ORDER BY id'
+        })
+      )
+      assert.equal(rows.json!.result!.isError ?? false, false, rows.json!.result!.content[0].text)
+      // Earlier tests edited the names: two rows of one text column, whatever they say now.
+      const values = JSON.parse(rows.json!.result!.content[0].text).rows as unknown[][]
+      assert.equal(values.length, 2)
+      assert.ok(values.every((r) => r.length === 1 && typeof r[0] === 'string'))
+      // The read level never writes, and the answer says where to change it.
+      const write = await mcpPost(
+        endpoint.url,
+        endpoint.key,
+        callTool('execute_sql', {
+          connection: `IT MySQL ${process.pid}`,
+          database: DB,
+          sql: "UPDATE item SET name = 'x'"
+        })
+      )
+      assert.equal(write.json!.result!.isError, true)
+      assert.match(write.json!.result!.content[0].text, /Vortaq: Agentes \(MCP\)…/)
+      // Without the key nothing answers.
+      assert.equal(
+        (await mcpPost(endpoint.url, 'otra', callTool('list_connections', {}))).status,
+        401
+      )
+      // The agents' session is not the user's: the tree's connection stays as it was.
+      await config.update('mcp.enabled', false, vscode.ConfigurationTarget.Global)
+      await waitFor('the MCP server to stop', () => api.mcp.current.kind === 'off')
+      await assert.rejects(mcpPost(endpoint.url, endpoint.key, callTool('list_connections', {})))
+    } finally {
+      await config.update('mcp.enabled', undefined, vscode.ConfigurationTarget.Global)
+      await config.update('mcp.port', undefined, vscode.ConfigurationTarget.Global)
+      await api.core.invoke('connections:setMcp', mysqlId, { enabled: false, access: 'read' })
     }
   },
   'VORTAQ_TEST_MYSQL_URL'

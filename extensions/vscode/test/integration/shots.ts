@@ -386,6 +386,41 @@ async function tour(
   await step(`connection-production-${suffix}`)
   edit.dispose()
 
+  // «Vortaq: Agentes (MCP)…» and VS Code's own list of MCP servers (dark theme only).
+  if (suffix === 'dark') {
+    const config = vscode.workspace.getConfiguration('vortaq')
+    await api.core.invoke('connections:setMcp', ids.local, { enabled: true, access: 'read' })
+    await config.update('mcp.port', 47391, vscode.ConfigurationTarget.Global)
+    await config.update('mcp.enabled', true, vscode.ConfigurationTarget.Global)
+    for (let i = 0; i < 100 && api.mcp.current.kind !== 'serving'; i++) await sleep(100)
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+    void vscode.commands.executeCommand('vortaq.mcp')
+    await step('mcp-manager-dark')
+    await vscode.commands.executeCommand('workbench.action.closeQuickOpen')
+    await sleep(300)
+    void vscode.commands.executeCommand('workbench.mcp.listServer').then(
+      () => undefined,
+      () => undefined
+    )
+    await step('mcp-servers-dark')
+    // «Vortaq» › Start: VS Code's own MCP client connects with the key and lists the tools.
+    await vscode.commands.executeCommand('workbench.action.quickOpenSelectNext')
+    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem')
+    await sleep(800)
+    await step('mcp-server-actions-dark')
+    await vscode.commands.executeCommand('workbench.action.acceptSelectedQuickOpenItem')
+    await sleep(4000)
+    await vscode.commands.executeCommand('workbench.action.closeQuickOpen')
+    void vscode.commands.executeCommand('workbench.mcp.listServer').then(
+      () => undefined,
+      () => undefined
+    )
+    await step('mcp-servers-running-dark')
+    await vscode.commands.executeCommand('workbench.action.closeQuickOpen')
+    await config.update('mcp.enabled', undefined, vscode.ConfigurationTarget.Global)
+    await config.update('mcp.port', undefined, vscode.ConfigurationTarget.Global)
+  }
+
   // Relationship diagram and visual query of the shop database.
   await vscode.commands.executeCommand('workbench.action.closeAllEditors')
   const shop: TreeNode = { kind: 'database', connectionId: ids.local, database: DB }

@@ -2,7 +2,7 @@
   "name": "vortaq",
   "displayName": "Vortaq",
   "description": "Cliente de bases de datos para VS Code",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "y0rshb3",
   "license": "MIT",
   "author": "Y0rshB3",
@@ -50,7 +50,8 @@
     "virtualWorkspaces": true
   },
   "activationEvents": [
-    "onLanguage:sql"
+    "onLanguage:sql",
+    "onStartupFinished"
   ],
   "contributes": {
     "viewsContainers": {
@@ -97,6 +98,24 @@
         "title": "Refrescar",
         "category": "Vortaq",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "vortaq.checkUpdates",
+        "title": "Buscar actualizaciones",
+        "category": "Vortaq",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "vortaq.mcp",
+        "title": "Agentes (MCP)…",
+        "category": "Vortaq",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "vortaq.mcpConnection",
+        "title": "Agentes (MCP)…",
+        "category": "Vortaq",
+        "icon": "$(hubot)"
       },
       {
         "command": "vortaq.connect",
@@ -203,6 +222,16 @@
           "command": "vortaq.refresh",
           "when": "view == vortaq.connections",
           "group": "navigation@3"
+        },
+        {
+          "command": "vortaq.mcp",
+          "when": "view == vortaq.connections",
+          "group": "2_agents@1"
+        },
+        {
+          "command": "vortaq.checkUpdates",
+          "when": "view == vortaq.connections",
+          "group": "3_updates@1"
         }
       ],
       "view/item/context": [
@@ -280,6 +309,11 @@
           "command": "vortaq.deleteConnection",
           "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.connection/",
           "group": "5_edit@2"
+        },
+        {
+          "command": "vortaq.mcpConnection",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.connection/",
+          "group": "6_agents@1"
         }
       ],
       "editor/title": [
@@ -302,6 +336,10 @@
       "commandPalette": [
         {
           "command": "vortaq.connect",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.mcpConnection",
           "when": "false"
         },
         {
@@ -444,9 +482,35 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Mostrar la conexión y «Ejecutar» encima de los documentos SQL."
+        },
+        "vortaq.updates.check": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Buscar una vez al día si hay una versión nueva de la extensión (en las versiones publicadas en GitHub) y ofrecer instalarla. **Vortaq: Buscar actualizaciones** funciona siempre. Solo se puede cambiar en los ajustes de usuario.",
+          "scope": "application"
+        },
+        "vortaq.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Permitir que agentes de IA (MCP) usen Vortaq mientras el editor está abierto: solo las conexiones que actives una a una con **Vortaq: Agentes (MCP)…**, con su nivel (estructura, lectura o lectura y escritura; nunca escritura en Producción). Solo se puede cambiar en los ajustes de usuario.",
+          "scope": "application"
+        },
+        "vortaq.mcp.port": {
+          "type": "integer",
+          "default": 39291,
+          "minimum": 1024,
+          "maximum": 65535,
+          "markdownDescription": "Puerto local (127.0.0.1) del servidor MCP de Vortaq. Si otro programa lo usa, el servidor no arranca hasta que elijas otro (Vortaq nunca cambia de puerto por su cuenta: los clientes configurados enviarían la clave a ese programa). Solo se puede cambiar en los ajustes de usuario.",
+          "scope": "application"
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "vortaq",
+        "label": "Vortaq"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "node scripts/build.mjs",
