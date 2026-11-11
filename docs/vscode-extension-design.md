@@ -661,6 +661,33 @@ then offers `workbench.action.reloadWindow`. «Omitir esta versión» is remembe
 development or test mode. When the extension reaches the Marketplace/Open VSX this check should
 step aside for gallery installs.
 
+### 9.13 Completion, formatting, history and tree commands (0.7.0)
+
+- **Completion** (`host/sqlEditing.ts`): the query editor's CodeMirror completion sources run headless in the
+  extension host: an `EditorState` (with `sql({ dialect })`) of whole lines around the cursor (20 000 characters
+  before, 4 000 after), a `CompletionContext` without a view, and the engine's `keywordCompletionSource`. The
+  `CompletionResult`s become `CompletionItem`s (label = displayLabel, insert = the quoted label, replacing range
+  to the end of the identifier, sortText from `boost`). Metadata comes from the core's `db:*` channels with the
+  document's target (structure only), cached per connection + database + schema for two minutes, dropped when the
+  connections change, on «Refrescar» and after a run that writes; nothing is read while the connection is closed,
+  so completing never opens one or asks for a password. The renderer modules are bundled through
+  `HOST_RENDERER_FILES` (pure, no DOM; `@codemirror/view` only guards `document`).
+- **Formatting**: `DocumentFormattingEditProvider` and the range variant call `beautifySql(text,
+formatterDialectOf(engine))`; `sql` (standard SQL) without a target. The desktop's «Formatear SQL» now uses the
+  same per-engine grammar (it was MySQL for every engine); T-SQL is formatted batch by batch keeping the GO lines,
+  and the keyword-only fallback (MySQL lexical rules) is used only for MySQL/MariaDB.
+- **History** (`host/queryHistory.ts`, model `shared/queryHistory.ts`): `SqlRunner.onDidRun` reports each finished
+  run; the entry keeps SQL (100 000 characters), connection, database, schema, time, duration, statements, rows and
+  ok/error, never results or error texts, in `globalState` (`vortaq.queryHistory`, 500 entries, one per SQL +
+  connection + database). The picker (`createQuickPick`) searches, opens in a new targeted document, copies,
+  removes and clears. The desktop keeps the same model in localStorage (`electrondb.queryHistory`).
+- **Tree**: `vortaq.selectTop` (selectFirstRows 1000, runs through the runner), `vortaq.scriptCreate`
+  (`db:showCreate` into a targeted document) and `vortaq.findObject` (`host/objectSearch.ts`: tables and views of
+  up to 60 namespaces, filled while the list is open; PostgreSQL and SQL Server use the selected or initial
+  database's schemas; reveals the node).
+- **Results**: «Filtrar filas» (`components/query/resultFilter.ts`, shared with the desktop) filters what the grid
+  shows; rows keep their uid, so edits, selection and Aplicar are unaffected.
+
 ## 10. Left for phase 3 (and later)
 
 - Table designer; `.vqb` backups and restore (core channels exist: `backups:*`).
@@ -669,7 +696,6 @@ step aside for gallery installs.
 - Pagination of SQL results and «Ver datos» (filters, sort on the server).
 - Transaction controls for PostgreSQL/SQLite document sessions (state in the status bar,
   Confirmar/Deshacer) and the desktop's «transacción abierta» prompt when closing a document.
-- Schema-aware SQL completion in `.sql` documents.
 - Structure-only AI context as a Language Model tool, reusing `MetadataQueryable`,
   `PgMetadataQueryable`, `SqliteMetadataQueryable` and `MongoStructureSource`; never rows.
 - `.ncx` import for a file the user picks; the SQLite fallback of section 8

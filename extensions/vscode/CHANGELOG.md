@@ -1,5 +1,20 @@
 # Cambios
 
+## 0.7.0 — autocompletado, formato, historial y más en el árbol (2026-11-11)
+
+- **Autocompletado con la estructura** en los documentos `.sql`: palabras clave del motor y las bases de datos,
+  esquemas, tablas, vistas, columnas (con su tipo) y funciones de la conexión del documento, con el mismo
+  análisis que el editor de escritorio (alias, `JOIN`, `[corchetes]` de SQL Server). Solo mientras la conexión
+  está abierta: autocompletar nunca la abre ni pide la contraseña.
+- **Dar formato al documento** (o a la selección) con la gramática de cada motor; en SQL Server, lote a lote y
+  conservando las líneas `GO`.
+- **Vortaq: Historial de consultas**: lo que ejecutaste, con buscador; lo abre en un documento nuevo con la
+  misma conexión y base de datos. Se guarda solo en este equipo, sin resultados ni errores
+  (`vortaq.queryHistory.enabled`).
+- **Árbol**: **Seleccionar las primeras 1000 filas** (se ejecuta al momento), **Script como CREATE** y **Buscar
+  tabla o vista…**.
+- **Resultados**: **Filtrar filas** de lo cargado, sin perder las ediciones pendientes.
+
 ## 0.6.0 — agentes (MCP) en el editor y actualizaciones con un clic (2026-11-10)
 
 - **Agentes (MCP) sin la aplicación de escritorio.** La extensión trae el servidor MCP de Vortaq y lo
