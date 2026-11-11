@@ -33,6 +33,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     ],
     highlights: [
       'PostgreSQL: una copia .vqb de un servidor más nuevo (por ejemplo, de la 18) se restaura en uno de la 9.2 a la 11; antes fallaban sus secuencias, las tablas que las usan y los triggers',
+      'Cancelar una copia de PostgreSQL (también en una automatización) la detiene enseguida; antes esperaba a terminar la tabla que estaba copiando',
       'Túneles SSH: Vortaq recuerda la huella de cada servidor SSH y rechaza la conexión si cambia',
       'Correcciones de robustez y de seguridad: recomendamos actualizar'
     ]
