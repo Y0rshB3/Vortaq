@@ -25,6 +25,19 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.3',
+    date: '2026-11-11',
+    important: [
+      'Túneles SSH: al abrir cada conexión con túnel, Vortaq te muestra la huella del servidor SSH una vez para que confíes en ella. Hasta entonces, las automatizaciones que usan ese túnel no se ejecutan.',
+      'SQL Server con Microsoft Entra ID necesita cifrado «Obligatorio» o «Estricto» con el certificado verificado.'
+    ],
+    highlights: [
+      'PostgreSQL: una copia .vqb de un servidor más nuevo (por ejemplo, de la 18) se restaura en uno de la 9.2 a la 11; antes fallaban sus secuencias, las tablas que las usan y los triggers',
+      'Túneles SSH: Vortaq recuerda la huella de cada servidor SSH y rechaza la conexión si cambia',
+      'Correcciones de robustez y de seguridad: recomendamos actualizar'
+    ]
+  },
+  {
     version: '2.9.2',
     date: '2026-11-11',
     highlights: [

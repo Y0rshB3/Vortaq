@@ -21,7 +21,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
 [**Marketplace de VS Code**](https://marketplace.visualstudio.com/items?itemName=y0rshb3.vortaq) ·
-[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.2/vortaq-0.8.2.vsix) ·
+[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.3/vortaq-0.8.3.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -1620,7 +1620,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.8.2):
+Qué hace (versión 0.8.3):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1705,8 +1705,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`** (Cursor, VSCodium y Windsurf usan Open VSX, donde todavía no está):
   1. Descarga
-     [**`vortaq-0.8.2.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.2/vortaq-0.8.2.vsix)
-     (versión [`vscode-v0.8.2`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.2), con su
+     [**`vortaq-0.8.3.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.3/vortaq-0.8.3.vsix)
+     (versión [`vscode-v0.8.3`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.3), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1714,10 +1714,10 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.8.2.vsix       # VS Code
-  cursor --install-extension vortaq-0.8.2.vsix     # Cursor
-  codium --install-extension vortaq-0.8.2.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.8.2.vsix   # Windsurf
+  code --install-extension vortaq-0.8.3.vsix       # VS Code
+  cursor --install-extension vortaq-0.8.3.vsix     # Cursor
+  codium --install-extension vortaq-0.8.3.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.8.3.vsix   # Windsurf
   ```
 
 - **Actualizaciones de un `.vsix`:** el editor no actualiza una extensión instalada desde un archivo, así que
@@ -1730,7 +1730,7 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 - **Open VSX** (próximamente), para instalarla desde la vista Extensiones de VSCodium, Cursor y Windsurf.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.8.2.vsix`.
+`extensions/vscode/vortaq-0.8.3.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el
