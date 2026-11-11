@@ -4,6 +4,7 @@ import type { QueryStatementResult } from '@shared/types'
 import { environmentLabel, environmentPillClass } from '@renderer/components/backups/backupHelpers'
 import OperationProgress from '@renderer/components/backups/OperationProgress.vue'
 import EditableResult from '@renderer/components/query/EditableResult.vue'
+import PlanView from '@renderer/components/plan/PlanView.vue'
 import QueryMessages from '@renderer/components/query/QueryMessages.vue'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
 import { useProgressStore } from '@renderer/stores/progress'
@@ -55,6 +56,19 @@ watch(
   },
   { immediate: true }
 )
+
+// A new «Plan de ejecución» opens its tab.
+watch(
+  () => state.value.planId,
+  (id) => {
+    if (id && state.value.plan) tab.value = 'plan'
+  },
+  { immediate: true }
+)
+
+function copyPlan(text: string): void {
+  props.host.post({ type: 'clipboard', text, label: 'Plan copiado' })
+}
 
 // The host asks before a new run replaces results with unapplied edits.
 watch(
@@ -190,6 +204,13 @@ async function cancelExport(operationId: string): Promise<void> {
             />
             <span class="vq-results__count">{{ formatNumber(rs.set.rows.length) }}</span>
           </v-tab>
+          <v-tab
+            v-if="state.plan"
+            value="plan"
+            prepend-icon="mdi-file-tree-outline"
+            data-test="tab-plan"
+            >Plan</v-tab
+          >
         </v-tabs>
         <span class="vq-results__spacer" />
         <v-menu location="bottom end">
@@ -219,6 +240,9 @@ async function cancelExport(operationId: string): Promise<void> {
       <v-window v-model="tab" class="vq-results__window">
         <v-window-item value="messages" class="vq-results__fill">
           <QueryMessages :results="results" :notice="state.notice" />
+        </v-window-item>
+        <v-window-item v-if="state.plan" value="plan" class="vq-results__fill">
+          <PlanView :plan="state.plan" @copy="copyPlan" />
         </v-window-item>
         <v-window-item
           v-for="rs in resultSets"

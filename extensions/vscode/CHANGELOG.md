@@ -1,5 +1,13 @@
 # Cambios
 
+## 0.8.0 — plan de ejecución (2026-11-11)
+
+- **Plan de ejecución** de la sentencia del cursor (o de la selección), en una pestaña «Plan» del panel de
+  resultados: cada operador con su tabla e índice, condiciones, filas estimadas y su parte del coste; los más
+  caros se resaltan. **Plan estimado** no ejecuta nada (vale para `UPDATE` o `DELETE`); **Plan real** ejecuta un
+  `SELECT` de solo lectura donde nada puede quedar guardado y mide filas y tiempos. SQL Server, PostgreSQL,
+  MySQL, MariaDB y SQLite (este, solo estimado). SQL Server indica también índices recomendados.
+
 ## 0.7.0 — autocompletado, formato, historial y más en el árbol (2026-11-11)
 
 - **Autocompletado con la estructura** en los documentos `.sql`: palabras clave del motor y las bases de datos,

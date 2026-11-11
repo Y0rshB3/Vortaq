@@ -386,6 +386,19 @@ async function tour(
   await step(`connection-production-${suffix}`)
   edit.dispose()
 
+  // «Plan de ejecución» (real) of a join, in the results panel.
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+  const planEditor = await sqlEditor(
+    'plan.sql',
+    `-- Pedidos grandes con su cliente\nSELECT c.nombre, p.total\nFROM pedidos p JOIN clientes c ON c.id = p.cliente_id\nWHERE p.total > 100\nORDER BY p.total DESC;\n`,
+    ids.local
+  )
+  planEditor.selection = new vscode.Selection(2, 2, 2, 2)
+  await api.runner.plan(planEditor, true)
+  await vscode.window.showTextDocument(planEditor.document, vscode.ViewColumn.One)
+  await tidy()
+  await step(`plan-${suffix}`)
+
   // «Vortaq: Agentes (MCP)…» and VS Code's own list of MCP servers (dark theme only).
   if (suffix === 'dark') {
     const config = vscode.workspace.getConfiguration('vortaq')

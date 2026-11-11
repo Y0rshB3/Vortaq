@@ -724,6 +724,35 @@ test(
   'VORTAQ_TEST_MYSQL_URL'
 )
 
+test(
+  '«Plan de ejecución» of the statement under the cursor, in the results panel',
+  async () => {
+    const editor = await sqlDocument(
+      'plan',
+      'SELECT 1;\nSELECT i.name FROM item i WHERE i.id = 2;\n',
+      { connectionId: mysqlId, database: DB }
+    )
+    editor.selection = new vscode.Selection(1, 5, 1, 5)
+    const estimated = await api.runner.plan(editor, false)
+    assert.ok(estimated)
+    assert.equal(estimated.actual, false)
+    assert.equal(estimated.rawFormat, 'text')
+    const panel = api.results.get(`doc:${editor.document.uri.toString()}`)!
+    assert.equal(panel.state.plan?.root.operation, estimated.root.operation)
+    const actual = await api.runner.plan(editor, true)
+    assert.equal(actual?.actual, true)
+    assert.equal(panel.state.planId, 2)
+    // An UPDATE has an estimated plan only; the actual one is refused.
+    await editor.edit((b) =>
+      b.replace(new vscode.Range(1, 0, 1, 200), "UPDATE item SET name = 'x' WHERE id = 2;")
+    )
+    editor.selection = new vscode.Selection(1, 3, 1, 3)
+    await assert.rejects(api.runner.plan(editor, true), /solo lectura/)
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
 /* ---------- Agents (MCP): the server inside the editor ---------- */
 
 interface McpAnswer {

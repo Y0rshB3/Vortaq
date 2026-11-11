@@ -2,7 +2,7 @@
   "name": "vortaq",
   "displayName": "Vortaq",
   "description": "Cliente de bases de datos para VS Code",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "y0rshb3",
   "license": "MIT",
   "author": "Y0rshB3",
@@ -98,6 +98,20 @@
         "title": "Refrescar",
         "category": "Vortaq",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "vortaq.plan",
+        "title": "Plan de ejecución estimado",
+        "shortTitle": "Plan estimado",
+        "category": "Vortaq",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "vortaq.planActual",
+        "title": "Plan de ejecución real (ejecuta la consulta)",
+        "shortTitle": "Plan real",
+        "category": "Vortaq",
+        "icon": "$(pulse)"
       },
       {
         "command": "vortaq.selectTop",
@@ -380,6 +394,16 @@
           "command": "vortaq.pickConnection",
           "when": "editorLangId == sql",
           "group": "navigation@2"
+        },
+        {
+          "command": "vortaq.plan",
+          "when": "editorLangId == sql",
+          "group": "1_plan@1"
+        },
+        {
+          "command": "vortaq.planActual",
+          "when": "editorLangId == sql",
+          "group": "1_plan@2"
         }
       ],
       "commandPalette": [

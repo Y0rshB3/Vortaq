@@ -692,12 +692,24 @@ export async function activate(
     }
     await sqlRunner.pick(doc)
   })
+  command('vortaq.plan', () => planActive(false))
+  command('vortaq.planActual', () => planActive(true))
   command('vortaq.run', () => runActive(false))
   command('vortaq.runAll', () => runActive(true))
   command('vortaq.stop', async () => {
     const doc = vscode.window.activeTextEditor?.document
     if (doc) await sqlRunner.stop(doc.uri.toString())
   })
+
+  /** «Plan de ejecución» of the statement under the cursor of the active SQL document. */
+  async function planActive(actual: boolean): Promise<void> {
+    const editor = vscode.window.activeTextEditor
+    if (!editor || !isSqlDocument(editor.document)) {
+      void vscode.window.showInformationMessage('Abre un documento SQL para ver su plan.')
+      return
+    }
+    await sqlRunner.plan(editor, actual)
+  }
 
   async function runActive(all: boolean): Promise<void> {
     const editor = vscode.window.activeTextEditor

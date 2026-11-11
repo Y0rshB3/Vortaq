@@ -9,6 +9,7 @@ import type {
   QueryStatementResult,
   SchemaRef
 } from '@shared/types'
+import type { ExecutionPlan } from '@shared/plan/types'
 
 /** The settings the reused desktop components read (settings store). */
 export interface WebviewSettings {
@@ -71,6 +72,10 @@ export interface ResultsState {
   notice: string | null
   /** MongoDB documents (kind 'documents'). */
   documents: DocumentsResult | null
+  /** «Plan de ejecución» of the statement under the cursor, shown in its own tab. */
+  plan?: ExecutionPlan | null
+  /** Bumped when a new plan arrives (the panel switches to its tab). */
+  planId?: number
   /** «Detener» is offered while running. */
   canStop: boolean
 }

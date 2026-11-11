@@ -688,6 +688,28 @@ formatterDialectOf(engine))`; `sql` (standard SQL) without a target. The desktop
 - **Results**: «Filtrar filas» (`components/query/resultFilter.ts`, shared with the desktop) filters what the grid
   shows; rows keep their uid, so edits, selection and Aplicar are unaffected.
 
+### 9.14 Execution plans (desktop 2.9.0 / extension 0.8.0)
+
+`db:plan` (`src/main/plan/service.ts`, Electron-free, in the core) takes a pooled session of the connection and
+asks for the plan of one statement (`shared/plan/check.ts`: one SELECT/WITH/INSERT/UPDATE/DELETE/MERGE/REPLACE;
+SQL Server one statement in one batch). Estimated plans never run it: SQL Server `SET SHOWPLAN_XML ON`, PostgreSQL
+`EXPLAIN (FORMAT JSON)` in `BEGIN READ ONLY`, MySQL 8 `EXPLAIN FORMAT=TREE` (tabular `EXPLAIN` on 5.7 and MariaDB),
+SQLite `EXPLAIN QUERY PLAN`. Actual plans run one read-only SELECT where nothing can be kept: PostgreSQL `EXPLAIN
+(ANALYZE, BUFFERS, FORMAT JSON)` in `BEGIN READ ONLY`, MySQL `EXPLAIN ANALYZE` / MariaDB `ANALYZE` in `START
+TRANSACTION READ ONLY`, SQL Server `SET STATISTICS XML ON` in a transaction always rolled back. Neither needs the
+typed confirmation. The session is marked as used by user SQL, so the pool resets it.
+
+`shared/plan/parse.ts` turns each format into one `PlanNode` tree (operation, object, details, estimated and actual
+rows, subtree cost, own cost share, time, warnings; SQL Server's missing indexes and PostgreSQL's planning and
+execution times go to `summary`); `shared/plan/xml.ts` is a small reader for SHOWPLAN XML (elements and attributes
+only). `components/plan/PlanView.vue` draws it (indented tree, cost bars, the most expensive operators
+highlighted, «Copiar plan» with the server's raw XML/JSON/text). Desktop: «Plan» in the query toolbar (statement
+under the cursor via `statementAt`, or the selection) and a «Plan» results tab. Extension: `vortaq.plan` /
+`vortaq.planActual` (editor «…» menu), `SqlRunner.plan` picks the statement with `runTarget` and puts the plan in
+the document's results panel (`ResultsState.plan`, `planId`). Tests: `shared/plan/parse.test.ts` and
+`tests/integration/plan.test.ts` (MySQL 8.4 and 5.7, MariaDB 11, SQL Server 2022, SQLite; PostgreSQL by recorded
+JSON), the VS Code suite, screenshots `54c2-sqlserver-plan` and `plan-*`.
+
 ## 10. Left for phase 3 (and later)
 
 - Table designer; `.vqb` backups and restore (core channels exist: `backups:*`).

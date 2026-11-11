@@ -98,6 +98,7 @@ import type {
 } from './ai'
 import type { TourState } from './tour'
 import type { LocalSqlServerScan } from './sqlserver/local'
+import type { ExecutionPlan, PlanRequest } from './plan/types'
 import type { ExportQueryRequest, ExportResult, ExportRowsRequest } from './export/types'
 import type {
   BackupFormat,
@@ -242,6 +243,11 @@ export interface IpcInvokeMap {
     args: [connectionId: string, schema: SchemaRef, table: string]
     result: TableStructure
   }
+  /**
+   * «Plan de ejecución» of one statement (estimated: never runs it; actual: one
+   * read-only SELECT run where nothing can be kept). See src/main/plan/service.ts.
+   */
+  'db:plan': { args: [connectionId: string, request: PlanRequest]; result: ExecutionPlan }
   /** DDL of an object. PostgreSQL routines pass `{ type, name, signature }` (overloads). */
   'db:showCreate': {
     args: [connectionId: string, schema: SchemaRef, type: EngineObjectType, name: NameRef]
@@ -779,6 +785,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'db:columns',
   'db:tableStructure',
   'db:showCreate',
+  'db:plan',
   'db:schemas',
   'db:objects',
   'db:closeDatabase',
