@@ -24,6 +24,7 @@ import {
   type SslPlan
 } from './client'
 import { PgSession } from './session'
+import { clientTlsOf, encryptionLabel, pgCatalogFeatures, sslInfoSql } from './catalogCompat'
 
 const log = getLogger('postgres.connection')
 
@@ -184,6 +185,14 @@ export class PgDriverConnection implements SqlDriverConnection<PgSession> {
 
   get initialDatabase(): string {
     return postgresOf(this.config).initialDatabase || 'postgres'
+  }
+
+  private newSession(
+    database: string,
+    client: pg.Client,
+    onRelease: (session: PgSession) => Promise<void>
+  ): PgSession {
+    return new PgSession(this.config.id, this.version, database, client, onRelease, this.versionNum)
   }
 
   /** Opens the initial database's pool and reads the server version. */
@@ -363,7 +372,7 @@ export class PgDriverConnection implements SqlDriverConnection<PgSession> {
       await live.client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY')
       live.readOnly = true
     }
-    return new PgSession(this.config.id, this.version, database, live.client, async (s) => {
+    return this.newSession(database, live.client, async (s) => {
       // Dirty (open or failed transaction): destroy. Used for user SQL: reset the state.
       if (s.transactionStatus() !== 'idle') return pool.release(live, true)
       if (s.usage.userSql || live.readOnly !== this.opts.isGuarded()) {
@@ -405,7 +414,7 @@ export class PgDriverConnection implements SqlDriverConnection<PgSession> {
     if (existing) await this.closeTabSession(key)
     this.pool(database) // enforces the database cap and the open/closed state
     const live = await this.connectClient(database)
-    const session = new PgSession(this.config.id, this.version, database, live.client, async () => {
+    const session = this.newSession(database, live.client, async () => {
       await live.client.end().catch(() => undefined)
     })
     const tab = new TabSession(key, session, live)
@@ -500,8 +509,7 @@ export class PgDriverConnection implements SqlDriverConnection<PgSession> {
                 EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::int AS uptime,
                 (SELECT count(*)::int FROM pg_stat_activity WHERE datname IS NOT NULL) AS connections,
                 current_setting('TimeZone') AS timezone,
-                (SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()) AS ssl,
-                (SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()) AS sslversion,
+                ${sslInfoSql(pgCatalogFeatures(this.versionNum))},
                 current_user AS user`
       )
       // Version, host and encoding already have their own rows in the info panel.
@@ -510,7 +518,11 @@ export class PgDriverConnection implements SqlDriverConnection<PgSession> {
         { label: 'Zona horaria de sesión', value: row?.timezone ?? '' },
         {
           label: 'Cifrado',
-          value: row?.ssl ? `SSL: ${row.sslversion ?? 'TLS'}` : 'sin cifrar'
+          value: encryptionLabel(
+            row?.ssl ?? null,
+            row?.sslversion ?? null,
+            clientTlsOf(session.client)
+          )
         },
         ...(this.config.ssh.enabled ? [{ label: 'Túnel SSH', value: this.config.ssh.host }] : [])
       ]

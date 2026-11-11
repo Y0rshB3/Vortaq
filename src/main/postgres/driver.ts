@@ -17,6 +17,7 @@ import {
   type SslPlan
 } from './client'
 import { PgDriverConnection } from './connection'
+import { clientTlsOf, encryptionLabel, pgCatalogFeatures, sslInfoSql } from './catalogCompat'
 import {
   PgUserError,
   describeError,
@@ -73,17 +74,22 @@ export const postgresDriver: Driver = {
     const plan = await buildSslPlan(input, target, secrets.sslKeyPassword ?? null)
     const client = await connectOnce(input, secrets, target, plan)
     try {
+      const { rows: versionRows } = await client.query<{ num: string }>(
+        "SELECT current_setting('server_version_num') AS num"
+      )
+      const features = pgCatalogFeatures(Number(versionRows[0]?.num ?? 0))
       const { rows } = await client.query<{
         version: string
         ssl: boolean | null
         sslversion: string | null
       }>(
         `SELECT current_setting('server_version') AS version,
-                (SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()) AS ssl,
-                (SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()) AS sslversion`
+                ${sslInfoSql(features)}`
       )
       const row = rows[0]
-      const details = [row?.ssl ? `SSL: ${row.sslversion ?? 'TLS'}` : 'sin cifrar']
+      const details = [
+        encryptionLabel(row?.ssl ?? null, row?.sslversion ?? null, clientTlsOf(client))
+      ]
       if (input.ssh.enabled) details.push(`Túnel SSH: ${input.ssh.host}`)
       return {
         ok: true,

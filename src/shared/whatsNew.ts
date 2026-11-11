@@ -25,6 +25,14 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.2',
+    date: '2026-11-11',
+    highlights: [
+      'PostgreSQL 9.2 a 11: Vortaq ya conecta (antes fallaba con «relation "pg_stat_ssl" does not exist») y funciona entero: árbol, estructura, datos, edición, plan de ejecución, copias .vqb, asistente y agentes',
+      'Lo que esos servidores no tienen (identidades, columnas generadas, particiones, vistas materializadas) simplemente no aparece'
+    ]
+  },
+  {
     version: '2.9.1',
     date: '2026-11-11',
     highlights: [

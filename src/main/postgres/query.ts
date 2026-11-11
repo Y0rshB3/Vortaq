@@ -56,7 +56,8 @@ export async function resolveFields(
               cl.relkind::text AS relkind, at.attname AS column,
               EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = cl.oid AND i.indisprimary
                          AND at.attnum = ANY(i.indkey)) AS pk
-         FROM unnest($1::oid[], $2::int2[]) AS k(tid, cid)
+         FROM (SELECT ($1::oid[])[x] AS tid, ($2::int2[])[x] AS cid
+                 FROM generate_subscripts($1::oid[], 1) AS x) k
          JOIN pg_class cl ON cl.oid = k.tid
          JOIN pg_namespace n ON n.oid = cl.relnamespace
          JOIN pg_attribute at ON at.attrelid = k.tid AND at.attnum = k.cid`,
