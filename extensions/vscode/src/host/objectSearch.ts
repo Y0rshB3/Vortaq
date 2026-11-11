@@ -9,6 +9,7 @@ import * as vscode from 'vscode'
 import { usesSchemaRef, type ConnectionConfig, type SchemaRef, type VortaqCore } from '@core'
 import type { ConnectionService } from './connections'
 import type { ObjectNode, TreeNode } from './tree'
+import { showInformation } from './notice'
 
 /** At most this many namespaces are read for one search. */
 export const MAX_NAMESPACES = 60
@@ -69,7 +70,7 @@ export function objectItems(
 async function chooseConnection(connections: ConnectionService): Promise<ConnectionConfig | null> {
   const all = (await connections.list()).filter((c) => c.engine !== 'mongodb')
   if (!all.length) {
-    void vscode.window.showInformationMessage('Añade una conexión SQL para buscar en ella.')
+    void showInformation('Añade una conexión SQL para buscar en ella.')
     return null
   }
   const open = all.filter((c) => connections.isOpen(c.id))

@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import * as vscode from 'vscode'
+import { showError, showInformation } from './notice'
 
 export const UPDATE_REPO = 'Y0rshB3/Vortaq'
 export const RELEASES_API = `https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=30`
@@ -265,7 +266,7 @@ export class ExtensionUpdater {
   async checkNow(): Promise<void> {
     if (this.fromGallery()) {
       const check = 'Buscar actualizaciones de extensiones'
-      const answer = await vscode.window.showInformationMessage(
+      const answer = await showInformation(
         `Vortaq ${this.options.currentVersion} se instaló desde la galería de extensiones del editor, que la actualiza sola.`,
         check
       )
@@ -280,15 +281,11 @@ export class ExtensionUpdater {
         () => this.newer()
       )
     } catch (err) {
-      void vscode.window.showErrorMessage(
-        `No se pudo comprobar si hay actualizaciones: ${errorText(err)}`
-      )
+      void showError(`No se pudo comprobar si hay actualizaciones: ${errorText(err)}`)
       return
     }
     if (!release) {
-      void vscode.window.showInformationMessage(
-        `Vortaq ${this.options.currentVersion} es la versión más reciente.`
-      )
+      void showInformation(`Vortaq ${this.options.currentVersion} es la versión más reciente.`)
       return
     }
     await this.offer(release, true)
@@ -298,7 +295,7 @@ export class ExtensionUpdater {
     const install = 'Instalar'
     const notes = 'Novedades'
     const skip = 'Omitir esta versión'
-    const answer = await vscode.window.showInformationMessage(
+    const answer = await showInformation(
       `Hay una versión nueva de Vortaq: ${release.version} (tienes ${this.options.currentVersion}).`,
       install,
       notes,
@@ -348,9 +345,7 @@ export class ExtensionUpdater {
       )
     } catch (err) {
       this.options.log(`[updates] no se instaló ${release.version}: ${errorText(err)}`)
-      void vscode.window.showErrorMessage(
-        `No se pudo instalar Vortaq ${release.version}: ${errorText(err)}`
-      )
+      void showError(`No se pudo instalar Vortaq ${release.version}: ${errorText(err)}`)
       return false
     } finally {
       rmSync(file, { force: true })
@@ -358,7 +353,7 @@ export class ExtensionUpdater {
     }
     this.options.log(`[updates] instalada la versión ${release.version}`)
     const reload = 'Recargar ventana'
-    const answer = await vscode.window.showInformationMessage(
+    const answer = await showInformation(
       `Vortaq ${release.version} está instalado. Recarga la ventana para usarlo.`,
       reload
     )

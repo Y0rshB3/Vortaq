@@ -51,6 +51,7 @@ import {
   type TreeNode
 } from './host/tree'
 import type { SchemaViewState, WebviewSettings } from './webviewState'
+import { showError, showInformation, showWarning } from './host/notice'
 
 /** What the integration tests reach (only returned in ExtensionMode.Test). */
 export interface VortaqTestApi {
@@ -277,9 +278,7 @@ export async function activate(
   ): ConnectionFormPanel => {
     if (sqliteProblem && !sqliteNoticeShown && !editing) {
       sqliteNoticeShown = true
-      void vscode.window.showInformationMessage(
-        `SQLite no aparece en el formulario: ${sqliteProblem}`
-      )
+      void showInformation(`SQLite no aparece en el formulario: ${sqliteProblem}`)
     }
     const key = editing?.id ?? `new:${Date.now()}`
     const existing = editing ? forms.get(key) : undefined
@@ -317,7 +316,7 @@ export async function activate(
     // SQL Server with a self-signed certificate (SQL Server Express, a server of one's own).
     const trustFixes =
       connection.engine === 'sqlserver' && trustFixesError(message, connection.sqlserver)
-    const answer = await vscode.window.showErrorMessage(
+    const answer = await showError(
       message,
       ...(trustFixes ? [trust] : []),
       ...(usesPassword ? [password] : []),
@@ -411,7 +410,7 @@ export async function activate(
       preview = readDesktopImport()
     } catch (err) {
       const choose = 'Elegir connections.json…'
-      const answer = await vscode.window.showWarningMessage(errorText(err), choose)
+      const answer = await showWarning(errorText(err), choose)
       if (answer !== choose) return
       const files = await vscode.window.showOpenDialog({
         title: 'connections.json de la aplicación de escritorio de Vortaq',
@@ -423,12 +422,12 @@ export async function activate(
       try {
         preview = parseDesktopConnections(await readFile(files[0].fsPath, 'utf8'))
       } catch (parseError) {
-        void vscode.window.showErrorMessage(errorText(parseError))
+        void showError(errorText(parseError))
         return
       }
     }
     if (!preview.connections.length) {
-      void vscode.window.showInformationMessage(
+      void showInformation(
         preview.skipped.length
           ? `No hay conexiones que se puedan importar (${preview.skipped.length} no válidas).`
           : 'La aplicación de escritorio no tiene conexiones.'
@@ -459,7 +458,7 @@ export async function activate(
     const skipped = preview.skipped.length
       ? ` ${preview.skipped.length} no válidas se omitieron.`
       : ''
-    void vscode.window.showInformationMessage(
+    void showInformation(
       `${count === 1 ? 'Se importó 1 conexión' : `Se importaron ${count} conexiones`}. Las contraseñas no se copian de la aplicación de escritorio: escríbelas al conectar y se guardarán cifradas en el almacén seguro del editor.${skipped}`
     )
   }
@@ -471,7 +470,7 @@ export async function activate(
         try {
           await fn(...args)
         } catch (err) {
-          void vscode.window.showErrorMessage(errorText(err))
+          void showError(errorText(err))
         }
       })
     )
@@ -494,7 +493,7 @@ export async function activate(
     const connection = nodeConnection(node)
     if (!connection) return
     const remove = 'Eliminar'
-    const answer = await vscode.window.showWarningMessage(
+    const answer = await showWarning(
       `¿Eliminar la conexión «${connection.name}»?`,
       {
         modal: true,
@@ -642,15 +641,11 @@ export async function activate(
   async function openSchemaView(kind: SchemaViewState['kind'], node?: TreeNode): Promise<void> {
     const connection = nodeConnection(node)
     if (!node || !connection || (node.kind !== 'database' && node.kind !== 'schema')) {
-      void vscode.window.showInformationMessage(
-        'Elige una base de datos o un esquema en el árbol de Vortaq.'
-      )
+      void showInformation('Elige una base de datos o un esquema en el árbol de Vortaq.')
       return
     }
     if (connection.engine === 'mongodb') {
-      void vscode.window.showInformationMessage(
-        'MongoDB no tiene claves foráneas entre colecciones.'
-      )
+      void showInformation('MongoDB no tiene claves foráneas entre colecciones.')
       return
     }
     if (!(await service.open(connection.id))) return
@@ -688,7 +683,7 @@ export async function activate(
   command('vortaq.pickConnection', async () => {
     const doc = vscode.window.activeTextEditor?.document
     if (!isSqlDocument(doc)) {
-      void vscode.window.showInformationMessage('Abre un documento SQL para elegir su conexión.')
+      void showInformation('Abre un documento SQL para elegir su conexión.')
       return
     }
     await sqlRunner.pick(doc)
@@ -706,7 +701,7 @@ export async function activate(
   async function planActive(actual: boolean): Promise<void> {
     const editor = vscode.window.activeTextEditor
     if (!editor || !isSqlDocument(editor.document)) {
-      void vscode.window.showInformationMessage('Abre un documento SQL para ver su plan.')
+      void showInformation('Abre un documento SQL para ver su plan.')
       return
     }
     await sqlRunner.plan(editor, actual)
@@ -715,7 +710,7 @@ export async function activate(
   async function runActive(all: boolean): Promise<void> {
     const editor = vscode.window.activeTextEditor
     if (!editor || !isSqlDocument(editor.document)) {
-      void vscode.window.showInformationMessage('Abre un documento SQL para ejecutarlo con Vortaq.')
+      void showInformation('Abre un documento SQL para ejecutarlo con Vortaq.')
       return
     }
     await sqlRunner.run(editor, all)

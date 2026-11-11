@@ -13,6 +13,7 @@ import {
 } from '@core'
 import type { ConnectionService } from './connections'
 import { targetLabel, type DocumentTarget, type DocumentTargets } from './targets'
+import { showInformation } from './notice'
 
 export const isSqlDocument = (doc: vscode.TextDocument | undefined): doc is vscode.TextDocument =>
   !!doc && doc.languageId === 'sql'
@@ -36,10 +37,7 @@ export async function pickTarget(
     const list = (await connections.list()).filter((c) => c.engine !== 'mongodb')
     if (!list.length) {
       const add = 'Añadir conexión'
-      const answer = await vscode.window.showInformationMessage(
-        'No hay conexiones SQL en Vortaq todavía.',
-        add
-      )
+      const answer = await showInformation('No hay conexiones SQL en Vortaq todavía.', add)
       if (answer === add) await vscode.commands.executeCommand('vortaq.addConnection')
       return null
     }
