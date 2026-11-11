@@ -1410,7 +1410,7 @@ const ENGINE_STEPS: Step[] = [
     name: '41b-mariadb-connection-dialog',
     script: `
       S.ui.openConnectionDialog(null, 'mariadb')
-      await H.waitFor('[data-test="conn-engine-mariadb"]', 8000)
+      await H.waitFor('[data-test="conn-engine-picker"]', 8000)
       await H.sleep(700)`,
     cleanup: `S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
   },
@@ -1508,6 +1508,29 @@ const V2_STEPS: Step[] = [
     name: '44b-new-connection-engines',
     script: `
       S.ui.openConnectionDialog(null)
+      await H.waitFor('[data-test="conn-engine-picker"]', 8000)
+      await H.sleep(700)`,
+    cleanup: `S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
+  },
+  {
+    // The «Motor» select open: every engine with its icon and one line.
+    name: '44c-new-connection-engine-menu',
+    script: `
+      S.ui.openConnectionDialog(null)
+      const field = await H.waitFor('[data-test="conn-engine-picker"] .v-field', 8000)
+      field.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      await H.waitFor('[data-test="conn-engine-sqlserver"]', 5000)
+      await H.sleep(500)`,
+    cleanup: `
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
+  },
+  {
+    // A short window: the body scrolls; the header, «Motor» and the tabs keep their height.
+    name: '44d-new-connection-short-window',
+    size: { width: 1100, height: 560 },
+    script: `
+      S.ui.openConnectionDialog(null, 'sqlserver')
       await H.waitFor('[data-test="conn-engine-picker"]', 8000)
       await H.sleep(700)`,
     cleanup: `S.ui.connectionDialog = { ...S.ui.connectionDialog, open: false }`
