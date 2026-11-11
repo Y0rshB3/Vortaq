@@ -64,7 +64,13 @@ function usesUserVariables(dialect: SqlDialectId, sql: string): boolean {
   return /(^|[^@\w$])@(?!@)[\w$'"`]/.test(text)
 }
 
+export const EXPORT_LONE_CR =
+  'La consulta tiene saltos de línea de solo retorno de carro (\\r): el servidor y Vortaq podrían leerla distinto. Guárdala con saltos de línea normales.'
+
 export function checkExportStatement(dialect: SqlDialect, script: string): ExportStatementCheck {
+  // A CR not followed by LF: some servers end a `--` comment there and others do not. The
+  // lexers follow each server, and a re-run (or an agent's query) never depends on it.
+  if (/\r(?!\n)/.test(script)) return { ok: false, reason: EXPORT_LONE_CR }
   const statements = dialect.splitStatements(script).filter((s) => s.sql.trim() !== '')
   if (statements.length === 0) return { ok: false, reason: 'No hay ninguna consulta que exportar.' }
   if (statements.length > 1) return { ok: false, reason: EXPORT_ONE_STATEMENT }

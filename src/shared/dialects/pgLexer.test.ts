@@ -151,3 +151,23 @@ describe('U&"…" identifiers', () => {
     expect(kinds("SELECT U&'it''s'")).toEqual(['word:SELECT', "string:U&'it''s'"])
   })
 })
+
+describe('-- comments end where the server ends them', () => {
+  it('a lone CR ends the comment (PostgreSQL scan.l: newline is LF or CR)', () => {
+    const tokens = tokenizePg('SELECT 1 AS a --x\r, 2 AS b')
+    expect(tokens.find((t) => t.kind === 'comment')?.value).toBe('--x')
+    expect(codeTokens(tokens).map((t) => t.value)).toEqual([
+      'SELECT',
+      '1',
+      'AS',
+      'a',
+      ',',
+      '2',
+      'AS',
+      'b'
+    ])
+    expect(tokenizePg('SELECT 1 --x\r\nFROM t').find((t) => t.kind === 'comment')?.value).toBe(
+      '--x'
+    )
+  })
+})
