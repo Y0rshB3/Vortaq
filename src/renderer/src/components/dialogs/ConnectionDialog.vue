@@ -26,6 +26,13 @@ import {
 import { isAbsolutePathFor } from '@shared/connectionValidation'
 import { parseMongoUri } from '@shared/mongo/uri'
 import { parseSqlServerConnectionString } from '@shared/sqlserver/connectionString'
+import { trustFixesError } from '@shared/sqlserver/certificate'
+import {
+  localInstanceLabel,
+  localInstanceSteps,
+  type LocalSqlServerInstance,
+  type LocalSqlServerScan
+} from '@shared/sqlserver/local'
 import {
   SQLSERVER_AUTH_LABELS,
   SQLSERVER_AUTH_METHODS,
@@ -384,6 +391,72 @@ function setMsAuth(auth: SqlServerAuth): void {
   patchSqlServer({ auth })
   form.value = { ...form.value, authMode: sqlServerUsesSecret(auth) ? 'password' : 'none' }
 }
+/* «Confiar en el certificado y reintentar»: the test failed on a certificate the option accepts. */
+const msTrustOffer = computed(
+  () => isMs.value && !!testResult.value && trustFixesError(testResult.value.error, msOptions.value)
+)
+async function trustAndRetry(): Promise<void> {
+  patchSqlServer({ trustServerCertificate: true })
+  await test()
+}
+
+/*
+ * «Buscar servidores en este equipo» (Windows): the local instances, with what
+ * is missing for a TCP connection (src/main/sqlserver/localInstances.ts).
+ */
+const msLocalAvailable = computed(() => isMs.value && hostPlatform() === 'win32')
+const msScanning = ref(false)
+const msScan = ref<LocalSqlServerScan | null>(null)
+const msLocalChosen = ref<string | null>(null)
+/** The test was refused on Windows: the scan says whether TCP/IP is off. */
+const msRefusedOffer = computed(
+  () =>
+    msLocalAvailable.value && !msScan.value && !!testResult.value?.error?.includes('(ECONNREFUSED)')
+)
+async function scanLocal(): Promise<void> {
+  msScanning.value = true
+  msLocalChosen.value = null
+  try {
+    msScan.value = await api.sqlserver.localInstances()
+  } catch (err) {
+    errors.value = [errorMessage(err)]
+  } finally {
+    msScanning.value = false
+  }
+}
+function localStatus(inst: LocalSqlServerInstance): { text: string; ok: boolean } {
+  if (!inst.running) return { text: 'Servicio detenido', ok: false }
+  if (inst.tcp === 'enabled') return { text: `TCP/IP · puerto ${inst.tcpPort}`, ok: true }
+  if (inst.tcp === 'disabled') return { text: 'TCP/IP desactivado', ok: false }
+  return { text: 'TCP/IP sin comprobar', ok: false }
+}
+/**
+ * Fills the form for a local instance: 127.0.0.1 and its TCP port (1433 when it
+ * still has to be turned on), Windows sign-in with this Windows account (a local
+ * Express installs with Windows authentication only) and «Confiar en el
+ * certificado» (a local server signs its own certificate).
+ */
+function useLocal(inst: LocalSqlServerInstance): void {
+  const scan = msScan.value
+  if (!scan) return
+  form.value = {
+    ...form.value,
+    host: '127.0.0.1',
+    port: inst.tcpPort ?? 1433,
+    username: scan.windowsUser || form.value.username,
+    name: form.value.name.trim() || `SQL Server local${inst.instance ? ` (${inst.instance})` : ''}`
+  }
+  patchSqlServer({
+    instanceName: '',
+    domain: scan.windowsDomain,
+    trustServerCertificate: true
+  })
+  setMsAuth('windows')
+  msLocalChosen.value = inst.instance
+  testResult.value = null
+  errors.value = []
+}
+
 /** «Pegar cadena de conexión»: lives only in this field; its password goes to the password field. */
 const msString = ref('')
 const msWarnings = ref<string[]>([])
@@ -940,6 +1013,86 @@ async function save(): Promise<void> {
                     class="mt-2"
                     >{{ w }}</v-alert
                   >
+                </v-col>
+                <v-col v-if="msLocalAvailable" cols="12">
+                  <div class="d-flex align-center ga-2 flex-wrap">
+                    <v-btn
+                      size="small"
+                      prepend-icon="mdi-magnify"
+                      :loading="msScanning"
+                      data-test="conn-ms-local-scan"
+                      @click="scanLocal"
+                      >Buscar servidores en este equipo</v-btn
+                    >
+                    <span class="connection-dialog__hint"
+                      >SQL Server y SQL Server Express instalados en este Windows</span
+                    >
+                  </div>
+                  <div v-if="msScan" class="connection-dialog__local" data-test="conn-ms-local">
+                    <v-alert
+                      v-if="msScan.problem"
+                      type="warning"
+                      variant="tonal"
+                      density="compact"
+                      >{{ msScan.problem }}</v-alert
+                    >
+                    <div v-else-if="!msScan.instances.length" class="connection-dialog__hint">
+                      No hay ningún servicio «SQL Server (…)» en este equipo.
+                    </div>
+                    <div
+                      v-for="inst in msScan.instances"
+                      :key="inst.instance"
+                      class="connection-dialog__local-row"
+                      :data-test="`conn-ms-local-${inst.instance || 'default'}`"
+                    >
+                      <div class="d-flex align-center ga-2 flex-wrap">
+                        <v-icon icon="mdi-database-cog" size="16" aria-hidden="true" />
+                        <strong>{{ localInstanceLabel(inst) }}</strong>
+                        <span v-if="inst.version" class="nd-pill"
+                          >SQL Server {{ inst.version }}</span
+                        >
+                        <span
+                          class="nd-pill"
+                          :class="localStatus(inst).ok ? 'nd-pill--local' : 'nd-pill--staging'"
+                          >{{ localStatus(inst).text }}</span
+                        >
+                        <v-spacer />
+                        <v-btn
+                          size="small"
+                          variant="tonal"
+                          color="primary"
+                          :data-test="`conn-ms-local-use-${inst.instance || 'default'}`"
+                          @click="useLocal(inst)"
+                          >Usar</v-btn
+                        >
+                      </div>
+                      <template v-if="localInstanceSteps(inst).length">
+                        <div
+                          v-if="inst.running && inst.tcp === 'unknown'"
+                          class="connection-dialog__hint mt-1"
+                        >
+                          No se pudo comprobar TCP/IP (SQL Server Browser está detenido). Si «Probar
+                          conexión» no conecta:
+                        </div>
+                        <ol class="connection-dialog__steps">
+                          <li v-for="step in localInstanceSteps(inst)" :key="step">{{ step }}</li>
+                        </ol>
+                      </template>
+                    </div>
+                    <v-alert
+                      v-if="msLocalChosen !== null"
+                      type="info"
+                      variant="tonal"
+                      density="compact"
+                      class="mt-2"
+                      data-test="conn-ms-local-chosen"
+                      >Rellenado con 127.0.0.1, tu cuenta de Windows ({{ msScan.windowsDomain }}\{{
+                        msScan.windowsUser
+                      }}) y «Confiar en el certificado». Escribe la contraseña de Windows (no el
+                      PIN) y pulsa «Probar conexión». Si tu cuenta no entra, crea un usuario de SQL
+                      Server y elige «Usuario y contraseña de SQL Server».</v-alert
+                    >
+                  </div>
                 </v-col>
               </template>
               <template v-if="isMongo">
@@ -1828,6 +1981,49 @@ async function save(): Promise<void> {
           </template>
         </v-alert>
         <v-alert
+          v-if="msTrustOffer"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          data-test="conn-ms-trust-offer"
+        >
+          Vortaq no puede verificar el certificado TLS del servidor. Es lo normal en SQL Server
+          Express o en un servidor propio, que se firma a sí mismo. Si es tu servidor, confía en su
+          certificado (pestaña SSL › «Confiar en el certificado del servidor»).
+          <template #append>
+            <v-btn
+              size="small"
+              variant="text"
+              :loading="testing"
+              data-test="conn-ms-trust-retry"
+              @click="trustAndRetry"
+              >Confiar y reintentar</v-btn
+            >
+          </template>
+        </v-alert>
+        <v-alert
+          v-if="msRefusedOffer"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          data-test="conn-ms-refused-offer"
+        >
+          Nadie acepta conexiones en ese puerto. Si SQL Server está en este equipo, puede que TCP/IP
+          esté desactivado.
+          <template #append>
+            <v-btn
+              size="small"
+              variant="text"
+              :loading="msScanning"
+              data-test="conn-ms-refused-scan"
+              @click="scanLocal"
+              >Buscar servidores en este equipo</v-btn
+            >
+          </template>
+        </v-alert>
+        <v-alert
           v-if="errors.length"
           type="error"
           variant="tonal"
@@ -1852,7 +2048,7 @@ async function save(): Promise<void> {
         >
           <span class="connection-dialog__result-dot" aria-hidden="true" />
           <span class="nd-ellipsis">
-            <template v-if="testResult.ok && (isPg || isSqlite || isMongo)"
+            <template v-if="testResult.ok && (isPg || isSqlite || isMongo || isMs)"
               >Conectado · {{ testResult.serverVersion }} ({{ testResult.durationMs }} ms)<template
                 v-if="testResult.details?.length"
               >
@@ -1889,6 +2085,26 @@ async function save(): Promise<void> {
 /* A short window must shrink the scrolling body, never the tabs (2.6.0 clipped them). */
 .connection-dialog__tabs {
   flex: none;
+}
+.connection-dialog__hint {
+  font-size: var(--nd-fs-dense);
+  color: var(--nd-text-2);
+}
+.connection-dialog__local {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+.connection-dialog__local-row {
+  padding: 8px 10px;
+  border: 1px solid var(--nd-border);
+  border-radius: var(--nd-radius-sm);
+  background: var(--nd-bg-sunken);
+}
+.connection-dialog__steps {
+  margin: 6px 0 0 18px;
+  font-size: var(--nd-fs-dense);
+  color: var(--nd-text-2);
 }
 .connection-dialog__body {
   min-height: min(300px, 40vh);

@@ -15,6 +15,8 @@ import type {
 } from '@shared/types'
 import type { IpcEventChannel, IpcEventMap } from '@shared/ipc'
 import { defaultSqlServerOptions } from '@shared/engines'
+import { trustFixesError, UNTRUSTED_CERTIFICATE } from '@shared/sqlserver/certificate'
+import { CONNECTION_REFUSED } from '@main/sqlserver/errors'
 import type { AppContext } from '@main/context'
 import { CredentialStore, plainCodec } from '@main/credentials/store'
 import { ConnectionsRepo, JobsRepo, RunsRepo, SettingsRepo } from '@main/storage/repos'
@@ -171,6 +173,27 @@ describeServer(SQLSERVER_TARGET, 'SQL Server driver (integration)', (url) => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+
+  it('a self-signed certificate is the error «Confiar en el certificado» fixes; a closed port says TCP/IP', async () => {
+    const u = new URL(url)
+    const password = decodeURIComponent(u.password)
+    const strictTrust = msInput(u, {
+      sqlserver: { ...defaultSqlServerOptions(), trustServerCertificate: false }
+    })
+    const untrusted = await manager.test(strictTrust, password, null)
+    expect(untrusted.ok).toBe(false)
+    expect(untrusted.error).toContain(UNTRUSTED_CERTIFICATE)
+    expect(trustFixesError(untrusted.error, strictTrust.sqlserver)).toBe(true)
+    const trusted = await manager.test(msInput(u), password, null)
+    expect(trusted.ok, trusted.error).toBe(true)
+    expect(trusted.serverVersion).toMatch(/^SQL Server 2022 \(/)
+
+    const closed = await manager.test(msInput(u, { host: '127.0.0.1', port: 1 }), password, null)
+    expect(closed.ok).toBe(false)
+    expect(closed.error).toContain(CONNECTION_REFUSED)
+    expect(closed.error).toMatch(/\(ECONNREFUSED\)$/)
+    expect(trustFixesError(closed.error, strictTrust.sqlserver)).toBe(false)
   })
 
   it('lists databases, schemas and every object group', async () => {
