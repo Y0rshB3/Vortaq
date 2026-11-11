@@ -452,7 +452,9 @@ MySQL nada cambia.
 
 **Conexión › Nueva conexión PostgreSQL…** crea una conexión PostgreSQL. Funciona con **PostgreSQL 9.2 o
 posterior** (pensado para la 12 o posterior): en servidores antiguos, lo que el servidor no tiene (identidades,
-columnas generadas, particiones, vistas materializadas, procedimientos) simplemente no aparece.
+columnas generadas, particiones, vistas materializadas, procedimientos) simplemente no aparece. Una copia `.vqb`
+de un servidor más nuevo se restaura en uno antiguo: las secuencias y los triggers se escriben con la sintaxis del
+destino; lo que el destino no tiene (identidades, columnas generadas, `jsonb`…) falla con el error del servidor.
 
 - **Conexión**: host, puerto (5432), usuario, contraseña o «Sin contraseña», **base de datos inicial**,
   `search_path` opcional y «Mostrar esquemas y bases de datos del sistema». Pestaña **SSL** con los modos de

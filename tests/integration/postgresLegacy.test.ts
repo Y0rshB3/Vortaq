@@ -29,6 +29,8 @@ import { createBackupService } from '@main/backup/index'
 import { baseInput, startMcpHarness, type McpHarness } from './mcpHarness'
 
 const url = envVar('TEST_PG_LEGACY_URL')?.trim()
+/** Optional second server (PostgreSQL 10+): a backup taken there is restored into the old one. */
+const newUrl = envVar('TEST_PG_URL')?.trim()
 const SRC = `vortaq_old_src_${process.pid}`
 const DST = `vortaq_old_dst_${process.pid}`
 const CHEAP = { N: 1024, r: 8, p: 1 }
@@ -372,6 +374,118 @@ describe.skipIf(!url)('PostgreSQL before 10 (integration, VORTAQ_TEST_PG_LEGACY_
       )
     expect(await read(DST)).toEqual(await read(SRC))
   }, 120_000)
+
+  describe.skipIf(!newUrl)('a backup of a newer server (VORTAQ_TEST_PG_URL)', () => {
+    const NEW_SRC = `vortaq_new_src_${process.pid}`
+    const OLD_DST = `vortaq_from_new_${process.pid}`
+    let newId: string
+    let newer: PgDriverConnection
+
+    const withNew = async <T>(database: string, fn: (s: PgSession) => Promise<T>): Promise<T> => {
+      const s = await newer.acquire({ database, schema: null })
+      try {
+        return await fn(s)
+      } finally {
+        await s.release()
+      }
+    }
+
+    beforeAll(async () => {
+      const u = new URL(newUrl!)
+      newId = ctx.connections.save({
+        ...input,
+        name: 'PG nuevo',
+        host: u.hostname,
+        port: Number(u.port || 5432),
+        username: decodeURIComponent(u.username),
+        postgres: {
+          ...input.postgres!,
+          initialDatabase: decodeURIComponent(u.pathname.replace(/^\//, '')) || 'postgres'
+        }
+      }).id
+      ctx.credentials.set('mysql', newId, decodeURIComponent(u.password))
+      const c = await manager.connection(newId)
+      if (!isPgConnection(c)) throw new Error('not pg')
+      newer = c
+      await dropDatabase(OLD_DST)
+      await withNew(newer.initialDatabase, async (s) => {
+        await s.query(`DROP DATABASE IF EXISTS "${NEW_SRC}" WITH (FORCE)`)
+        await s.query(`CREATE DATABASE "${NEW_SRC}"`)
+      })
+      // Since PostgreSQL 10 every sequence has a type (serial ones are integer)
+      // and since 11 triggers print EXECUTE FUNCTION: neither exists on 9.2.
+      await withNew(NEW_SRC, async (s) => {
+        for (const sql of SEED) await s.query(sql)
+        await s.query('CREATE SEQUENCE app.corto AS smallint INCREMENT 2')
+        await s.query("SELECT nextval('app.corto')")
+        await s.query('ALTER TABLE app.pedidos ADD COLUMN nota text')
+        await s.query(`CREATE FUNCTION app.toca_pedido() RETURNS trigger LANGUAGE plpgsql
+          AS $$ BEGIN NEW.nota := TG_ARGV[0]; RETURN NEW; END $$`)
+        await s.query(`CREATE TRIGGER pedidos_toca BEFORE UPDATE ON app.pedidos
+          FOR EACH ROW WHEN (OLD.total IS DISTINCT FROM NEW.total) EXECUTE FUNCTION app.toca_pedido('EXECUTE FUNCTION')`)
+      })
+    }, 120_000)
+
+    afterAll(async () => {
+      if (newer) {
+        await newer.closeDatabase(NEW_SRC)
+        await withNew(newer.initialDatabase, (s) =>
+          s.query(`DROP DATABASE IF EXISTS "${NEW_SRC}" WITH (FORCE)`)
+        ).catch(() => undefined)
+      }
+      if (connection) await dropDatabase(OLD_DST).catch(() => undefined)
+    }, 60_000)
+
+    it('restores into the old server: typed sequences and EXECUTE FUNCTION triggers', async () => {
+      const service = createBackupService(ctx, getSessionFactory(ctx), { scrypt: CHEAP })
+      const backup = await service.create({
+        connectionId: newId,
+        schema: NEW_SRC,
+        includeData: true,
+        format: 'vqb'
+      })
+      const restored = await service.restore({
+        backupPath: backup.path,
+        connectionId: id,
+        targetSchema: OLD_DST,
+        createSchema: true,
+        dropObjectsFirst: false,
+        includeStructure: true,
+        includeData: true,
+        continueOnError: false
+      })
+      expect(restored.errors).toEqual([])
+      expect(restored.rowsInserted).toBe(6)
+      const read = (s: PgSession) =>
+        s.query<Record<string, unknown>>(
+          `SELECT (SELECT string_agg(nombre || ':' || saldo || ':' || humor, ',' ORDER BY id) FROM app.clientes) AS clientes,
+                  (SELECT last_value FROM app.folio)::text AS folio,
+                  (SELECT last_value FROM app.clientes_id_seq)::text AS seq,
+                  (SELECT last_value FROM app.corto)::text AS corto,
+                  (SELECT count(*) FROM app.lineas)::int AS lineas,
+                  app.doble(21) AS doble`
+        )
+      expect(await withDb(OLD_DST, read)).toEqual(await withNew(NEW_SRC, read))
+      // The type's range stays: MINVALUE/MAXVALUE are written out in the backup.
+      const after = await withDb(OLD_DST, async (s) => {
+        await s.query(`UPDATE app.pedidos SET total = total + 1 WHERE id = 1`)
+        return s.query<Record<string, unknown>>(
+          `SELECT (SELECT max_value FROM app.corto)::text AS corto_max,
+                  (SELECT max_value FROM app.clientes_id_seq)::text AS serial_max,
+                  (SELECT nota FROM app.pedidos WHERE id = 1) AS nota,
+                  (SELECT pg_catalog.pg_get_serial_sequence('app.clientes', 'id')) AS owned`
+        )
+      })
+      expect(after).toEqual([
+        {
+          corto_max: '32767',
+          serial_max: '2147483647',
+          nota: 'EXECUTE FUNCTION',
+          owned: 'app.clientes_id_seq'
+        }
+      ])
+    }, 120_000)
+  })
 
   describe('agents (MCP)', () => {
     let h: McpHarness
