@@ -97,6 +97,7 @@ import type {
   AiTestResult
 } from './ai'
 import type { TourState } from './tour'
+import type { LocalSqlServerScan } from './sqlserver/local'
 import type { ExportQueryRequest, ExportResult, ExportRowsRequest } from './export/types'
 import type {
   BackupFormat,
@@ -206,6 +207,12 @@ export interface IpcInvokeMap {
     args: [input: ConnectionInput, password: string | null, sshPassword: string | null]
     result: ConnectionTestResult
   }
+  /**
+   * «Buscar servidores en este equipo» (SQL Server on Windows): the local
+   * instances, whether each one runs and takes TCP connections, and the Windows
+   * account for the sign-in. `supported: false` elsewhere.
+   */
+  'sqlserver:localInstances': { args: []; result: LocalSqlServerScan }
   'connections:setPassword': { args: [id: string, password: string | null]; result: void }
   'connections:hasPassword': { args: [id: string]; result: boolean }
   'connections:setSshPassword': { args: [id: string, password: string | null]; result: void }
@@ -753,6 +760,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'connections:delete',
   'connections:setMcp',
   'connections:test',
+  'sqlserver:localInstances',
   'connections:setPassword',
   'connections:hasPassword',
   'connections:setSshPassword',

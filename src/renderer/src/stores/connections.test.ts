@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useConnectionsStore } from './connections'
 import { useNotify } from '@renderer/composables/useNotify'
+import { UNTRUSTED_CERTIFICATE } from '@shared/sqlserver/certificate'
 import {
   installBridge,
   makeConnection,
@@ -92,6 +93,53 @@ describe('connections store', () => {
     await expect(store.open('a')).rejects.toThrow('Access denied')
     expect(store.opening.a).toBeUndefined()
     expect(store.isOpen('a')).toBe(false)
+  })
+
+  it('a SQL Server certificate error offers «Confiar en el certificado», which saves it and opens', async () => {
+    const ms = makeConnection({
+      id: 'ms',
+      name: 'Express',
+      engine: 'sqlserver',
+      sqlserver: {
+        initialDatabase: '',
+        auth: 'windows',
+        domain: 'PC',
+        instanceName: '',
+        encrypt: 'mandatory',
+        trustServerCertificate: false,
+        hostNameInCertificate: '',
+        tenantId: '',
+        clientId: '',
+        showSystemObjects: false,
+        readOnlyIntent: false
+      }
+    })
+    let saved: { sqlserver?: { trustServerCertificate?: boolean } } | null = null
+    bridge = installBridge({
+      'connections:list': [ms],
+      'connections:open': () => {
+        if (!saved)
+          throw new Error(`${UNTRUSTED_CERTIFICATE}. Detalle: self-signed certificate (ETLS)`)
+        return makeServerInfo()
+      },
+      'connections:save': (input: unknown) => {
+        saved = input as typeof saved
+        return input
+      }
+    })
+    const store = useConnectionsStore()
+    await store.load()
+    const notify = useNotify()
+    const before = notify.queue.length
+    await expect(store.open('ms')).rejects.toThrow(UNTRUSTED_CERTIFICATE)
+    const notice = notify.queue[notify.queue.length - 1]
+    expect(notify.queue.length).toBe(before + 1)
+    expect(notice.action?.label).toBe('Confiar en el certificado')
+    notice.action!.handler()
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(saved!.sqlserver?.trustServerCertificate).toBe(true)
+    expect(store.isOpen('ms')).toBe(true)
   })
 
   it('upserts saved connections and removes deleted ones', async () => {

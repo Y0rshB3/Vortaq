@@ -10,6 +10,21 @@ describe('ConnectionDialog · PostgreSQL', () => {
   let invoke: Mock
   let wrapper: ReturnType<typeof mountWith> | null = null
 
+  /** The «Motor» select (a dropdown since 2.6.1: six buttons wrapped and squeezed the tabs). */
+  function enginePicker(w: NonNullable<typeof wrapper>) {
+    const select = w
+      .findAllComponents({ name: 'VSelect' })
+      .find((c) => c.attributes('data-test') === 'conn-engine-picker')
+    if (!select) throw new Error('engine picker not found')
+    return select
+  }
+  const offered = (w: NonNullable<typeof wrapper>): string[] =>
+    (enginePicker(w).props('items') as { id: string }[]).map((i) => i.id)
+  async function pickEngine(w: NonNullable<typeof wrapper>, id: string): Promise<void> {
+    enginePicker(w).vm.$emit('update:modelValue', id)
+    await settle()
+  }
+
   beforeEach(() => {
     invoke = mockVortaq({
       'connections:save': (input) => makeConnection({ ...(input as ConnectionInput), id: 'pg-1' }),
@@ -27,9 +42,15 @@ describe('ConnectionDialog · PostgreSQL', () => {
     useUiStore().connectionDialog = { open: true, editing: null }
     wrapper = mountWith(ConnectionDialog, pinia)
     await settle()
-    expect(wrapper.find('[data-test="conn-engine-picker"]').exists()).toBe(true)
-    for (const id of ['mysql', 'mariadb', 'postgresql', 'sqlite', 'mongodb'])
-      expect(wrapper.find(`[data-test="conn-engine-${id}"]`).exists()).toBe(true)
+    expect(offered(wrapper)).toEqual([
+      'mysql',
+      'mariadb',
+      'postgresql',
+      'sqlite',
+      'mongodb',
+      'sqlserver'
+    ])
+    expect(enginePicker(wrapper).props('modelValue')).toBe('mysql')
     expect(wrapper.text()).not.toContain('vista previa')
     // MySQL is still the default engine of a new connection.
     expect(wrapper.find('[data-test="conn-pg-database"]').exists()).toBe(false)
@@ -40,9 +61,23 @@ describe('ConnectionDialog · PostgreSQL', () => {
     useUiStore().connectionDialog = { open: true, editing: null }
     wrapper = mountWith(ConnectionDialog, pinia, { props: { hiddenEngines: ['sqlite'] } })
     await settle()
-    expect(wrapper.find('[data-test="conn-engine-sqlite"]').exists()).toBe(false)
-    for (const id of ['mysql', 'mariadb', 'postgresql', 'mongodb'])
-      expect(wrapper.find(`[data-test="conn-engine-${id}"]`).exists()).toBe(true)
+    expect(offered(wrapper)).toEqual(['mysql', 'mariadb', 'postgresql', 'mongodb', 'sqlserver'])
+  })
+
+  it('picking SQLite on the SSH tab goes back to General (SQLite has no SSH/SSL tabs)', async () => {
+    const pinia = freshPinia()
+    useUiStore().connectionDialog = { open: true, editing: null }
+    wrapper = mountWith(ConnectionDialog, pinia)
+    await settle()
+    const tabs = () => wrapper!.findComponent({ name: 'VTabs' })
+    tabs().vm.$emit('update:modelValue', 'ssh')
+    await settle()
+    expect(tabs().props('modelValue')).toBe('ssh')
+    await pickEngine(wrapper, 'postgresql')
+    expect(tabs().props('modelValue')).toBe('ssh')
+    await pickEngine(wrapper, 'sqlite')
+    expect(tabs().props('modelValue')).toBe('general')
+    expect(wrapper.find('[data-test="sqlite-path"]').exists()).toBe(true)
   })
 
   it('creates a MariaDB connection from the picker (engine mariadb, MySQL defaults)', async () => {
@@ -56,11 +91,9 @@ describe('ConnectionDialog · PostgreSQL', () => {
     ui.connectionDialog = { open: true, editing: null, engine: 'mariadb' }
     wrapper = mountWith(ConnectionDialog, pinia)
     await settle()
-    expect(wrapper.get('[data-test="conn-engine-mariadb"]').attributes('aria-checked')).toBe('true')
-    await wrapper.get('[data-test="conn-engine-mysql"]').trigger('click')
-    await settle()
-    await wrapper.get('[data-test="conn-engine-mariadb"]').trigger('click')
-    await settle()
+    expect(enginePicker(wrapper).props('modelValue')).toBe('mariadb')
+    await pickEngine(wrapper, 'mysql')
+    await pickEngine(wrapper, 'mariadb')
     expect(wrapper.text()).toContain('ed25519 y parsec')
     await wrapper.get('[data-test="conn-name"] input').setValue('Maria local')
     await wrapper.get('[data-test="conn-save"]').trigger('click')
@@ -75,9 +108,7 @@ describe('ConnectionDialog · PostgreSQL', () => {
     ui.connectionDialog = { open: true, editing: null }
     wrapper = mountWith(ConnectionDialog, pinia)
     await settle()
-    expect(wrapper.find('[data-test="conn-engine-picker"]').exists()).toBe(true)
-    await wrapper.get('[data-test="conn-engine-postgresql"]').trigger('click')
-    await settle()
+    await pickEngine(wrapper, 'postgresql')
     expect((wrapper.get('[data-test="conn-port"] input').element as HTMLInputElement).value).toBe(
       '5432'
     )

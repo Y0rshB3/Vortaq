@@ -7,8 +7,9 @@ import type {
   ConnectionTestResult,
   ServerInfo
 } from '@shared/types'
-import { api, invokeSilent } from '@renderer/api'
-import { useNotify } from '@renderer/composables/useNotify'
+import { trustFixesError } from '@shared/sqlserver/certificate'
+import { api, ApiError, invokeSilent } from '@renderer/api'
+import { errorMessage, useNotify } from '@renderer/composables/useNotify'
 import { useSettingsStore } from '@renderer/stores/settings'
 
 export const useConnectionsStore = defineStore('connections', () => {
@@ -73,7 +74,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     if (serverInfo.value[id]) return serverInfo.value[id]
     opening.value = { ...opening.value, [id]: true }
     try {
-      const info = await api.connections.open(id)
+      const info = await openReporting(id)
       serverInfo.value = { ...serverInfo.value, [id]: info }
       // A MySQL connection whose server is MariaDB is stored as MariaDB when it opens (P5):
       // reload the list so the tree, the guard and the menus use the MariaDB engine.
@@ -88,6 +89,38 @@ export const useConnectionsStore = defineStore('connections', () => {
       delete next[id]
       opening.value = next
     }
+  }
+
+  /**
+   * connections:open with the error reported here: a SQL Server certificate the
+   * «Confiar en el certificado» option accepts gets that button in the notice.
+   */
+  async function openReporting(id: string): Promise<ServerInfo> {
+    try {
+      return await invokeSilent('connections:open', id)
+    } catch (err) {
+      const message = errorMessage(err)
+      const stored = get(id)
+      if (stored?.engine === 'sqlserver' && trustFixesError(message, stored.sqlserver))
+        useNotify().error(message, {
+          label: 'Confiar en el certificado',
+          handler: () => void trustCertificate(id)
+        })
+      else useNotify().error(message)
+      if (err instanceof ApiError) err.notified = true
+      throw err
+    }
+  }
+
+  /** Turns on «Confiar en el certificado del servidor» for a SQL Server connection and opens it. */
+  async function trustCertificate(id: string): Promise<void> {
+    const stored = get(id)
+    if (!stored?.sqlserver) return
+    await save({ ...stored, sqlserver: { ...stored.sqlserver, trustServerCertificate: true } })
+    await open(id)
+    useNotify().success(
+      `«${stored.name}» confía ahora en el certificado del servidor y está conectada.`
+    )
   }
 
   /** Replaces the facts of an open connection (SQLite «Reabrir en modo escritura»). */

@@ -5,6 +5,7 @@ import type { AppContext } from '../context'
 import { DB_PASSWORD } from '../credentials/store'
 import { getConnectionManager } from '../db/manager'
 import { getAiService } from '../ai'
+import { scanLocalSqlServers } from '../sqlserver/localInstances'
 import { typedConfirmEnvironments } from './productionGuard'
 import type { HandleFn } from './router'
 
@@ -90,6 +91,8 @@ export function registerConnectionsHandlers(ctx: AppContext, handle: HandleFn): 
     ai.memory.deleteConnection(id)
   })
 
+  // Windows only (supported: false elsewhere); reads the service list, never the registry.
+  handle('sqlserver:localInstances', () => scanLocalSqlServers())
   handle('connections:test', (input, password, sshPassword) => {
     assertEngineAvailable(input)
     return manager.test(input, password, sshPassword)
