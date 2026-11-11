@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { getDialect } from '@shared/dialects'
 import type { SqlDialectId } from '@shared/dialects/types'
 import { checkExportResult } from '@shared/export/statement'
+import { filterRows } from './resultFilter'
 import type { ExportQuerySource } from '@shared/export/types'
 import type {
   CellValue,
@@ -198,6 +199,10 @@ async function checkEditability(): Promise<void> {
   }
 }
 
+/* «Filtrar»: only what is shown changes; edits and Aplicar follow rows by uid. */
+const filterText = ref('')
+const shownRows = computed(() => filterRows(gridRows.value, filterText.value))
+
 /* Client-side sort, like the read-only grid: edits follow their rows by uid. */
 const sort = ref<{ column: string; direction: 'ASC' | 'DESC' } | null>(null)
 const initialOrder = new Map(gridRows.value.map((r, i) => [r.uid, i]))
@@ -361,6 +366,21 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
         <span class="editable-result__chip-text">Solo lectura · {{ readOnlyReason }}</span>
       </span>
       <span class="nd-viewbar__sep" aria-hidden="true" />
+      <v-text-field
+        v-model="filterText"
+        density="compact"
+        variant="outlined"
+        hide-details
+        clearable
+        prepend-inner-icon="mdi-filter-variant"
+        placeholder="Filtrar filas"
+        aria-label="Filtrar las filas cargadas"
+        class="editable-result__filter"
+        data-test="result-filter"
+      />
+      <span v-if="filterText.trim()" class="editable-result__count" data-test="result-filter-count"
+        >{{ shownRows.length }} de {{ gridRows.length }}</span
+      >
       <v-btn
         prepend-icon="mdi-text-box-outline"
         size="small"
@@ -416,7 +436,7 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
         v-model:selected="selected"
         v-model:active="active"
         :columns="gridColumns"
-        :rows="gridRows"
+        :rows="shownRows"
         :primary-key="keyColumns"
         :sort="sort"
         :readonly="!editable"
@@ -472,6 +492,15 @@ defineExpose({ applyChanges, discard: editor.discard, dirty, editability })
 
 <style scoped src="../data/viewChrome.css"></style>
 <style scoped>
+.editable-result__filter {
+  flex: 0 1 200px;
+  min-width: 120px;
+}
+.editable-result__count {
+  font-size: var(--nd-fs-dense);
+  color: var(--nd-text-2);
+  white-space: nowrap;
+}
 .editable-result {
   display: flex;
   flex-direction: column;
