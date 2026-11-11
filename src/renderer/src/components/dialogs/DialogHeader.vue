@@ -22,6 +22,8 @@ defineProps<{ icon: string; title: string; subtitle?: string; danger?: boolean }
 
 <style scoped>
 .dialog-header {
+  /* Never squeezed by a scrollable dialog's body on a short window. */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
