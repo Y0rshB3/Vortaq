@@ -245,3 +245,17 @@ describe('analyzeDestructiveSqlServer', () => {
     expect(found[0].sql).toBe('DELETE FROM t')
   })
 })
+
+describe('-- comments end where SQL Server ends them', () => {
+  const ms = getDialect('sqlserver')
+  it('a lone CR ends the comment (checked on SQL Server 2022: the batch returns two results)', () => {
+    const tokens = tokenizeTsql('SELECT 1 AS a --x\rSELECT 2 AS b')
+    expect(tokens.find((t) => t.kind === 'comment')?.value).toBe('--x')
+    expect(statementsOfBatch('SELECT 1 AS a --x\rSELECT 2 AS b')).toHaveLength(2)
+  })
+  it('a write after a lone CR is a write for both guards', () => {
+    const sql = 'SELECT * FROM t -- old Mac line ending\rDELETE FROM t'
+    expect(ms.analyzeWrites(sql).writes).toBe(true)
+    expect(ms.isObviousWrite(sql)).toBe(true)
+  })
+})

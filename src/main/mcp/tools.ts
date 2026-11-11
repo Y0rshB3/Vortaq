@@ -23,6 +23,7 @@ import {
   checkExportStatement,
   EXPORT_NOT_A_QUERY,
   EXPORT_ONE_STATEMENT,
+  EXPORT_LONE_CR,
   EXPORT_SESSION_VARIABLES,
   leadingWord
 } from '@shared/export/statement'
@@ -489,6 +490,8 @@ function readOnlyRefusal(reason: string, canWrite: boolean): string {
   if (reason === EXPORT_SESSION_VARIABLES)
     return 'La consulta usa variables de sesión (@…): run_query abre una sesión nueva en cada llamada, donde están vacías.'
   if (reason.startsWith('No hay ninguna consulta')) return 'Falta la consulta («sql»).'
+  if (reason === EXPORT_LONE_CR)
+    return 'La consulta tiene saltos de línea de solo retorno de carro (\\r): usa saltos de línea normales (\\n).'
   const detail = /\(([^)]*)\)/.exec(reason)?.[1]
   return `run_query solo ejecuta consultas de solo lectura y esta podría modificar datos${detail ? ` (${detail})` : ''}.${write}`
 }

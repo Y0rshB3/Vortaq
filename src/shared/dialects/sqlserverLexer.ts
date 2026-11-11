@@ -116,6 +116,12 @@ function unquote(raw: string, close: string): string {
 }
 
 /** Tokenizes `src`. Whitespace is skipped; comments are kept as tokens. */
+/** End of a `--` comment: the first line feed or carriage return (or the end). */
+export function lineCommentEnd(src: string, from: number): number {
+  for (let i = from; i < src.length; i++) if (src[i] === '\n' || src[i] === '\r') return i
+  return src.length
+}
+
 export function tokenizeTsql(src: string): MsToken[] {
   const tokens: MsToken[] = []
   const n = src.length
@@ -137,9 +143,10 @@ export function tokenizeTsql(src: string): MsToken[] {
       i++
       continue
     }
+    // SQL Server ends a `--` comment at a line feed or a carriage return (checked on
+    // SQL Server 2022): a lone CR ends it here too, or what follows would hide from the guards.
     if (ch === '-' && src[i + 1] === '-') {
-      const eol = src.indexOf('\n', i)
-      const end = eol < 0 ? n : eol
+      const end = lineCommentEnd(src, i)
       push('comment', i, end, src.slice(i, end))
       i = end
       continue

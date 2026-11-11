@@ -151,6 +151,14 @@ describeServer(SQLSERVER_TARGET, 'MCP server', (url) => {
       expect(await h.refused('run_query', { connection: 'Lectura', database: DB, sql })).toMatch(
         /run_query|una única sentencia/
       )
+    // SQL Server ends a -- comment at a lone CR: what follows is a second statement, never hidden.
+    expect(
+      await h.refused('run_query', {
+        connection: 'Lectura',
+        database: DB,
+        sql: 'SELECT 1 AS a --x\rDELETE FROM dbo.pedidos'
+      })
+    ).toMatch(/retorno de carro/)
     expect(await count('pedidos')).toBe(3)
   })
 

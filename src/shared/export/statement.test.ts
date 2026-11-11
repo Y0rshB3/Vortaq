@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getDialect } from '../dialects'
 import type { SqlDialectId } from '../dialects/types'
-import { checkExportResult, checkExportStatement, leadingWord } from './statement'
+import { checkExportResult, checkExportStatement, EXPORT_LONE_CR, leadingWord } from './statement'
 
 const check = (id: SqlDialectId, sql: string) => checkExportStatement(getDialect(id), sql)
 
@@ -114,5 +114,30 @@ describe('full export refuses side-effect functions under any spelling (PostgreS
       expect(result.ok, sql).toBe(false)
     }
     expect(check('postgresql', 'SELECT U&"n\\0061me" FROM t').ok).toBe(true)
+  })
+})
+
+describe('a lone carriage return', () => {
+  it('is refused for every dialect: servers disagree on whether it ends a -- comment', () => {
+    for (const id of ['mysql', 'mariadb', 'postgresql', 'sqlite', 'sqlserver'] as SqlDialectId[]) {
+      expect(checkExportStatement(getDialect(id), 'SELECT 1 AS a --x\r, 2 AS b'), id).toMatchObject(
+        {
+          ok: false,
+          reason: EXPORT_LONE_CR
+        }
+      )
+      // CRLF (Windows files) is fine.
+      expect(checkExportStatement(getDialect(id), 'SELECT 1 AS a --x\r\n, 2 AS b').ok, id).toBe(
+        true
+      )
+    }
+  })
+  it('the hidden statement is seen even without that check', () => {
+    expect(getDialect('sqlserver').analyzeWrites('SELECT 1 AS a --x\rDELETE FROM t').writes).toBe(
+      true
+    )
+    expect(
+      getDialect('postgresql').analyzeWrites('SELECT 1 AS a --x\r, pg_terminate_backend(1)').writes
+    ).toBe(true)
   })
 })

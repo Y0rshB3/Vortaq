@@ -92,6 +92,16 @@ function unquoteIdent(raw: string): string {
   return body.replace(/""/g, '"')
 }
 
+/**
+ * End of a `--` comment: the server's lexer ends it at a line feed OR a carriage
+ * return (`newline [\n\r]` in scan.l), so a lone CR must end it here too, or the
+ * text after it would be a comment to Vortaq's guards and code to the server.
+ */
+export function lineCommentEnd(src: string, from: number): number {
+  for (let i = from; i < src.length; i++) if (src[i] === '\n' || src[i] === '\r') return i
+  return src.length
+}
+
 /** End of the whitespace and comments that start at `from`. */
 function skipBlank(src: string, from: number): number {
   let i = from
@@ -101,8 +111,7 @@ function skipBlank(src: string, from: number): number {
     if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v') {
       i++
     } else if (ch === '-' && src[i + 1] === '-') {
-      const eol = src.indexOf('\n', i)
-      i = eol < 0 ? n : eol
+      i = lineCommentEnd(src, i)
     } else if (ch === '/' && src[i + 1] === '*') {
       let depth = 1
       let j = i + 2
@@ -218,8 +227,7 @@ export function tokenizePg(src: string): PgToken[] {
     }
     // line comment (no space needed after --)
     if (ch === '-' && src[i + 1] === '-') {
-      const eol = src.indexOf('\n', i)
-      const end = eol < 0 ? n : eol
+      const end = lineCommentEnd(src, i)
       push('comment', i, end, src.slice(i, end))
       i = end
       continue
