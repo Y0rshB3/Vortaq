@@ -651,6 +651,18 @@ Database o Azure SQL Managed Instance.
   autofirmados, nombre en el certificado y una CA propia (además de las del sistema). Con túnel SSH el servidor
   recibe su nombre real, como exige Azure. **Avanzado**: tiempo de conexión e intención de solo lectura
   (`ApplicationIntent=ReadOnly`).
+- **SQL Server en este equipo (Windows)**: **Buscar servidores en este equipo** lista las instancias instaladas
+  (también SQL Server Express), si su servicio está en marcha, su versión y si aceptan conexiones TCP y en qué
+  puerto. **Usar** rellena `127.0.0.1`, el puerto, la autenticación de Windows con tu cuenta y «Confiar en el
+  certificado del servidor» (un servidor local se firma su propio certificado). Si a una instancia le falta
+  TCP/IP, el formulario muestra los pasos exactos para activarlo con el Administrador de configuración de SQL
+  Server de su versión. Vortaq se conecta siempre por TCP: las herramientas de Microsoft en el mismo equipo usan
+  memoria compartida, que no existe fuera de sus drivers nativos. Para saberlo, Vortaq lee la lista de servicios
+  de Windows y pregunta a SQL Server Browser (UDP 1434) si está en marcha; no lee el registro.
+- **Certificados autofirmados**: si «Probar conexión» o abrir la conexión falla porque Vortaq no puede verificar el
+  certificado del servidor, el aviso ofrece **Confiar y reintentar** (o **Confiar en el certificado**), que activa
+  la opción de la pestaña SSL en esa conexión. Si nadie acepta conexiones en el puerto, el mensaje explica cómo
+  activar TCP/IP.
 - **Árbol**: conexión › base de datos › esquema (`dbo` primero) › Tablas, Vistas, Funciones (procedimientos y
   funciones), Secuencias y Consultas. **Cerrar base de datos** como en PostgreSQL.
 - **Editor de consultas**: base de datos y esquema de la pestaña (el esquema sirve para el autocompletado y para

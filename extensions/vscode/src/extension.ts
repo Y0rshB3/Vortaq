@@ -12,6 +12,7 @@ import {
   defaultSchemaOf,
   ENGINES,
   environmentName,
+  trustFixesError,
   selectFirstRows,
   usesSchemaRef,
   type ConnectionConfig,
@@ -272,14 +273,31 @@ export async function activate(
   async function showOpenError(connection: ConnectionConfig, message: string): Promise<void> {
     const edit = 'Editar conexión'
     const password = 'Cambiar contraseña'
+    const trust = 'Confiar en el certificado'
     const usesPassword =
       ENGINES[connection.engine].capabilities.needsHost && connection.authMode !== 'none'
+    // SQL Server with a self-signed certificate (SQL Server Express, a server of one's own).
+    const trustFixes =
+      connection.engine === 'sqlserver' && trustFixesError(message, connection.sqlserver)
     const answer = await vscode.window.showErrorMessage(
       message,
+      ...(trustFixes ? [trust] : []),
       ...(usesPassword ? [password] : []),
       edit
     )
     if (answer === edit) openForm(service.get(connection.id))
+    if (answer === trust && connection.sqlserver) {
+      await service.save({
+        ...connection,
+        sqlserver: { ...connection.sqlserver, trustServerCertificate: true }
+      })
+      try {
+        if (await service.open(connection.id))
+          tree.refresh({ kind: 'connection', connectionId: connection.id })
+      } catch (err) {
+        void showOpenError(service.get(connection.id) ?? connection, errorText(err))
+      }
+    }
     if (answer === password && (await service.replacePassword(connection.id))) {
       try {
         if (await service.open(connection.id))

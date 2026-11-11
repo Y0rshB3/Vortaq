@@ -240,6 +240,10 @@ export const api = {
       invoke('db:dropDatabase', c, name, options),
     charsets: (c: string) => invoke('db:charsets', c)
   },
+  /** SQL Server: «Buscar servidores en este equipo» (Windows; supported: false elsewhere). */
+  sqlserver: {
+    localInstances: () => invoke('sqlserver:localInstances')
+  },
   /** SQLite files (P3): new file, reopen read-write, VACUUM INTO copy, maintenance. */
   sqlite: {
     createFile: (filePath: string) => invoke('sqlite:createFile', filePath),
