@@ -53,6 +53,10 @@ import { useQueriesStore } from '@renderer/stores/queries'
 import { useQueryHistoryStore } from '@renderer/stores/queryHistory'
 import QueryHistoryDialog from '@renderer/components/query/QueryHistoryDialog.vue'
 import { runOutcome, type QueryHistoryEntry } from '@shared/queryHistory'
+import PlanView from '@renderer/components/plan/PlanView.vue'
+import { statementAt } from '@shared/plan/check'
+import type { ExecutionPlan } from '@shared/plan/types'
+import { sqlDialectIdOf } from '@renderer/engines/capabilities'
 import { useSettingsStore } from '@renderer/stores/settings'
 import { useTabsStore, type WorkspaceTab } from '@renderer/stores/tabs'
 import { formatDuration } from '@renderer/utils/format'
@@ -66,6 +70,9 @@ const tabs = useTabsStore()
 const queries = useQueriesStore()
 const queryHistory = useQueryHistoryStore()
 const historyOpen = ref(false)
+/* «Plan de ejecución» of the statement under the cursor (or the selection). */
+const plan = ref<ExecutionPlan | null>(null)
+const planning = ref(false)
 const connections = useConnectionsStore()
 const tree = useTreeStore()
 const settings = useSettingsStore()
@@ -564,6 +571,7 @@ async function run(selectionOnly = false): Promise<void> {
   running.value = true
   notice.value = null
   results.value = []
+  plan.value = null
   pendingEdits.value = {}
   runId.value++
   // Where the results ran: «Exportar resultado completo» runs their statement there again.
@@ -767,6 +775,46 @@ function stop(): void {
   notice.value =
     'Ejecución detenida. El servidor puede terminar la sentencia en curso; sus resultados se descartarán.'
   resultTab.value = 'messages'
+}
+
+/**
+ * «Plan estimado» never runs the statement; «Plan real» runs one read-only
+ * SELECT where nothing can be kept (main checks again, src/main/plan/service.ts).
+ */
+async function showPlan(actual: boolean): Promise<void> {
+  if (!connectionId.value || planning.value || running.value) return
+  const selection = editor.value?.getSelection() ?? ''
+  const statement = selection.trim()
+    ? selection
+    : statementAt(sqlDialectIdOf(engineId.value), sql.value, editor.value?.getCursorOffset() ?? 0)
+  if (!statement.trim()) {
+    notify.warning('No hay SQL para analizar')
+    return
+  }
+  planning.value = true
+  try {
+    plan.value = await api.invoke('db:plan', connectionId.value, {
+      sql: statement,
+      actual,
+      schema: schemaTabs.value
+        ? { database: database.value ?? '', schema: schema.value ?? '' }
+        : (schema.value ?? null)
+    })
+    resultTab.value = 'plan'
+  } catch {
+    /* already reported by invoke */
+  } finally {
+    planning.value = false
+  }
+}
+
+async function copyPlan(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    notify.success('Plan copiado al portapapeles')
+  } catch {
+    notify.error('No se pudo copiar el plan.')
+  }
 }
 
 /**
@@ -1123,6 +1171,38 @@ defineExpose({
         @click="historyOpen = true"
         ><span class="query-view__label">Historial</span></v-btn
       >
+      <v-menu location="bottom start">
+        <template #activator="{ props: planMenu }">
+          <v-btn
+            v-bind="planMenu"
+            prepend-icon="mdi-file-tree-outline"
+            size="small"
+            :loading="planning"
+            :disabled="running || !connectionId || engineId === 'mongodb'"
+            title="Plan de ejecución de la sentencia del cursor (o de la selección)"
+            aria-label="Plan de ejecución"
+            data-test="plan"
+            ><span class="query-view__label">Plan</span></v-btn
+          >
+        </template>
+        <v-list density="compact">
+          <v-list-item
+            prepend-icon="mdi-file-tree-outline"
+            title="Plan estimado"
+            subtitle="No ejecuta la sentencia"
+            data-test="plan-estimated"
+            @click="showPlan(false)"
+          />
+          <v-list-item
+            prepend-icon="mdi-timer-outline"
+            title="Plan real"
+            subtitle="Ejecuta la consulta (solo SELECT) y mide filas y tiempos"
+            :disabled="engineId === 'sqlite'"
+            data-test="plan-actual"
+            @click="showPlan(true)"
+          />
+        </v-list>
+      </v-menu>
       <template v-if="aiEnabled">
         <span class="nd-viewbar__sep" aria-hidden="true" />
         <v-btn
@@ -1311,6 +1391,10 @@ defineExpose({
                 aria-label="Cambios sin aplicar"
               />
             </v-tab>
+            <v-tab v-if="plan" value="plan" data-test="tab-plan">
+              <v-icon icon="mdi-file-tree-outline" size="14" class="query-view__tab-icon" />
+              Plan
+            </v-tab>
           </v-tabs>
           <!-- Every tab in one list: the rail scrolls when many results do not fit. -->
           <v-menu v-if="resultSets.length > 1" location="bottom start">
@@ -1400,6 +1484,9 @@ defineExpose({
               exportable
               @dirty="setPendingEdits(rs.key, $event)"
             />
+          </v-window-item>
+          <v-window-item v-if="plan" value="plan" class="fill">
+            <PlanView :plan="plan" @copy="copyPlan" />
           </v-window-item>
         </v-window>
       </div>

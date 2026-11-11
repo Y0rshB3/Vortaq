@@ -20,7 +20,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.7.0/vortaq-0.7.0.vsix) ·
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.0/vortaq-0.8.0.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -1138,6 +1138,24 @@ interruptor **Guardar historial** están en el mismo diálogo.
 lote se formatea por separado y las líneas `GO` se conservan. En los resultados, **Filtrar filas** oculta las
 filas cargadas que no contienen el texto en ninguna celda; las ediciones pendientes no se pierden.
 
+### Plan de ejecución
+
+**Plan** (barra de la pestaña de consulta) muestra cómo resolverá el servidor la sentencia del cursor, o la
+selección. El resultado es un árbol con cada operador (recorridos, búsquedas por índice, joins, ordenaciones…), la
+tabla y el índice que usa, sus condiciones, las filas estimadas y el porcentaje del coste total que gasta; los
+operadores más caros se resaltan.
+
+- **Plan estimado**: nunca ejecuta la sentencia, así que sirve también para `UPDATE`, `DELETE`, `INSERT` y `MERGE`.
+  SQL Server usa `SET SHOWPLAN_XML`, PostgreSQL `EXPLAIN (FORMAT JSON)`, MySQL 8 `EXPLAIN FORMAT=TREE` (en MySQL
+  5.7 y MariaDB, el `EXPLAIN` en tabla) y SQLite `EXPLAIN QUERY PLAN`.
+- **Plan real**: ejecuta la consulta para medir filas y tiempos, por eso solo se ofrece para un `SELECT` de solo
+  lectura y lo hace donde nada puede quedar guardado (una transacción de solo lectura, o en SQL Server una que
+  siempre se deshace). SQL Server: `SET STATISTICS XML`; PostgreSQL: `EXPLAIN ANALYZE`; MySQL 8.0.18 o posterior:
+  `EXPLAIN ANALYZE`; MariaDB: `ANALYZE`. SQLite no lo tiene.
+- SQL Server indica además los **índices recomendados**, y Vortaq avisa cuando las filas reales están muy lejos
+  de las estimadas (estadísticas desactualizadas). **Copiar plan** copia el plan tal como lo da el servidor (XML,
+  JSON o texto).
+
 ### Cambiar la conexión de una consulta
 
 En la barra de la pestaña de consulta, a la izquierda de la base de datos, está el **selector de conexión**: cada
@@ -1588,7 +1606,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.7.0):
+Qué hace (versión 0.8.0):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1620,6 +1638,9 @@ Qué hace (versión 0.7.0):
   abre en un documento nuevo con la misma conexión y base de datos ([Historial de consultas](#historial-de-consultas)).
 - **Árbol** (desde la 0.7.0): **Seleccionar las primeras 1000 filas**, **Script como CREATE** y **Buscar tabla o
   vista…** (en toda la conexión, mientras se carga). En los resultados, **Filtrar filas**.
+- **Plan de ejecución** (desde la 0.8.0): **Vortaq: Plan de ejecución estimado** o **real** (menú **…** del
+  documento) muestra en el panel de resultados el plan de la sentencia del cursor
+  ([Plan de ejecución](#plan-de-ejecución)).
 - **Agentes (MCP) sin la aplicación de escritorio** (desde la 0.6.0): la extensión trae su propio servidor MCP
   con las conexiones del editor; Copilot en VS Code lo ve solo y los demás clientes se configuran copiando un
   bloque ([Agentes (MCP) en el editor](#agentes-mcp-en-el-editor)).
@@ -1666,8 +1687,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`**:
   1. Descarga
-     [**`vortaq-0.7.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.7.0/vortaq-0.7.0.vsix)
-     (versión [`vscode-v0.7.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.7.0), con su
+     [**`vortaq-0.8.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.0/vortaq-0.8.0.vsix)
+     (versión [`vscode-v0.8.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.0), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1675,10 +1696,10 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.7.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.7.0.vsix     # Cursor
-  codium --install-extension vortaq-0.7.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.7.0.vsix   # Windsurf
+  code --install-extension vortaq-0.8.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.8.0.vsix     # Cursor
+  codium --install-extension vortaq-0.8.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.8.0.vsix   # Windsurf
   ```
 
 - **Actualizaciones:** desde la 0.6.0 la extensión mira una vez al día si hay una versión nueva en GitHub y la
@@ -1691,7 +1712,7 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.7.0.vsix`.
+`extensions/vscode/vortaq-0.8.0.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

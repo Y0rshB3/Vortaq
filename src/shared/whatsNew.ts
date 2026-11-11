@@ -25,6 +25,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.0',
+    date: '2026-11-11',
+    highlights: [
+      'Plan de ejecución: cómo resuelve el servidor la consulta, operador a operador, con su parte del coste',
+      'Plan estimado sin ejecutar nada, o plan real que mide filas y tiempos de un SELECT',
+      'SQL Server recomienda índices; Vortaq avisa cuando las filas reales se alejan de las estimadas'
+    ],
+    tour: [
+      {
+        target: 'query-toolbar',
+        title: 'Plan de ejecución',
+        text: 'Pon el cursor en una sentencia y pulsa Plan › Plan estimado (no ejecuta nada) o Plan real (solo SELECT).'
+      }
+    ]
+  },
+  {
     version: '2.8.0',
     date: '2026-11-11',
     highlights: [

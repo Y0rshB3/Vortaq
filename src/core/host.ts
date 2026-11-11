@@ -18,6 +18,7 @@ import { registerBackupsHandlers } from '@main/ipc/backups'
 import { registerConnectionsHandlers } from '@main/ipc/connections'
 import { registerDbHandlers } from '@main/ipc/db'
 import { registerExportHandlers } from '@main/ipc/export'
+import { registerPlanHandlers } from '@main/ipc/plan'
 import { registerFiltersHandlers } from '@main/ipc/filters'
 import { HandlerRegistry } from '@main/ipc/router'
 import { configureLog } from '@main/log'
@@ -110,6 +111,8 @@ export function createCore(options: CoreOptions): VortaqCore {
   // export:* writes only the path the host's save dialog returned; «Resultado completo»
   // re-reads in a new read-only session, never the host's query sessions.
   registerExportHandlers(context, registry.handle)
+  // db:plan: estimated plans never run the statement; actual ones only a read-only SELECT.
+  registerPlanHandlers(context, registry.handle)
   registerAiHandlers(context, registry.handle)
   const connections = getConnectionManager(context)
   return {

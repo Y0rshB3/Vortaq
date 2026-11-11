@@ -274,6 +274,11 @@ function getSelection(): string {
   return from === to ? '' : view.state.sliceDoc(from, to)
 }
 
+/** Offset of the cursor in the document (0 before the editor exists). */
+function getCursorOffset(): number {
+  return view ? view.state.selection.main.head : 0
+}
+
 /** Replaces the current selection (or the whole document when nothing is selected). */
 function replaceSelection(text: string): void {
   if (!view) return
@@ -319,7 +324,14 @@ function moveCursor(pos: number): void {
   view.focus()
 }
 
-defineExpose({ getSelection, replaceSelection, insertAtCursor, focus, moveCursor })
+defineExpose({
+  getSelection,
+  getCursorOffset,
+  replaceSelection,
+  insertAtCursor,
+  focus,
+  moveCursor
+})
 </script>
 
 <template>

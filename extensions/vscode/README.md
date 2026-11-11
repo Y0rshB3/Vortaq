@@ -72,6 +72,9 @@ macOS, Windows y Linux, con diseñador de tablas, copias de seguridad y automati
 - **Árbol.** Botón derecho en una tabla o vista: **Seleccionar las primeras 1000 filas** (se ejecuta
   al momento) y **Script como CREATE**. **Buscar tabla o vista…** (lupa de la vista Vortaq) busca en
   toda la conexión. En los resultados, **Filtrar filas**.
+- **Plan de ejecución.** **Vortaq: Plan de ejecución estimado** (no ejecuta nada) o **real** (ejecuta
+  un `SELECT` de solo lectura y mide filas y tiempos), en el menú **…** del documento: un árbol con cada
+  operador, su tabla e índice y su parte del coste.
 - **El tema de tu editor.** Los paneles usan los colores, la fuente y el tamaño del editor, en
   temas claros, oscuros y de alto contraste.
 

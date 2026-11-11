@@ -29,6 +29,7 @@ import { targetLabel, type DocumentTarget, type DocumentTargets } from './target
 import type { ObjectNode, TreeNode } from './tree'
 import { schemaRefOf } from './tree'
 import type { ResultsState, WebviewSettings } from '../webviewState'
+import type { ExecutionPlan } from '@shared/plan/types'
 
 interface Running {
   seq: number
@@ -270,6 +271,68 @@ export class SqlRunner implements vscode.Disposable {
         this.runningChanged.fire()
       }
     }
+  }
+
+  /**
+   * «Plan de ejecución» of the statement under the cursor (or the selection),
+   * shown in the document's results panel next to its results. Estimated plans
+   * never run it; the actual one runs a read-only SELECT where nothing can be
+   * kept (src/main/plan/service.ts), so neither needs the typed confirmation.
+   */
+  async plan(editor: vscode.TextEditor, actual: boolean): Promise<ExecutionPlan | null> {
+    const doc = editor.document
+    const uri = doc.uri.toString()
+    let target = this.targets.get(uri)
+    let connection = target ? this.connections.get(target.connectionId) : null
+    if (!target || !connection) {
+      target = await this.pick(doc)
+      connection = target ? this.connections.get(target.connectionId) : null
+      if (!target || !connection) return null
+    }
+    if (connection.engine === 'mongodb') {
+      void vscode.window.showInformationMessage(
+        'MongoDB no tiene plan de ejecución en Vortaq: usa .explain() en la consulta.'
+      )
+      return null
+    }
+    if (!(await this.connections.open(connection.id))) return null
+    connection = this.connections.get(connection.id) ?? connection
+    const text = doc.getText()
+    const selection = editor.selection
+    const picked = runTarget(
+      text,
+      { start: doc.offsetAt(selection.start), end: doc.offsetAt(selection.end) },
+      sqlDialectOf(connection)
+    )
+    if (!picked) {
+      void vscode.window.showWarningMessage('No hay SQL para analizar.')
+      return null
+    }
+    const schema = usesSchemaRef(connection.engine)
+      ? { database: target.database ?? '', schema: target.schema ?? '' }
+      : target.database
+    const plan = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Window,
+        title: actual ? 'Vortaq: plan real…' : 'Vortaq: plan estimado…'
+      },
+      () => this.core.invoke('db:plan', connection.id, { sql: picked.sql, actual, schema })
+    )
+    const key = `doc:${uri}`
+    const name = uri.startsWith('untitled:')
+      ? uri.slice('untitled:'.length)
+      : vscode.Uri.parse(uri).path.split('/').pop()
+    const existing = this.results.get(key)
+    if (existing && !existing.isDisposed) {
+      existing.update({ plan, planId: (existing.state.planId ?? 0) + 1 })
+      existing.reveal()
+    } else
+      this.results.open(key, {
+        ...this.state(connection, `Resultados · ${name}`, targetLabel(target), false),
+        plan,
+        planId: 1
+      })
+    return plan
   }
 
   /** «Detener» of a document's run (or of the panel that shows it). */
