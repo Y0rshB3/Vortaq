@@ -38,7 +38,7 @@ import { invokeSilent } from '@renderer/api'
 import EditableResult from '@renderer/components/query/EditableResult.vue'
 import QueryConnectionPicker from '@renderer/components/query/QueryConnectionPicker.vue'
 import QueryMessages from '@renderer/components/query/QueryMessages.vue'
-import { beautifySql } from '@renderer/components/query/beautifySql'
+import { beautifySql, formatterDialectOf } from '@renderer/components/query/beautifySql'
 import {
   analyzeDestructiveScript,
   destructiveItems,
@@ -753,7 +753,8 @@ function format(): void {
   const selection = editor.value?.getSelection() ?? ''
   const source = selection.trim() ? selection : sql.value
   if (!source.trim()) return
-  const result = beautifySql(source)
+  // Each engine's own grammar (T-SQL keeps its GO batches); MySQL when there is no connection.
+  const result = beautifySql(source, formatterDialectOf(engineId.value ?? 'mysql'))
   if (selection.trim() && editor.value) editor.value.replaceSelection(result.sql)
   else sql.value = result.sql
   if (!result.structured) {

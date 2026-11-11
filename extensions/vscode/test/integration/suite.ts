@@ -639,6 +639,56 @@ test(
   'VORTAQ_TEST_MYSQL_URL'
 )
 
+test(
+  'autocompletes the target database’s tables and columns, and formats the document',
+  async () => {
+    if (!api.connections.isOpen(mysqlId)) await api.connections.open(mysqlId)
+    const editor = await sqlDocument('completion', 'select i. from item i', {
+      connectionId: mysqlId,
+      database: DB
+    })
+    const uri = editor.document.uri
+    // Columns of the alias, read from the server through the core.
+    const columns = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      uri,
+      new vscode.Position(0, 'select i.'.length)
+    )
+    const labels = columns.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label))
+    for (const column of ['id', 'name', 'note'])
+      assert.ok(labels.includes(column), labels.join(','))
+    // Tables after FROM.
+    await editor.edit((b) =>
+      b.replace(
+        new vscode.Range(0, 0, 0, editor.document.lineAt(0).text.length),
+        'select * from it'
+      )
+    )
+    const tables = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      uri,
+      new vscode.Position(0, 'select * from it'.length)
+    )
+    assert.ok(
+      tables.items.some((i) => (typeof i.label === 'string' ? i.label : i.label.label) === 'item')
+    )
+    // «Dar formato al documento»: MySQL grammar, upper-case keywords.
+    const edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
+      'vscode.executeFormatDocumentProvider',
+      uri,
+      { tabSize: 2, insertSpaces: true }
+    )
+    assert.ok(edits?.length)
+    // VS Code turns the replacement into minimal edits: apply them and read the document.
+    const change = new vscode.WorkspaceEdit()
+    change.set(uri, edits)
+    assert.ok(await vscode.workspace.applyEdit(change))
+    assert.equal(editor.document.getText(), 'SELECT\n\t*\nFROM\n\tit')
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
 /* ---------- Agents (MCP): the server inside the editor ---------- */
 
 interface McpAnswer {

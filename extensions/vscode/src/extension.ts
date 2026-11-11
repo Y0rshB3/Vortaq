@@ -37,6 +37,7 @@ import { ResultsPanels } from './host/panels/results'
 import { SchemaPanels } from './host/panels/schemaViews'
 import { SqlRunner } from './host/runner'
 import { readSettings, syncSettings, type ExtensionSettings } from './host/settings'
+import { SqlCompletionProvider, SqlFormattingProvider } from './host/sqlEditing'
 import { isSqlDocument, TargetCodeLens, TargetStatusBar } from './host/sqlDocuments'
 import { DocumentTargets } from './host/targets'
 import {
@@ -154,6 +155,17 @@ export async function activate(
   })
   const statusBar = new TargetStatusBar(targets, service, (c) => guard.needsTyped(c))
   const codeLens = new TargetCodeLens(targets, service)
+  /* Autocompletion with the target's structure, and «Dar formato al documento». */
+  const completion = new SqlCompletionProvider(core, service, targets)
+  const formatting = new SqlFormattingProvider(service, targets, (message) =>
+    vscode.window.setStatusBarMessage(`$(warning) ${message}`, 6000)
+  )
+  context.subscriptions.push(
+    completion,
+    vscode.languages.registerCompletionItemProvider({ language: 'sql' }, completion, '.'),
+    vscode.languages.registerDocumentFormattingEditProvider({ language: 'sql' }, formatting),
+    vscode.languages.registerDocumentRangeFormattingEditProvider({ language: 'sql' }, formatting)
+  )
 
   /* ---------- agents (MCP): the server inside the editor (host/mcp.ts) ---------- */
   const version = context.extension.packageJSON.version as string
@@ -443,7 +455,10 @@ export async function activate(
     openForm(null, typeof engine === 'string' ? engine : null)
   )
   command('vortaq.importDesktop', importDesktop)
-  command('vortaq.refresh', (node?: TreeNode) => tree.refresh(node))
+  command('vortaq.refresh', (node?: TreeNode) => {
+    if (node) completion.forget(node.connectionId)
+    tree.refresh(node)
+  })
   command('vortaq.showLog', () => output.show())
   command('vortaq.editConnection', (node?: TreeNode) => {
     const connection = nodeConnection(node)
