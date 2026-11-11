@@ -56,7 +56,7 @@ export interface LocalScanDeps {
 
 /** PowerShell's ConvertTo-Json of Name/State/PathName: one object or an array. */
 export function parseServicesJson(text: string): WindowsService[] {
-  const trimmed = text.replace(/^﻿/, '').trim()
+  const trimmed = text.replace(/^\uFEFF/, '').trim()
   if (!trimmed) return []
   const raw: unknown = JSON.parse(trimmed)
   const items = Array.isArray(raw) ? raw : [raw]

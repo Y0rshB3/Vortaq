@@ -14,6 +14,13 @@
   Vortaq mira una vez al día si hay una versión nueva en GitHub y la instala con un clic, después de
   comprobar su SHA-256 (**Vortaq: Buscar actualizaciones** lo hace en el momento;
   `vortaq.updates.check` apaga la comprobación diaria).
+- **SQL Server en Windows** (de Vortaq 2.7.0): en el formulario, **Buscar servidores en este equipo**
+  encuentra SQL Server Express y las demás instancias locales, dice si les falta TCP/IP (con los pasos
+  para activarlo) y rellena 127.0.0.1, el puerto y tu cuenta de Windows.
+- **Certificados autofirmados de SQL Server:** «Confiar y reintentar» al probar la conexión y «Confiar
+  en el certificado» si falla al abrirla desde el árbol.
+- El motor de una conexión nueva se elige en un selector «Motor»; las pestañas del formulario ya no se
+  recortan.
 - **Corrección:** «Importar conexiones de Vortaq (escritorio)» no copiaba el bloque de SQL Server
   (método de inicio de sesión, dominio, instancia con nombre, cifrado y «Confiar en el certificado»):
   ahora sí. El acceso para agentes nunca se importa.
