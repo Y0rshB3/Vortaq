@@ -12,6 +12,7 @@ import {
   defaultSchemaOf,
   ENGINES,
   environmentName,
+  runOutcome,
   trustFixesError,
   selectFirstRows,
   usesSchemaRef,
@@ -38,6 +39,7 @@ import { SchemaPanels } from './host/panels/schemaViews'
 import { SqlRunner } from './host/runner'
 import { readSettings, syncSettings, type ExtensionSettings } from './host/settings'
 import { SqlCompletionProvider, SqlFormattingProvider } from './host/sqlEditing'
+import { ExtensionQueryHistory, showQueryHistory } from './host/queryHistory'
 import { isSqlDocument, TargetCodeLens, TargetStatusBar } from './host/sqlDocuments'
 import { DocumentTargets } from './host/targets'
 import {
@@ -53,6 +55,7 @@ import type { SchemaViewState, WebviewSettings } from './webviewState'
 export interface VortaqTestApi {
   core: import('@core').VortaqCore
   mcp: McpService
+  history: ExtensionQueryHistory
   connections: ConnectionService
   tree: ConnectionsTree
   view: vscode.TreeView<TreeNode>
@@ -159,6 +162,28 @@ export async function activate(
   const completion = new SqlCompletionProvider(core, service, targets)
   const formatting = new SqlFormattingProvider(service, targets, (message) =>
     vscode.window.setStatusBarMessage(`$(warning) ${message}`, 6000)
+  )
+  /* «Historial de consultas»: every finished run, in the editor's global state. */
+  const historyEnabled = (): boolean =>
+    vscode.workspace.getConfiguration('vortaq').get<boolean>('queryHistory.enabled', true) !== false
+  const queryHistory = new ExtensionQueryHistory(context.globalState, historyEnabled)
+  context.subscriptions.push(
+    sqlRunner.onDidRun((finished) => {
+      void queryHistory.record({
+        sql: finished.sql,
+        connectionId: finished.connection.id,
+        connectionName: finished.connection.name,
+        engine: finished.connection.engine,
+        database: finished.target.database,
+        ...(finished.target.schema ? { schema: finished.target.schema } : {}),
+        at: new Date().toISOString(),
+        durationMs: finished.durationMs,
+        ...runOutcome(finished.results, finished.failed)
+      })
+      // DDL may have created or changed tables: read the structure again for completion.
+      if (sqlDialectOf(finished.connection).analyzeWrites(finished.sql).writes)
+        completion.forget(finished.connection.id)
+    })
   )
   context.subscriptions.push(
     completion,
@@ -522,6 +547,22 @@ export async function activate(
     context.subscriptions.push({ dispose: () => clearTimeout(timer) })
   }
 
+  command('vortaq.queryHistory', () =>
+    showQueryHistory(
+      queryHistory,
+      async (entry) => {
+        const doc = await vscode.workspace.openTextDocument({ language: 'sql', content: entry.sql })
+        await vscode.window.showTextDocument(doc)
+        if (service.get(entry.connectionId))
+          await sqlRunner.setTarget(doc.uri.toString(), {
+            connectionId: entry.connectionId,
+            database: entry.database,
+            ...(entry.schema ? { schema: entry.schema } : {})
+          })
+      },
+      historyEnabled()
+    )
+  )
   command('vortaq.mcp', () => showMcpManager(mcpDeps))
   command('vortaq.mcpConnection', async (node?: TreeNode) => {
     const connection = nodeConnection(node)
@@ -610,6 +651,7 @@ export async function activate(
   return {
     core,
     mcp,
+    history: queryHistory,
     connections: service,
     tree,
     view,

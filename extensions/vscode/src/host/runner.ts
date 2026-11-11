@@ -55,6 +55,17 @@ export function runContext(
   return target.database
 }
 
+/** What a finished run reports (never shown to anyone else; the history keeps no values). */
+export interface FinishedRun {
+  connection: ConnectionConfig
+  target: DocumentTarget
+  sql: string
+  durationMs: number
+  results: QueryStatementResult[]
+  /** The whole run failed (the server or the connection refused it). */
+  failed: boolean
+}
+
 export class SqlRunner implements vscode.Disposable {
   private readonly running = new Map<string, Running>()
   /** Documents between «Ejecutar» and their run starting (prompts, connecting). */
@@ -79,6 +90,10 @@ export class SqlRunner implements vscode.Disposable {
     private readonly settings: () => ExtensionSettings,
     private readonly webviewSettings: () => WebviewSettings
   ) {}
+
+  private readonly ran = new vscode.EventEmitter<FinishedRun>()
+  /** A script finished (with results or failing): the query history records it. */
+  readonly onDidRun = this.ran.event
 
   isRunning(uri: string): boolean {
     return this.running.has(uri)
@@ -215,6 +230,14 @@ export class SqlRunner implements vscode.Disposable {
       const effective = out[out.length - 1]?.effectiveSchema
       if (connection.engine === 'postgresql' && effective && effective !== target.schema)
         await this.targets.set(uri, { ...target, schema: effective })
+      this.ran.fire({
+        connection,
+        target,
+        sql: picked.sql,
+        durationMs: Date.now() - run.started,
+        results: out,
+        failed: false
+      })
       const failed = out.filter((r) => r.error).length
       vscode.window.setStatusBarMessage(
         failed
@@ -231,6 +254,14 @@ export class SqlRunner implements vscode.Disposable {
         results: [],
         totalMs: Date.now() - run.started,
         notice: err instanceof Error ? err.message : String(err)
+      })
+      this.ran.fire({
+        connection,
+        target,
+        sql: picked.sql,
+        durationMs: Date.now() - run.started,
+        results: [],
+        failed: true
       })
       return null
     } finally {
@@ -428,5 +459,6 @@ export class SqlRunner implements vscode.Disposable {
   dispose(): void {
     this.highlight.dispose()
     this.runningChanged.dispose()
+    this.ran.dispose()
   }
 }

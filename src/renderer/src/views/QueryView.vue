@@ -50,6 +50,9 @@ import { useWorkspace } from '@renderer/composables/useWorkspace'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
 import { useConnectionsStore } from '@renderer/stores/connections'
 import { useQueriesStore } from '@renderer/stores/queries'
+import { useQueryHistoryStore } from '@renderer/stores/queryHistory'
+import QueryHistoryDialog from '@renderer/components/query/QueryHistoryDialog.vue'
+import { runOutcome, type QueryHistoryEntry } from '@shared/queryHistory'
 import { useSettingsStore } from '@renderer/stores/settings'
 import { useTabsStore, type WorkspaceTab } from '@renderer/stores/tabs'
 import { formatDuration } from '@renderer/utils/format'
@@ -61,6 +64,8 @@ const props = defineProps<{ tab: WorkspaceTab }>()
 
 const tabs = useTabsStore()
 const queries = useQueriesStore()
+const queryHistory = useQueryHistoryStore()
+const historyOpen = ref(false)
 const connections = useConnectionsStore()
 const tree = useTreeStore()
 const settings = useSettingsStore()
@@ -324,9 +329,7 @@ function onSplitKey(event: KeyboardEvent): void {
 const connectionId = computed(() => props.tab.connectionId ?? '')
 const engineId = computed(() => connections.get(connectionId.value)?.engine)
 /** Tabs addressed as database + schema, each with its own server session (PostgreSQL, SQL Server). */
-const schemaTabs = computed(
-  () => engineId.value === 'postgresql' || engineId.value === 'sqlserver'
-)
+const schemaTabs = computed(() => engineId.value === 'postgresql' || engineId.value === 'sqlserver')
 const isMs = computed(() => engineId.value === 'sqlserver')
 const isLite = computed(() => connections.get(connectionId.value)?.engine === 'sqlite')
 /** Engines whose query tabs own a session (D12): transaction state, Confirmar/Deshacer, cancel. */
@@ -516,22 +519,22 @@ async function run(selectionOnly = false): Promise<void> {
   const check = ms
     ? sqlserverDialect.analyzeWrites(script)
     : pg
-    ? postgresqlDialect.analyzeWrites(script)
-    : lite
-      ? sqliteDialect.analyzeWrites(script)
-      : maria
-        ? mariadbDialect.analyzeWrites(script)
-        : analyzeWrites(script)
+      ? postgresqlDialect.analyzeWrites(script)
+      : lite
+        ? sqliteDialect.analyzeWrites(script)
+        : maria
+          ? mariadbDialect.analyzeWrites(script)
+          : analyzeWrites(script)
   const confirmProduction = connections.needsTypedConfirm(connectionId.value) && check.writes
   // DROP / TRUNCATE / DELETE / ALTER … DROP / UPDATE without WHERE ask on any connection (setting).
   const drops = settings.settings.confirmDestructiveEverywhere
     ? ms
       ? (sqlserverDialect.analyzeDestructive?.(script) ?? [])
       : pg
-      ? (postgresqlDialect.analyzeDestructive?.(script) ?? [])
-      : lite
-        ? (sqliteDialect.analyzeDestructive?.(script) ?? [])
-        : analyzeDestructiveScript(maria ? script.split('/*M!').join('/*!') : script)
+        ? (postgresqlDialect.analyzeDestructive?.(script) ?? [])
+        : lite
+          ? (sqliteDialect.analyzeDestructive?.(script) ?? [])
+          : analyzeDestructiveScript(maria ? script.split('/*M!').join('/*!') : script)
     : []
   if (confirmProduction || drops.length) {
     const allRows = drops.filter((d) => d.allRows).length
@@ -573,6 +576,9 @@ async function run(selectionOnly = false): Promise<void> {
 
   totalMs.value = null
   const started = performance.now()
+  const ranOn = connectionId.value
+  const ranDatabase = pg ? (database.value ?? null) : (schema.value ?? null)
+  const ranSchema = pg ? (schema.value ?? null) : null
   try {
     // confirmProduction tells main the user typed the name; main rejects unconfirmed writes to
     // production and to the environments of Ajustes › Seguridad.
@@ -623,6 +629,21 @@ async function run(selectionOnly = false): Promise<void> {
       pgCompletion.value.clear()
       msCompletion.value.clear()
       sqliteCompletion.value.clear()
+    }
+    // «Historial de consultas»: what ran and how it went (never the error text or values).
+    if (seq === runSeq) {
+      const stored = connections.get(ranOn)
+      queryHistory.record({
+        sql: script,
+        connectionId: ranOn,
+        connectionName: stored?.name ?? ranOn,
+        engine: stored?.engine ?? 'mysql',
+        database: ranDatabase,
+        ...(ranSchema ? { schema: ranSchema } : {}),
+        at: new Date().toISOString(),
+        durationMs: Math.round(performance.now() - started),
+        ...runOutcome(results.value, !!notice.value)
+      })
     }
     // A lost PostgreSQL session reports itself as an error: re-read the state.
     if (pg && notice.value) void refreshSessionState()
@@ -746,6 +767,26 @@ function stop(): void {
   notice.value =
     'Ejecución detenida. El servidor puede terminar la sentencia en curso; sus resultados se descartarán.'
   resultTab.value = 'messages'
+}
+
+/**
+ * «Historial» › Abrir: into this tab when its editor is empty, else a new tab
+ * on the connection and database where it ran (this tab's text is never replaced).
+ */
+function useHistory(entry: QueryHistoryEntry): void {
+  if (!sql.value.trim() && entry.connectionId === connectionId.value) {
+    sql.value = entry.sql
+    return
+  }
+  const known = !!connections.get(entry.connectionId)
+  const cid = known ? entry.connectionId : connectionId.value
+  const twoLevels = known && (entry.engine === 'postgresql' || entry.engine === 'sqlserver')
+  workspace.openQuery(
+    cid,
+    known ? (twoLevels ? (entry.schema ?? null) : entry.database) : null,
+    { sql: entry.sql, name: 'Del historial' },
+    twoLevels ? (entry.database ?? undefined) : undefined
+  )
 }
 
 /** «Formatear SQL»: formats the selection, or the whole editor when nothing is selected. */
@@ -1073,6 +1114,15 @@ defineExpose({
         @click="saveAs"
         ><span class="query-view__label">Guardar como</span></v-btn
       >
+      <v-btn
+        prepend-icon="mdi-history"
+        size="small"
+        title="Historial de consultas: lo que ejecutaste, para volver a abrirlo"
+        aria-label="Historial"
+        data-test="history"
+        @click="historyOpen = true"
+        ><span class="query-view__label">Historial</span></v-btn
+      >
       <template v-if="aiEnabled">
         <span class="nd-viewbar__sep" aria-hidden="true" />
         <v-btn
@@ -1387,6 +1437,13 @@ defineExpose({
         </v-card-actions>
       </v-card>
     </v-dialog>
+    <QueryHistoryDialog
+      v-if="historyOpen"
+      v-model="historyOpen"
+      :connection-id="connectionId || null"
+      :connection-name="connections.get(connectionId)?.name ?? ''"
+      @use="useHistory"
+    />
   </div>
 </template>
 
