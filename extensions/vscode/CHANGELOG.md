@@ -1,5 +1,15 @@
 # Cambios
 
+## 0.8.1 — en el Marketplace de VS Code (2026-11-11)
+
+- **Vortaq está en el Marketplace de VS Code** (`y0rshb3.vortaq`): búscala en la vista Extensiones. Instalada
+  desde ahí, el editor la actualiza solo como cualquier otra extensión, y Vortaq ya no consulta GitHub ni
+  ofrece instalar un `.vsix` (que la fijaría a esa versión y cortaría esas actualizaciones). **Vortaq: Buscar
+  actualizaciones** lleva a la comprobación de actualizaciones del editor.
+- Instalada desde un `.vsix` (Cursor, VSCodium y Windsurf, mientras no esté en Open VSX), todo sigue igual: la
+  comprobación diaria en GitHub y «Instalar» con su SHA-256.
+- La descripción de la extensión menciona SQL Server y ya no da por pendiente el autocompletado.
+
 ## 0.8.0 — plan de ejecución (2026-11-11)
 
 - **Plan de ejecución** de la sentencia del cursor (o de la selección), en una pestaña «Plan» del panel de

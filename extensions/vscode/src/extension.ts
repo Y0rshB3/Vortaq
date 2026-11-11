@@ -32,7 +32,7 @@ import {
 import { sqlDialectOf, vscodePrompter, WriteGuard, type Prompter } from './host/guard'
 import { coreMcpPorts, McpService, registerMcpProvider } from './host/mcp'
 import { showConnectionMcp, showMcpManager, type McpManagerDeps } from './host/mcpManager'
-import { ExtensionUpdater } from './host/updates'
+import { ExtensionUpdater, readInstallSource } from './host/updates'
 import { ConnectionFormPanel } from './host/panels/connectionForm'
 import { ResultsPanels } from './host/panels/results'
 import { SchemaPanels } from './host/panels/schemaViews'
@@ -596,14 +596,15 @@ export async function activate(
   command('vortaq.viewDocuments', (node?: TreeNode) => {
     if (node?.kind === 'collection') return sqlRunner.viewDocuments(node)
   })
-  /* ---------- updates (the .vsix is not updated by the editor's Auto Update) ---------- */
+  /* ---------- updates (a .vsix install is not updated by the editor; a gallery one is) ---------- */
   const updater = new ExtensionUpdater({
     currentVersion: version,
     state: context.globalState,
     downloadDir: join(context.globalStorageUri.fsPath, 'updates'),
     enabled: () =>
       vscode.workspace.getConfiguration('vortaq').get<boolean>('updates.check', true) !== false,
-    log: logLine
+    log: logLine,
+    installSource: () => readInstallSource(context.extensionPath)
   })
   command('vortaq.checkUpdates', () => updater.checkNow())
   if (context.extensionMode === vscode.ExtensionMode.Production) {

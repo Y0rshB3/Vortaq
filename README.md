@@ -20,7 +20,8 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.0/vortaq-0.8.0.vsix) ·
+[**Marketplace de VS Code**](https://marketplace.visualstudio.com/items?itemName=y0rshb3.vortaq) ·
+[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.1/vortaq-0.8.1.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -1606,7 +1607,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.8.0):
+Qué hace (versión 0.8.1):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1685,10 +1686,14 @@ se cierra; para comprobar que el puerto es suyo, Vortaq nunca envía la clave.
 
 Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en una más reciente).
 
-- **Desde el archivo `.vsix`**:
+- **Desde el Marketplace de VS Code**: busca «Vortaq» en la vista Extensiones o abre
+  [su página](https://marketplace.visualstudio.com/items?itemName=y0rshb3.vortaq), o desde la terminal:
+  `code --install-extension y0rshb3.vortaq`. El editor la actualiza solo, como cualquier extensión.
+
+- **Desde el archivo `.vsix`** (Cursor, VSCodium y Windsurf usan Open VSX, donde todavía no está):
   1. Descarga
-     [**`vortaq-0.8.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.0/vortaq-0.8.0.vsix)
-     (versión [`vscode-v0.8.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.0), con su
+     [**`vortaq-0.8.1.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.1/vortaq-0.8.1.vsix)
+     (versión [`vscode-v0.8.1`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.1), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1696,23 +1701,23 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.8.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.8.0.vsix     # Cursor
-  codium --install-extension vortaq-0.8.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.8.0.vsix   # Windsurf
+  code --install-extension vortaq-0.8.1.vsix       # VS Code
+  cursor --install-extension vortaq-0.8.1.vsix     # Cursor
+  codium --install-extension vortaq-0.8.1.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.8.1.vsix   # Windsurf
   ```
 
-- **Actualizaciones:** desde la 0.6.0 la extensión mira una vez al día si hay una versión nueva en GitHub y la
-  ofrece; con **Instalar** descarga el `.vsix`, comprueba su SHA-256 con el `SHA256SUMS.txt` publicado y la
-  instala (después pide recargar la ventana). También con **Vortaq: Buscar actualizaciones**. El «Auto Update»
-  del editor no sirve para extensiones instaladas desde un `.vsix`. Si tienes la 0.5.0 o anterior, instala la
-  0.6.0 a mano una vez.
+- **Actualizaciones de un `.vsix`:** el editor no actualiza una extensión instalada desde un archivo, así que
+  desde la 0.6.0 Vortaq mira una vez al día si hay una versión nueva en GitHub y la ofrece; con **Instalar**
+  descarga el `.vsix`, comprueba su SHA-256 con el `SHA256SUMS.txt` publicado y la instala (después pide
+  recargar la ventana). También con **Vortaq: Buscar actualizaciones**. Si tienes la 0.5.0 o anterior,
+  instala una versión nueva a mano una vez. Desde la 0.8.1, si la instalaste desde el Marketplace, Vortaq no
+  consulta GitHub: la actualiza el editor.
 
-- **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
-  buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
+- **Open VSX** (próximamente), para instalarla desde la vista Extensiones de VSCodium, Cursor y Windsurf.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.8.0.vsix`.
+`extensions/vscode/vortaq-0.8.1.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

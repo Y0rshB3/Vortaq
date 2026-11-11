@@ -1,8 +1,8 @@
 {
   "name": "vortaq",
   "displayName": "Vortaq",
-  "description": "Cliente de bases de datos para VS Code",
-  "version": "0.8.0",
+  "description": "Cliente de bases de datos para VS Code: MySQL, MariaDB, PostgreSQL, SQLite, MongoDB y SQL Server",
+  "version": "0.8.1",
   "publisher": "y0rshb3",
   "license": "MIT",
   "author": "Y0rshB3",
@@ -34,6 +34,9 @@
     "postgresql",
     "sqlite",
     "mongodb",
+    "sql server",
+    "mssql",
+    "azure sql",
     "sql",
     "database",
     "base de datos"
@@ -573,7 +576,7 @@
         "vortaq.updates.check": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Buscar una vez al día si hay una versión nueva de la extensión (en las versiones publicadas en GitHub) y ofrecer instalarla. **Vortaq: Buscar actualizaciones** funciona siempre. Solo se puede cambiar en los ajustes de usuario.",
+          "markdownDescription": "Si instalaste la extensión desde un `.vsix`: buscar una vez al día si hay una versión nueva (en las versiones publicadas en GitHub) y ofrecer instalarla. Instalada desde el Marketplace, la actualiza el editor y este ajuste no se usa. **Vortaq: Buscar actualizaciones** funciona siempre. Solo se puede cambiar en los ajustes de usuario.",
           "scope": "application"
         },
         "vortaq.mcp.enabled": {
