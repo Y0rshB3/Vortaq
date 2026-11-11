@@ -100,6 +100,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "vortaq.queryHistory",
+        "title": "Historial de consultas",
+        "category": "Vortaq",
+        "icon": "$(history)"
+      },
+      {
         "command": "vortaq.checkUpdates",
         "title": "Buscar actualizaciones",
         "category": "Vortaq",
@@ -227,6 +233,11 @@
           "command": "vortaq.mcp",
           "when": "view == vortaq.connections",
           "group": "2_agents@1"
+        },
+        {
+          "command": "vortaq.queryHistory",
+          "when": "view == vortaq.connections",
+          "group": "navigation@4"
         },
         {
           "command": "vortaq.checkUpdates",
@@ -482,6 +493,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Mostrar la conexión y «Ejecutar» encima de los documentos SQL."
+        },
+        "vortaq.queryHistory.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Guardar en este equipo las consultas que ejecutas (con su conexión, base de datos, duración y filas; nunca resultados ni errores) para **Vortaq: Historial de consultas**. Al desactivarlo no se guarda nada nuevo; lo guardado se borra desde el historial.",
+          "scope": "application"
         },
         "vortaq.updates.check": {
           "type": "boolean",

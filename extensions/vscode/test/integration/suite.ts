@@ -689,6 +689,19 @@ test(
   'VORTAQ_TEST_MYSQL_URL'
 )
 
+test(
+  'the query history keeps the documents’ runs, without results or error texts',
+  async () => {
+    const entries = api.history.list().filter((e) => e.connectionId === mysqlId)
+    assert.ok(entries.length > 0, 'no MySQL run in the history')
+    for (const e of entries) {
+      assert.equal(e.connectionName, `IT MySQL ${process.pid}`)
+      assert.ok(!('error' in e) && !('results' in e))
+    }
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
 /* ---------- Agents (MCP): the server inside the editor ---------- */
 
 interface McpAnswer {
