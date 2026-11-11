@@ -53,7 +53,9 @@ export class PgSession implements SqlSession {
     readonly serverVersion: string,
     readonly database: string,
     readonly client: pg.Client,
-    private readonly onRelease: (session: PgSession) => Promise<void>
+    private readonly onRelease: (session: PgSession) => Promise<void>,
+    /** server_version_num (0 while unknown): what the catalog queries may use (catalogCompat.ts). */
+    readonly serverVersionNum = 0
   ) {
     client.on('notice', (msg: { severity?: string; message?: string }) => {
       const severity = msg.severity ? `${msg.severity}: ` : ''

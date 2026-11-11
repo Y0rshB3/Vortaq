@@ -14,6 +14,14 @@ import { codeTokens, tokenizePg, type PgToken } from '@shared/dialects/pgLexer'
 import { analyzeWrites, splitStatements } from '@shared/dialects/postgresql'
 import type { Queryable, RoutineMeta, SchemaSnapshot, TableMeta } from './metadata'
 import { MetadataOnlyError } from './metadata'
+import {
+  attgeneratedSql,
+  attidentitySql,
+  featuresOf,
+  indexKeyCountSql,
+  prokindSql,
+  relispartitionSql
+} from '../postgres/catalogCompat'
 
 const CATALOG_SCHEMAS = new Set(['pg_catalog', 'information_schema'])
 const RELATION_END = new Set([
@@ -103,7 +111,11 @@ export function isPgMetadataSql(sql: string): boolean {
 
 /** Wraps a PostgreSQL session so only catalog reads reach the server. */
 export class PgMetadataQueryable implements Queryable {
-  constructor(private readonly inner: Queryable) {}
+  constructor(private readonly inner: Queryable & { readonly serverVersionNum?: number }) {}
+  /** The session's server_version_num, for the catalog features (catalogCompat.ts). */
+  get serverVersionNum(): number | undefined {
+    return this.inner.serverVersionNum
+  }
   async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
     if (!isPgMetadataSql(sql)) throw new MetadataOnlyError()
     return this.inner.query<T>(sql, params)
@@ -113,7 +125,7 @@ export class PgMetadataQueryable implements Queryable {
 type Row = Record<string, unknown>
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v))
 /**
- * A json_agg column: the PostgreSQL driver keeps json as the server's text
+ * A JSON array column: the PostgreSQL driver keeps json as the server's text
  * (values.ts), so it arrives as '["a","b"]'; an already parsed array is
  * accepted too.
  */
@@ -138,19 +150,21 @@ export async function readPgSchemaSnapshot(
 ): Promise<SchemaSnapshot> {
   const filter = only && only.length ? only : null
   const params = [schema, filter]
+  const f = featuresOf(q)
+  const kind = prokindSql(f)
   const tables = await q.query<Row>(
     `SELECT c.oid::int8 AS oid, c.relname AS name, c.relkind::text AS relkind,
             CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::int8 END AS rows,
             COALESCE(pg_catalog.obj_description(c.oid, 'pg_class'), '') AS comment
        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT c.relispartition
+      WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT ${relispartitionSql(f)}
         AND ($2::text[] IS NULL OR c.relname = ANY($2::text[]))
       ORDER BY c.relname`,
     params
   )
   const columns = await q.query<Row>(
     `SELECT c.relname AS table, a.attname AS name, pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
-            NOT a.attnotnull AS nullable, a.attidentity::text AS identity, a.attgenerated::text AS generated,
+            NOT a.attnotnull AS nullable, ${attidentitySql(f)} AS identity, ${attgeneratedSql(f)} AS generated,
             COALESCE(pg_catalog.col_description(a.attrelid, a.attnum), '') AS comment,
             EXISTS (SELECT 1 FROM pg_catalog.pg_index i WHERE i.indrelid = a.attrelid AND i.indisprimary
                        AND a.attnum = ANY(i.indkey)) AS pk
@@ -164,8 +178,8 @@ export async function readPgSchemaSnapshot(
   )
   const indexes = await q.query<Row>(
     `SELECT tc.relname AS table, ic.relname AS name, i.indisunique AS unique,
-            (SELECT json_agg(pg_catalog.pg_get_indexdef(i.indexrelid, k.ord::int, true) ORDER BY k.ord)
-               FROM pg_catalog.generate_series(1, i.indnkeyatts) AS k(ord)) AS columns
+            (SELECT pg_catalog.array_to_json(pg_catalog.array_agg(pg_catalog.pg_get_indexdef(i.indexrelid, k.ord::int, true) ORDER BY k.ord))
+               FROM pg_catalog.generate_series(1, ${indexKeyCountSql(f)}) AS k(ord)) AS columns
        FROM pg_catalog.pg_index i
        JOIN pg_catalog.pg_class ic ON ic.oid = i.indexrelid
        JOIN pg_catalog.pg_class tc ON tc.oid = i.indrelid
@@ -176,11 +190,13 @@ export async function readPgSchemaSnapshot(
   )
   const foreignKeys = await q.query<Row>(
     `SELECT tc.relname AS table, con.conname AS name,
-            (SELECT json_agg(a.attname ORDER BY k.ord) FROM pg_catalog.unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
-               JOIN pg_catalog.pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) AS columns,
+            (SELECT pg_catalog.array_to_json(pg_catalog.array_agg(a.attname ORDER BY k.ord))
+               FROM pg_catalog.generate_series(1, pg_catalog.array_length(con.conkey, 1)) AS k(ord)
+               JOIN pg_catalog.pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[k.ord]) AS columns,
             fn.nspname AS ref_schema, fc.relname AS ref_table,
-            (SELECT json_agg(a.attname ORDER BY k.ord) FROM pg_catalog.unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
-               JOIN pg_catalog.pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum) AS ref_columns
+            (SELECT pg_catalog.array_to_json(pg_catalog.array_agg(a.attname ORDER BY k.ord))
+               FROM pg_catalog.generate_series(1, pg_catalog.array_length(con.confkey, 1)) AS k(ord)
+               JOIN pg_catalog.pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = con.confkey[k.ord]) AS ref_columns
        FROM pg_catalog.pg_constraint con
        JOIN pg_catalog.pg_class tc ON tc.oid = con.conrelid
        JOIN pg_catalog.pg_namespace n ON n.oid = tc.relnamespace
@@ -193,11 +209,11 @@ export async function readPgSchemaSnapshot(
   const routines = filter
     ? []
     : await q.query<Row>(
-        `SELECT p.proname AS name, p.prokind::text AS kind,
+        `SELECT p.proname AS name, ${kind} AS kind,
                 pg_catalog.pg_get_function_identity_arguments(p.oid) AS args,
-                CASE WHEN p.prokind = 'p' THEN NULL ELSE pg_catalog.pg_get_function_result(p.oid) END AS returns
+                CASE WHEN ${kind} = 'p' THEN NULL ELSE pg_catalog.pg_get_function_result(p.oid) END AS returns
            FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-          WHERE n.nspname = $1 AND p.prokind IN ('f', 'p')
+          WHERE n.nspname = $1 AND ${kind} IN ('f', 'p')
           ORDER BY p.proname`,
         [schema]
       )

@@ -1,5 +1,13 @@
 import { postgresqlDialect } from '@shared/dialects/postgresql'
 import { objectDdl } from '../../postgres/introspect'
+import {
+  attgeneratedSql,
+  attidentitySql,
+  featuresOf,
+  partkeySql,
+  prokindSql,
+  relispartitionSql
+} from '../../postgres/catalogCompat'
 import type { VqbColumn, VqbSequenceState } from './format'
 import type { ValueCodec } from './values'
 
@@ -14,6 +22,8 @@ import type { ValueCodec } from './values'
 
 export interface PgQuery {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
+  /** server_version_num of the session (catalogCompat.ts); absent = current. */
+  readonly serverVersionNum?: number
 }
 
 type Row = Record<string, unknown>
@@ -149,17 +159,19 @@ export interface PgTableObject {
 }
 
 export async function listTables(s: PgQuery, schemas: string[]): Promise<PgTableObject[]> {
+  const f = featuresOf(s)
+  const isPartition = relispartitionSql(f)
   const rows = await s.query<Row>(
     `SELECT c.oid::int8 AS oid, n.nspname AS schema, c.relname AS name, c.relkind::text AS relkind,
             c.relpersistence::text AS persistence,
             pn.nspname AS parent_schema, p.relname AS parent_name,
-            CASE WHEN c.relispartition THEN pg_catalog.pg_get_expr(c.relpartbound, c.oid) END AS bound,
-            CASE WHEN c.relkind = 'p' THEN pg_catalog.pg_get_partkeydef(c.oid) END AS partkey,
+            ${f.partitions ? `CASE WHEN c.relispartition THEN pg_catalog.pg_get_expr(c.relpartbound, c.oid) END` : 'NULL::text'} AS bound,
+            ${partkeySql(f, 'c', 'pg_catalog.')} AS partkey,
             pg_catalog.obj_description(c.oid, 'pg_class') AS comment,
             c.reltuples::float8 AS estimate
        FROM pg_catalog.pg_class c
        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-       LEFT JOIN pg_catalog.pg_inherits i ON c.relispartition AND i.inhrelid = c.oid
+       LEFT JOIN pg_catalog.pg_inherits i ON ${isPartition} AND i.inhrelid = c.oid
        LEFT JOIN pg_catalog.pg_class p ON p.oid = i.inhparent
        LEFT JOIN pg_catalog.pg_namespace pn ON pn.oid = p.relnamespace
       WHERE c.relkind IN ('r', 'p') AND n.nspname = ANY($1::text[]) AND ${notExtension('pg_class', 'c')}
@@ -222,10 +234,11 @@ export function pgCodecOf(baseName: string, category: string): ValueCodec {
 }
 
 export async function tableColumns(s: PgQuery, oid: number): Promise<PgColumnFacts[]> {
+  const f = featuresOf(s)
   const rows = await s.query<Row>(
     `SELECT a.attname AS name, pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
             a.attnotnull AS notnull, pg_catalog.pg_get_expr(ad.adbin, ad.adrelid) AS dflt,
-            a.attidentity::text AS identity, a.attgenerated::text AS generated,
+            ${attidentitySql(f)} AS identity, ${attgeneratedSql(f)} AS generated,
             CASE WHEN a.attcollation <> t.typcollation AND a.attcollation <> 0
                  THEN (SELECT pg_catalog.quote_ident(cn.nspname) || '.' || pg_catalog.quote_ident(co.collname)
                          FROM pg_catalog.pg_collation co JOIN pg_catalog.pg_namespace cn ON cn.oid = co.collnamespace
@@ -383,12 +396,13 @@ export async function tableDefinition(
     [t.oid]
   )
   const triggers = await relationTriggers(s, t.oid, serverVersionNum)
+  // indkey is an int2vector (subscripts from 0): one row per key column, in key order.
   const pk = await s.query<Row>(
     `SELECT a.attname AS name
-       FROM pg_catalog.pg_index i
-       CROSS JOIN LATERAL pg_catalog.unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
-       JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-      WHERE i.indrelid = $1 AND i.indisprimary ORDER BY k.ord`,
+       FROM (SELECT i.indrelid, i.indkey, pg_catalog.generate_series(0, i.indnatts - 1) AS pos
+               FROM pg_catalog.pg_index i WHERE i.indrelid = $1 AND i.indisprimary) k
+       JOIN pg_catalog.pg_attribute a ON a.attrelid = k.indrelid AND a.attnum = k.indkey[k.pos]
+      ORDER BY k.pos`,
     [t.oid]
   )
   const data = columns.filter((c) => !c.generated)
@@ -463,7 +477,7 @@ export async function listRoutines(
   schemas: string[]
 ): Promise<{ routines: PgRoutineObject[]; skipped: number }> {
   const rows = await s.query<Row>(
-    `SELECT p.oid::int8 AS oid, n.nspname AS schema, p.proname AS name, p.prokind::text AS kind,
+    `SELECT p.oid::int8 AS oid, n.nspname AS schema, p.proname AS name, ${prokindSql(featuresOf(s))} AS kind,
             pg_catalog.pg_get_function_identity_arguments(p.oid) AS signature
        FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = ANY($1::text[]) AND ${notExtension('pg_proc', 'p')}

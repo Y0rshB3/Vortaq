@@ -884,13 +884,25 @@ today's builder (it already relies on `insertId`), so MySQL SQL text is unchange
   - identity and generated columns from `attidentity`/`attgenerated`
   - overloads from `pg_get_function_identity_arguments`
   - `pg_get_viewdef`, `pg_get_functiondef` and `pg_get_triggerdef`
-  - Use `json_agg` and `array_agg(x::text)` in catalog queries: `name[]` comes back as a literal
-    string.
+  - Use `array_to_json(array_agg(…))` and `array_agg(x::text)` in catalog queries: `name[]` comes
+    back as a literal string.
 - `objectDdl('table')` builds the DDL: `CREATE TABLE` from columns plus `pg_get_constraintdef`,
   then `CREATE INDEX` (`pg_get_indexdef`, skipping indexes that back constraints), `COMMENT ON`,
   triggers, and `ALTER SEQUENCE … OWNED BY`. PG has no `SHOW CREATE TABLE`.
-- The minimum supported server is **PG 12** (`attgenerated`, `prokind`). Older servers get
-  best-effort support, with catalog columns gated on `server_version_num`.
+- Designed for **PG 12+**; since 2.9.2 it works with **9.2+** (a user's local 9.2 failed on
+  `pg_stat_ssl`). `src/main/postgres/catalogCompat.ts` is the only place that knows versions:
+  `pgCatalogFeatures(server_version_num)` (9.3 matviews and updatable views, 9.5 `pg_stat_ssl` and
+  `IF NOT EXISTS` for sequences, 10 partitions/identity/`pg_sequence`, 11 `prokind`/`indnkeyatts`,
+  12 `attgenerated`) and the SQL that stands in for each missing piece. Every `PgSession` carries
+  its connection's `serverVersionNum`; introspection, the AI reader, `.vqb` backup and restore read
+  it through `featuresOf(session)`. Catalog SQL never uses `LATERAL` (9.3), `WITH ORDINALITY` (9.4),
+  `json_agg` (9.3) or multi-argument `unnest` (9.4): `generate_series` with array subscripts
+  (`indkey` is an int2vector, subscripts from 0) and `array_to_json(array_agg(… ORDER BY …))` give
+  the same answers on every version. Before 10 a sequence's settings and last value are read from
+  the sequence relation itself, its DDL has no `AS type`, and restores leave out `OVERRIDING SYSTEM
+VALUE`. Tested by `tests/integration/postgresLegacy.test.ts` (`VORTAQ_TEST_PG_LEGACY_URL`, compose
+  `postgres92`). Not adapted: the table designer still offers identity and generated columns, and a
+  backup of a newer server restores into an old one only when its DDL is valid there.
 - Catalog additions for daily use: enum labels (`pg_enum` by `enumsortorder`) into
   `ColumnInfo.enumValues`; domains resolve `typeKind` through `typbasetype`; sequences list
   `last_value` (`pg_sequences`) and `owned_by`; `ObjectSummary` for tables carries estimated rows

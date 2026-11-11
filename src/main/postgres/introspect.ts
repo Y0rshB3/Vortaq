@@ -2,8 +2,9 @@
  * PostgreSQL introspection over pg_catalog (docs/multi-engine-design.md,
  * section 5.6): information_schema hides materialized views. Every query is
  * schema-qualified or by oid, never relying on search_path. Catalog arrays
- * are returned through json_agg / array_agg(x::text): pg has no parser for
- * name[] and would hand back the literal text.
+ * are returned through array_to_json(array_agg(…)) / array_agg(x::text): pg
+ * has no parser for name[] and would hand back the literal text. Columns and
+ * syntax newer than 9.2 go through catalogCompat.ts.
  */
 import type {
   ColumnInfo,
@@ -26,12 +27,25 @@ import type {
   ViewInfo
 } from '@shared/types'
 import { postgresqlDialect } from '@shared/dialects/postgresql'
+import {
+  attgeneratedSql,
+  attidentitySql,
+  featuresOf,
+  indexKeyCountSql,
+  partkeySql,
+  prokindSql,
+  relispartitionSql,
+  relispopulatedSql,
+  viewInsertableSql
+} from './catalogCompat'
 import { PgUserError } from './errors'
 import { typeKindOf } from './values'
 
 /** What introspection needs from a session. */
 export interface PgQueryable {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
+  /** server_version_num; absent or 0 = unknown, read as a current server (catalogCompat.ts). */
+  readonly serverVersionNum?: number
 }
 
 type Row = Record<string, unknown>
@@ -108,6 +122,7 @@ const RELKIND_LABEL: Record<string, string | null> = {
 }
 
 export async function listTables(s: PgQueryable, schema: string): Promise<TableInfo[]> {
+  const f = featuresOf(s)
   const rows = await s.query<Row>(
     `SELECT c.relname AS name, c.relkind::text AS relkind,
             CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::int8 END AS rows,
@@ -115,7 +130,7 @@ export async function listTables(s: PgQueryable, schema: string): Promise<TableI
             CASE WHEN c.relkind = 'f' THEN NULL ELSE pg_indexes_size(c.oid) END AS index_length,
             COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'f') AND NOT c.relispartition
+      WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'f') AND NOT ${relispartitionSql(f)}
       ORDER BY c.relname`,
     [schema]
   )
@@ -195,7 +210,7 @@ export async function listPartitions(
 export async function listViews(s: PgQueryable, schema: string): Promise<ViewInfo[]> {
   const rows = await s.query<Row>(
     `SELECT c.relname AS name, pg_get_userbyid(c.relowner) AS owner,
-            (pg_relation_is_updatable(c.oid, false) & 4) = 4 AS updatable,
+            ${viewInsertableSql(featuresOf(s))} AS updatable,
             COALESCE(array_to_string(c.reloptions, ', '), '') AS options
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = $1 AND c.relkind = 'v'
@@ -212,15 +227,16 @@ export async function listViews(s: PgQueryable, schema: string): Promise<ViewInf
 }
 
 export async function listRoutines(s: PgQueryable, schema: string): Promise<RoutineInfo[]> {
+  const kind = prokindSql(featuresOf(s))
   const rows = await s.query<Row>(
-    `SELECT p.proname AS name, p.prokind::text AS kind,
+    `SELECT p.proname AS name, ${kind} AS kind,
             pg_get_function_identity_arguments(p.oid) AS signature,
             pg_get_userbyid(p.proowner) AS owner,
-            CASE WHEN p.prokind = 'p' THEN NULL ELSE pg_get_function_result(p.oid) END AS returns,
+            CASE WHEN ${kind} = 'p' THEN NULL ELSE pg_get_function_result(p.oid) END AS returns,
             COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment,
             p.prorettype = 'trigger'::regtype AS is_trigger
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = $1 AND p.prokind IN ('f', 'p')
+      WHERE n.nspname = $1 AND ${kind} IN ('f', 'p')
         AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
       ORDER BY p.proname, signature`,
     [schema]
@@ -276,7 +292,7 @@ export async function listObjects(
       const rows = await s.query<Row>(
         `SELECT c.relname AS name, pg_get_userbyid(c.relowner) AS owner,
                 CASE WHEN c.reltuples < 0 THEN NULL ELSE c.reltuples::int8 END AS rows,
-                pg_total_relation_size(c.oid) AS size, c.relispopulated AS populated,
+                pg_total_relation_size(c.oid) AS size, ${relispopulatedSql(featuresOf(s))} AS populated,
                 COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = $1 AND c.relkind = 'm'
@@ -295,6 +311,7 @@ export async function listObjects(
       }))
     }
     case 'sequence': {
+      if (!featuresOf(s).sequenceCatalog) return listSequencesBefore10(s, schema)
       const rows = await s.query<Row>(
         `SELECT c.relname AS name, pg_get_userbyid(c.relowner) AS owner,
                 format_type(sq.seqtypid, NULL) AS data_type,
@@ -422,6 +439,60 @@ export async function listObjects(
   }
 }
 
+/** At most this many sequences get their last value read before PostgreSQL 10. */
+const MAX_SEQUENCE_READS = 500
+
+/**
+ * Sequences before PostgreSQL 10 (no pg_sequence catalog): every sequence is
+ * bigint and its last value lives in the sequence relation itself, read for
+ * all of them in one UNION ALL (unknown when a sequence cannot be read).
+ */
+async function listSequencesBefore10(s: PgQueryable, schema: string): Promise<ObjectSummary[]> {
+  const rows = await s.query<Row>(
+    `SELECT c.relname AS name, pg_get_userbyid(c.relowner) AS owner,
+            (SELECT dc.relname || '.' || a.attname
+               FROM pg_depend d
+               JOIN pg_class dc ON dc.oid = d.refobjid
+               JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+              WHERE d.objid = c.oid AND d.classid = 'pg_class'::regclass
+                AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')
+              LIMIT 1) AS owned_by,
+            COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = $1 AND c.relkind = 'S'
+      ORDER BY c.relname`,
+    [schema]
+  )
+  const last = new Map<string, string | null>()
+  const reads = rows.slice(0, MAX_SEQUENCE_READS).map(
+    (r) =>
+      `SELECT ${postgresqlDialect.quoteString(text(r.name))}::text AS name,
+                CASE WHEN is_called THEN last_value::text END AS last_value
+           FROM ${qualified(schema, text(r.name))}`
+  )
+  if (reads.length) {
+    try {
+      for (const r of await s.query<Row>(reads.join('\nUNION ALL\n')))
+        last.set(text(r.name), textOrNull(r.last_value))
+    } catch {
+      // A sequence this user cannot read: no last values rather than no list.
+    }
+  }
+  return rows.map((r) => {
+    const value = last.get(text(r.name))
+    return {
+      name: text(r.name),
+      type: 'sequence' as const,
+      schema,
+      owner: text(r.owner),
+      comment: text(r.comment),
+      kind: 'bigint',
+      table: textOrNull(r.owned_by) ?? undefined,
+      detail: value === null || value === undefined ? '—' : value
+    }
+  })
+}
+
 /* ---------- columns and structure ---------- */
 
 /** Relation oid of schema.name (tables, views, matviews, foreign tables), or null. */
@@ -440,13 +511,15 @@ async function requireRelation(s: PgQueryable, schema: string, name: string): Pr
   return oid
 }
 
-const COLUMNS_SQL = `SELECT a.attname AS name, a.attnum AS ordinal,
+const columnsSql = (
+  f: ReturnType<typeof featuresOf>
+): string => `SELECT a.attname AS name, a.attnum AS ordinal,
        format_type(a.atttypid, a.atttypmod) AS column_type,
        format_type(a.atttypid, NULL) AS data_type,
        NOT a.attnotnull AS nullable,
        pg_get_expr(ad.adbin, ad.adrelid) AS default_expr,
-       a.attidentity::text AS identity,
-       a.attgenerated::text AS generated,
+       ${attidentitySql(f)} AS identity,
+       ${attgeneratedSql(f)} AS generated,
        CASE WHEN a.attcollation <> t.typcollation AND a.attcollation <> 0
             THEN (SELECT co.collname FROM pg_collation co WHERE co.oid = a.attcollation) END AS collation,
        COALESCE(col_description(a.attrelid, a.attnum), '') AS comment,
@@ -455,7 +528,7 @@ const COLUMNS_SQL = `SELECT a.attname AS name, a.attnum AS ordinal,
        COALESCE(bt.typcategory, t.typcategory)::text AS category,
        COALESCE(bt.typtype, t.typtype)::text AS typtype,
        CASE WHEN COALESCE(bt.typtype, t.typtype) = 'e'
-            THEN (SELECT json_agg(e.enumlabel ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid = COALESCE(bt.oid, t.oid)) END AS enum_values,
+            THEN (SELECT array_to_json(array_agg(e.enumlabel ORDER BY e.enumsortorder)) FROM pg_enum e WHERE e.enumtypid = COALESCE(bt.oid, t.oid)) END AS enum_values,
        pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(c.relname), a.attname) IS NOT NULL AS owns_sequence
   FROM pg_attribute a
   JOIN pg_class c ON c.oid = a.attrelid
@@ -517,7 +590,7 @@ export async function listColumns(
 ): Promise<ColumnInfo[]> {
   const oid = await relationOid(s, schema, table)
   if (oid === null) return []
-  return (await s.query<Row>(COLUMNS_SQL, [oid])).map(toColumn)
+  return (await s.query<Row>(columnsSql(featuresOf(s)), [oid])).map(toColumn)
 }
 
 export async function primaryKeyColumns(
@@ -525,27 +598,29 @@ export async function primaryKeyColumns(
   schema: string,
   table: string
 ): Promise<string[]> {
+  // indkey is an int2vector (subscripts from 0); one row per key column, in key order.
   const rows = await s.query<Row>(
     `SELECT a.attname AS name
-       FROM pg_index i
-       JOIN pg_class c ON c.oid = i.indrelid
-       JOIN pg_namespace n ON n.oid = c.relnamespace
-       CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
-       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-      WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary
-      ORDER BY k.ord`,
+       FROM (SELECT i.indrelid, i.indkey, generate_series(0, i.indnatts - 1) AS pos
+               FROM pg_index i
+               JOIN pg_class c ON c.oid = i.indrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary) k
+       JOIN pg_attribute a ON a.attrelid = k.indrelid AND a.attnum = k.indkey[k.pos]
+      ORDER BY k.pos`,
     [schema, table]
   )
   return rows.map((r) => text(r.name))
 }
 
 async function listIndexes(s: PgQueryable, oid: number): Promise<IndexInfo[]> {
+  const keyCount = indexKeyCountSql(featuresOf(s))
   const rows = await s.query<Row>(
     `SELECT ic.relname AS name, i.indisunique AS unique, i.indisprimary AS primary,
             am.amname AS method, pg_get_indexdef(i.indexrelid) AS def,
             (SELECT con.conname FROM pg_constraint con WHERE con.conindid = i.indexrelid AND con.conrelid = i.indrelid LIMIT 1) AS constraint,
-            (SELECT json_agg(pg_get_indexdef(i.indexrelid, k.ord::int, true) ORDER BY k.ord)
-               FROM generate_series(1, i.indnkeyatts) AS k(ord)) AS columns,
+            (SELECT array_to_json(array_agg(pg_get_indexdef(i.indexrelid, k.ord::int, true) ORDER BY k.ord))
+               FROM generate_series(1, ${keyCount}) AS k(ord)) AS columns,
             COALESCE(obj_description(i.indexrelid, 'pg_class'), '') AS comment
        FROM pg_index i
        JOIN pg_class ic ON ic.oid = i.indexrelid
@@ -582,11 +657,13 @@ async function listConstraints(
 ): Promise<{ foreignKeys: ForeignKeyInfo[]; constraints: ConstraintInfo[] }> {
   const rows = await s.query<Row>(
     `SELECT con.conname AS name, con.contype::text AS type, pg_get_constraintdef(con.oid, true) AS def,
-            (SELECT json_agg(a.attname ORDER BY k.ord) FROM unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
-               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) AS columns,
+            (SELECT array_to_json(array_agg(a.attname ORDER BY k.ord))
+               FROM generate_series(1, array_length(con.conkey, 1)) AS k(ord)
+               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[k.ord]) AS columns,
             fn.nspname AS ref_schema, fc.relname AS ref_table,
-            (SELECT json_agg(a.attname ORDER BY k.ord) FROM unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
-               JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum) AS ref_columns,
+            (SELECT array_to_json(array_agg(a.attname ORDER BY k.ord))
+               FROM generate_series(1, array_length(con.confkey, 1)) AS k(ord)
+               JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = con.confkey[k.ord]) AS ref_columns,
             con.confupdtype::text AS on_update, con.confdeltype::text AS on_delete
        FROM pg_constraint con
        LEFT JOIN pg_class fc ON fc.oid = con.confrelid
@@ -654,14 +731,14 @@ export async function tableStructure(
     `SELECT c.relkind::text AS relkind, c.relpersistence::text AS persistence,
             pg_get_userbyid(c.relowner) AS owner,
             COALESCE((SELECT spcname FROM pg_tablespace WHERE oid = c.reltablespace), '') AS tablespace,
-            COALESCE(CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END, '') AS partition_key,
+            COALESCE(${partkeySql(featuresOf(s))}, '') AS partition_key,
             COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
        FROM pg_class c WHERE c.oid = $1`,
     [oid]
   )
   const relkind = text(meta?.relkind)
   // One pg client runs one query at a time: sequential, not Promise.all.
-  const columns = (await s.query<Row>(COLUMNS_SQL, [oid])).map(toColumn)
+  const columns = (await s.query<Row>(columnsSql(featuresOf(s)), [oid])).map(toColumn)
   const indexes = await listIndexes(s, oid)
   const { foreignKeys, constraints } = await listConstraints(s, oid)
   const structure: TableStructure = {
@@ -704,12 +781,12 @@ export async function tableDdl(s: PgQueryable, schema: string, table: string): P
   const oid = await requireRelation(s, schema, table)
   const [meta] = await s.query<Row>(
     `SELECT c.relkind::text AS relkind, c.relpersistence::text AS persistence,
-            COALESCE(CASE WHEN c.relkind = 'p' THEN pg_get_partkeydef(c.oid) END, '') AS partition_key,
+            COALESCE(${partkeySql(featuresOf(s))}, '') AS partition_key,
             COALESCE(obj_description(c.oid, 'pg_class'), '') AS comment
        FROM pg_class c WHERE c.oid = $1`,
     [oid]
   )
-  const columns = (await s.query<Row>(COLUMNS_SQL, [oid])).map(toColumn)
+  const columns = (await s.query<Row>(columnsSql(featuresOf(s)), [oid])).map(toColumn)
   const indexes = await listIndexes(s, oid)
   const { foreignKeys, constraints } = await listConstraints(s, oid)
   const target = qualified(schema, table)
@@ -766,8 +843,9 @@ export async function tableDdl(s: PgQueryable, schema: string, table: string): P
     [oid]
   )
   const sequences: string[] = []
+  const ifNotExists = featuresOf(s).createSequenceIfNotExists ? 'IF NOT EXISTS ' : ''
   for (const o of owned) {
-    sequences.push(`CREATE SEQUENCE IF NOT EXISTS ${qualified(text(o.seq_schema), text(o.seq))};`)
+    sequences.push(`CREATE SEQUENCE ${ifNotExists}${qualified(text(o.seq_schema), text(o.seq))};`)
     extra.push(
       `ALTER SEQUENCE ${qualified(text(o.seq_schema), text(o.seq))} OWNED BY ${target}.${q(text(o.column))};`
     )
@@ -842,6 +920,7 @@ export async function objectDdl(s: PgQueryable, schema: string, ref: ObjectRef):
       return `${text(row.def)};`
     }
     case 'sequence': {
+      if (!featuresOf(s).sequenceCatalog) return sequenceDdlBefore10(s, schema, ref.name)
       const [row] = await s.query<Row>(
         `SELECT format_type(sq.seqtypid, NULL) AS type, sq.seqstart AS start, sq.seqincrement AS inc,
                 sq.seqmin AS min, sq.seqmax AS max, sq.seqcache AS cache, sq.seqcycle AS cycle
@@ -909,6 +988,30 @@ export async function objectDdl(s: PgQueryable, schema: string, ref: ObjectRef):
   }
 }
 
+/**
+ * CREATE SEQUENCE before PostgreSQL 10: the settings live in the sequence
+ * relation itself, and there is no AS type (every sequence is bigint).
+ */
+async function sequenceDdlBefore10(s: PgQueryable, schema: string, name: string): Promise<string> {
+  const [exists] = await s.query<Row>(
+    `SELECT 1 AS found FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind = 'S'`,
+    [schema, name]
+  )
+  if (!exists) throw new PgUserError(`La secuencia ${name} no existe`)
+  const target = qualified(schema, name)
+  const [row] = await s.query<Row>(
+    `SELECT start_value::text AS start, increment_by::text AS inc, min_value::text AS min,
+            max_value::text AS max, cache_value::text AS cache, is_cycled AS cycle
+       FROM ${target}`
+  )
+  return (
+    `CREATE SEQUENCE ${target}\n  INCREMENT BY ${text(row?.inc)}\n` +
+    `  MINVALUE ${text(row?.min)}\n  MAXVALUE ${text(row?.max)}\n  START WITH ${text(row?.start)}\n` +
+    `  CACHE ${text(row?.cache)}${row?.cycle === true ? '\n  CYCLE' : ''};`
+  )
+}
+
 /** DROP of one object; routines need their signature, triggers their table. */
 export async function dropObject(s: PgQueryable, schema: string, ref: ObjectRef): Promise<void> {
   const target = qualified(schema, ref.name)
@@ -966,7 +1069,7 @@ export async function listDataTypes(s: PgQueryable): Promise<DataTypeInfo[]> {
   const rows = await s.query<Row>(
     `SELECT n.nspname AS schema, t.typname AS typname, format_type(t.oid, NULL) AS formatted,
             t.typtype::text AS typtype,
-            CASE WHEN t.typtype = 'e' THEN (SELECT json_agg(e.enumlabel ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid = t.oid) END AS enum_values
+            CASE WHEN t.typtype = 'e' THEN (SELECT array_to_json(array_agg(e.enumlabel ORDER BY e.enumsortorder)) FROM pg_enum e WHERE e.enumtypid = t.oid) END AS enum_values
        FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
       WHERE t.typtype IN ('b', 'e', 'd', 'c', 'r', 'm')
         AND t.typelem = 0 OR (t.typtype = 'b' AND t.typcategory <> 'A' AND t.typelem <> 0 AND t.typname IN ('point', 'line', 'lseg', 'box', 'name'))

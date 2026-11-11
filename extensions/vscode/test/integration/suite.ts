@@ -277,7 +277,9 @@ test('imports the desktop connections without passwords', async () => {
   const imported = (await api.connections.list()).find((c) => c.name === 'Tienda local')!
   cleanup.push(() => api.connections.remove(imported.id))
   assert.equal(await api.core.invoke('connections:hasPassword', imported.id), false)
-  assert.equal(imported.backupDir, '')
+  // The desktop app's backup folder stays there; the extension's profile gives the connection its
+  // own default one (2.9.1: an empty folder reads as <profile>/backups/<name>).
+  assert.equal(imported.backupDir, join(api.core.context.userDataPath, 'backups', 'Tienda local'))
 })
 
 test('keeps the connections another editor window saves on the same profile', async () => {

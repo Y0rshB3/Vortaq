@@ -21,7 +21,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
 [**Marketplace de VS Code**](https://marketplace.visualstudio.com/items?itemName=y0rshb3.vortaq) ·
-[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.1/vortaq-0.8.1.vsix) ·
+[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.2/vortaq-0.8.2.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -450,7 +450,9 @@ MySQL nada cambia.
 
 ### PostgreSQL
 
-**Conexión › Nueva conexión PostgreSQL…** crea una conexión PostgreSQL.
+**Conexión › Nueva conexión PostgreSQL…** crea una conexión PostgreSQL. Funciona con **PostgreSQL 9.2 o
+posterior** (pensado para la 12 o posterior): en servidores antiguos, lo que el servidor no tiene (identidades,
+columnas generadas, particiones, vistas materializadas, procedimientos) simplemente no aparece.
 
 - **Conexión**: host, puerto (5432), usuario, contraseña o «Sin contraseña», **base de datos inicial**,
   `search_path` opcional y «Mostrar esquemas y bases de datos del sistema». Pestaña **SSL** con los modos de
@@ -1607,7 +1609,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.8.1):
+Qué hace (versión 0.8.2):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1692,8 +1694,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`** (Cursor, VSCodium y Windsurf usan Open VSX, donde todavía no está):
   1. Descarga
-     [**`vortaq-0.8.1.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.1/vortaq-0.8.1.vsix)
-     (versión [`vscode-v0.8.1`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.1), con su
+     [**`vortaq-0.8.2.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.2/vortaq-0.8.2.vsix)
+     (versión [`vscode-v0.8.2`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.2), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1701,10 +1703,10 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.8.1.vsix       # VS Code
-  cursor --install-extension vortaq-0.8.1.vsix     # Cursor
-  codium --install-extension vortaq-0.8.1.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.8.1.vsix   # Windsurf
+  code --install-extension vortaq-0.8.2.vsix       # VS Code
+  cursor --install-extension vortaq-0.8.2.vsix     # Cursor
+  codium --install-extension vortaq-0.8.2.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.8.2.vsix   # Windsurf
   ```
 
 - **Actualizaciones de un `.vsix`:** el editor no actualiza una extensión instalada desde un archivo, así que
@@ -1717,7 +1719,7 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 - **Open VSX** (próximamente), para instalarla desde la vista Extensiones de VSCodium, Cursor y Windsurf.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.8.1.vsix`.
+`extensions/vscode/vortaq-0.8.2.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el
@@ -2196,6 +2198,7 @@ ejecución, y su carpeta debe llamarse `profile`.
 | `VORTAQ_TEST_MYSQL57_URL`       | MySQL 5.7 desechable para `npm run test:integration[:required]` (incluye la restauración 5.7 → 8.4).                                                                                                      |
 | `VORTAQ_TEST_MARIADB_URL`       | MariaDB 11 desechable (`mysql://…:33311/…`) para el motor MariaDB y las correcciones de MariaDB en `npm run test:integration[:required]`.                                                                 |
 | `VORTAQ_TEST_PG_URL`            | PostgreSQL 17 desechable (`postgres://…:55432/…`) para `npm run test:integration[:required]`.                                                                                                             |
+| `VORTAQ_TEST_PG_LEGACY_URL`     | Opcional: PostgreSQL 9.2 desechable (`postgres://postgres:navidog@127.0.0.1:55492/navidog_test`, servicio `postgres92`) para `tests/integration/postgresLegacy.test.ts`, servidores anteriores a la 10.   |
 | `VORTAQ_TEST_MONGO_URL`         | MongoDB 8.2 independiente desechable (`mongodb://root:…@127.0.0.1:57017/?authSource=admin`) para `npm run test:integration[:required]`; también activa el paso de MongoDB de `VORTAQ_SMOKE`.              |
 | `VORTAQ_TEST_MONGO_RS_URL`      | Conjunto de réplicas MongoDB 8.2 de un miembro (`mongodb://127.0.0.1:57018/?replicaSet=rs0`) para las transacciones en `npm run test:integration[:required]`.                                             |
 | `VORTAQ_TEST_MSSQL_URL`         | SQL Server 2022 desechable (`mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test`, servicio `mssql22`) para `npm run test:integration[:required]` y `npm run ext:test`.                                  |

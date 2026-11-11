@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.8.2 — PostgreSQL 9.2 a 11 (2026-11-11)
+
+- **PostgreSQL 9.2 a 11** (de Vortaq 2.9.2): la conexión ya no falla con «relation "pg_stat_ssl" does not
+  exist», y el árbol, la estructura, los datos, la edición, el plan de ejecución y los agentes (MCP)
+  funcionan con esos servidores. Lo que no tienen (identidades, columnas generadas, particiones, vistas
+  materializadas, procedimientos) simplemente no aparece.
+
 ## 0.8.1 — en el Marketplace de VS Code (2026-11-11)
 
 - **Vortaq está en el Marketplace de VS Code** (`y0rshb3.vortaq`): búscala en la vista Extensiones. Instalada
