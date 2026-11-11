@@ -20,7 +20,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.6.0/vortaq-0.6.0.vsix) ·
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.7.0/vortaq-0.7.0.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -1124,6 +1124,20 @@ Para programarlo con la app cerrada fuera de macOS:
 
   El registro de la ejecución queda en `/tmp/vortaq-cron.log` y en el `logs/` del perfil.
 
+### Historial de consultas
+
+**Historial** (barra de la pestaña de consulta) guarda en este equipo lo que ejecutas, lo más reciente primero:
+el SQL, la conexión, la base de datos, cuándo, cuánto tardó, cuántas filas y si dio error. Nunca guarda
+resultados ni el texto de los errores (pueden citar valores de las filas). Busca por cualquier palabra del SQL,
+de la conexión o de la base de datos, y limita la lista a la conexión de la pestaña o a todas. **Abrir** pone la
+consulta en la pestaña si está vacía, o en una pestaña nueva con su conexión y base de datos; nunca la ejecuta.
+Guarda hasta 500 consultas (la misma consulta en el mismo sitio ocupa una sola línea); **Borrar historial** y el
+interruptor **Guardar historial** están en el mismo diálogo.
+
+**Formatear SQL** usa la gramática de cada motor (MySQL, MariaDB, PostgreSQL, SQLite y T-SQL); en SQL Server cada
+lote se formatea por separado y las líneas `GO` se conservan. En los resultados, **Filtrar filas** oculta las
+filas cargadas que no contienen el texto en ninguna celda; las ediciones pendientes no se pierden.
+
 ### Cambiar la conexión de una consulta
 
 En la barra de la pestaña de consulta, a la izquierda de la base de datos, está el **selector de conexión**: cada
@@ -1574,7 +1588,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.6.0):
+Qué hace (versión 0.7.0):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1598,6 +1612,14 @@ Qué hace (versión 0.6.0):
   consulta** y **Ejecutar** llevan el SQL a un documento nuevo con la misma conexión.
 - **Ver datos** de tablas y vistas y **Ver documentos** de MongoDB (de solo lectura en esta versión).
 - **Producción**: cualquier escritura pide escribir el nombre de la conexión, igual que en escritorio.
+- **Autocompletado y formato** (desde la 0.7.0): en los `.sql`, palabras clave del motor y las bases de datos,
+  esquemas, tablas, vistas, columnas y funciones de la conexión del documento (mientras está abierta; nunca la
+  abre ni pide la contraseña), con el mismo análisis que el editor de escritorio. **Dar formato al documento**
+  (o a la selección) con la gramática de cada motor.
+- **Historial de consultas** (desde la 0.7.0): **Vortaq: Historial de consultas** busca lo que ejecutaste y lo
+  abre en un documento nuevo con la misma conexión y base de datos ([Historial de consultas](#historial-de-consultas)).
+- **Árbol** (desde la 0.7.0): **Seleccionar las primeras 1000 filas**, **Script como CREATE** y **Buscar tabla o
+  vista…** (en toda la conexión, mientras se carga). En los resultados, **Filtrar filas**.
 - **Agentes (MCP) sin la aplicación de escritorio** (desde la 0.6.0): la extensión trae su propio servidor MCP
   con las conexiones del editor; Copilot en VS Code lo ve solo y los demás clientes se configuran copiando un
   bloque ([Agentes (MCP) en el editor](#agentes-mcp-en-el-editor)).
@@ -1644,8 +1666,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`**:
   1. Descarga
-     [**`vortaq-0.6.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.6.0/vortaq-0.6.0.vsix)
-     (versión [`vscode-v0.6.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.6.0), con su
+     [**`vortaq-0.7.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.7.0/vortaq-0.7.0.vsix)
+     (versión [`vscode-v0.7.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.7.0), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1653,10 +1675,10 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.6.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.6.0.vsix     # Cursor
-  codium --install-extension vortaq-0.6.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.6.0.vsix   # Windsurf
+  code --install-extension vortaq-0.7.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.7.0.vsix     # Cursor
+  codium --install-extension vortaq-0.7.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.7.0.vsix   # Windsurf
   ```
 
 - **Actualizaciones:** desde la 0.6.0 la extensión mira una vez al día si hay una versión nueva en GitHub y la
@@ -1669,7 +1691,7 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.6.0.vsix`.
+`extensions/vscode/vortaq-0.7.0.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

@@ -25,6 +25,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.8.0',
+    date: '2026-11-11',
+    highlights: [
+      'Historial de consultas: busca lo que ejecutaste y vuelve a abrirlo (solo en este equipo, sin resultados)',
+      'Formatear SQL usa la gramática de cada motor; en SQL Server, lote a lote y conservando GO',
+      'Filtrar filas en los resultados, sin perder las ediciones pendientes'
+    ],
+    tour: [
+      {
+        target: 'query-toolbar',
+        title: 'Historial de consultas',
+        text: 'En una pestaña de consulta, el botón Historial (el reloj) muestra lo que ejecutaste. Abrir lo pone en el editor; nunca lo ejecuta.'
+      }
+    ]
+  },
+  {
     version: '2.7.0',
     date: '2026-11-11',
     highlights: [
