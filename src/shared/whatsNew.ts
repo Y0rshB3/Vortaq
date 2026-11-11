@@ -25,6 +25,55 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.0',
+    date: '2026-11-11',
+    highlights: [
+      'Plan de ejecución: cómo resuelve el servidor la consulta, operador a operador, con su parte del coste',
+      'Plan estimado sin ejecutar nada, o plan real que mide filas y tiempos de un SELECT',
+      'SQL Server recomienda índices; Vortaq avisa cuando las filas reales se alejan de las estimadas'
+    ],
+    tour: [
+      {
+        target: 'query-toolbar',
+        title: 'Plan de ejecución',
+        text: 'Pon el cursor en una sentencia y pulsa Plan › Plan estimado (no ejecuta nada) o Plan real (solo SELECT).'
+      }
+    ]
+  },
+  {
+    version: '2.8.0',
+    date: '2026-11-11',
+    highlights: [
+      'Historial de consultas: busca lo que ejecutaste y vuelve a abrirlo (solo en este equipo, sin resultados)',
+      'Formatear SQL usa la gramática de cada motor; en SQL Server, lote a lote y conservando GO',
+      'Filtrar filas en los resultados, sin perder las ediciones pendientes'
+    ],
+    tour: [
+      {
+        target: 'query-toolbar',
+        title: 'Historial de consultas',
+        text: 'En una pestaña de consulta, el botón Historial (el reloj) muestra lo que ejecutaste. Abrir lo pone en el editor; nunca lo ejecuta.'
+      }
+    ]
+  },
+  {
+    version: '2.7.0',
+    date: '2026-11-11',
+    highlights: [
+      'SQL Server en Windows: «Buscar servidores en este equipo» encuentra SQL Server Express y rellena la conexión con tu cuenta de Windows',
+      'Si a la instancia le falta TCP/IP, el formulario muestra los pasos exactos para activarlo',
+      'Certificados autofirmados de SQL Server: «Confiar y reintentar» al probar o abrir la conexión',
+      'El motor de una conexión nueva se elige en un selector «Motor», y las pestañas ya no se recortan en ventanas bajas'
+    ],
+    tour: [
+      {
+        target: 'toolbar-connection',
+        title: 'SQL Server en este equipo',
+        text: 'Conexión › Nueva conexión SQL Server… › Buscar servidores en este equipo (en Windows). Usar rellena la conexión; escribe tu contraseña de Windows y pulsa Probar conexión.'
+      }
+    ]
+  },
+  {
     version: '2.6.0',
     date: '2026-11-10',
     highlights: [

@@ -12,6 +12,8 @@ import {
   defaultSchemaOf,
   ENGINES,
   environmentName,
+  runOutcome,
+  trustFixesError,
   selectFirstRows,
   usesSchemaRef,
   type ConnectionConfig,
@@ -36,6 +38,9 @@ import { ResultsPanels } from './host/panels/results'
 import { SchemaPanels } from './host/panels/schemaViews'
 import { SqlRunner } from './host/runner'
 import { readSettings, syncSettings, type ExtensionSettings } from './host/settings'
+import { SqlCompletionProvider, SqlFormattingProvider } from './host/sqlEditing'
+import { ExtensionQueryHistory, showQueryHistory } from './host/queryHistory'
+import { findObject } from './host/objectSearch'
 import { isSqlDocument, TargetCodeLens, TargetStatusBar } from './host/sqlDocuments'
 import { DocumentTargets } from './host/targets'
 import {
@@ -51,6 +56,7 @@ import type { SchemaViewState, WebviewSettings } from './webviewState'
 export interface VortaqTestApi {
   core: import('@core').VortaqCore
   mcp: McpService
+  history: ExtensionQueryHistory
   connections: ConnectionService
   tree: ConnectionsTree
   view: vscode.TreeView<TreeNode>
@@ -153,6 +159,39 @@ export async function activate(
   })
   const statusBar = new TargetStatusBar(targets, service, (c) => guard.needsTyped(c))
   const codeLens = new TargetCodeLens(targets, service)
+  /* Autocompletion with the target's structure, and «Dar formato al documento». */
+  const completion = new SqlCompletionProvider(core, service, targets)
+  const formatting = new SqlFormattingProvider(service, targets, (message) =>
+    vscode.window.setStatusBarMessage(`$(warning) ${message}`, 6000)
+  )
+  /* «Historial de consultas»: every finished run, in the editor's global state. */
+  const historyEnabled = (): boolean =>
+    vscode.workspace.getConfiguration('vortaq').get<boolean>('queryHistory.enabled', true) !== false
+  const queryHistory = new ExtensionQueryHistory(context.globalState, historyEnabled)
+  context.subscriptions.push(
+    sqlRunner.onDidRun((finished) => {
+      void queryHistory.record({
+        sql: finished.sql,
+        connectionId: finished.connection.id,
+        connectionName: finished.connection.name,
+        engine: finished.connection.engine,
+        database: finished.target.database,
+        ...(finished.target.schema ? { schema: finished.target.schema } : {}),
+        at: new Date().toISOString(),
+        durationMs: finished.durationMs,
+        ...runOutcome(finished.results, finished.failed)
+      })
+      // DDL may have created or changed tables: read the structure again for completion.
+      if (sqlDialectOf(finished.connection).analyzeWrites(finished.sql).writes)
+        completion.forget(finished.connection.id)
+    })
+  )
+  context.subscriptions.push(
+    completion,
+    vscode.languages.registerCompletionItemProvider({ language: 'sql' }, completion, '.'),
+    vscode.languages.registerDocumentFormattingEditProvider({ language: 'sql' }, formatting),
+    vscode.languages.registerDocumentRangeFormattingEditProvider({ language: 'sql' }, formatting)
+  )
 
   /* ---------- agents (MCP): the server inside the editor (host/mcp.ts) ---------- */
   const version = context.extension.packageJSON.version as string
@@ -272,14 +311,31 @@ export async function activate(
   async function showOpenError(connection: ConnectionConfig, message: string): Promise<void> {
     const edit = 'Editar conexión'
     const password = 'Cambiar contraseña'
+    const trust = 'Confiar en el certificado'
     const usesPassword =
       ENGINES[connection.engine].capabilities.needsHost && connection.authMode !== 'none'
+    // SQL Server with a self-signed certificate (SQL Server Express, a server of one's own).
+    const trustFixes =
+      connection.engine === 'sqlserver' && trustFixesError(message, connection.sqlserver)
     const answer = await vscode.window.showErrorMessage(
       message,
+      ...(trustFixes ? [trust] : []),
       ...(usesPassword ? [password] : []),
       edit
     )
     if (answer === edit) openForm(service.get(connection.id))
+    if (answer === trust && connection.sqlserver) {
+      await service.save({
+        ...connection,
+        sqlserver: { ...connection.sqlserver, trustServerCertificate: true }
+      })
+      try {
+        if (await service.open(connection.id))
+          tree.refresh({ kind: 'connection', connectionId: connection.id })
+      } catch (err) {
+        void showOpenError(service.get(connection.id) ?? connection, errorText(err))
+      }
+    }
     if (answer === password && (await service.replacePassword(connection.id))) {
       try {
         if (await service.open(connection.id))
@@ -425,7 +481,10 @@ export async function activate(
     openForm(null, typeof engine === 'string' ? engine : null)
   )
   command('vortaq.importDesktop', importDesktop)
-  command('vortaq.refresh', (node?: TreeNode) => tree.refresh(node))
+  command('vortaq.refresh', (node?: TreeNode) => {
+    if (node) completion.forget(node.connectionId)
+    tree.refresh(node)
+  })
   command('vortaq.showLog', () => output.show())
   command('vortaq.editConnection', (node?: TreeNode) => {
     const connection = nodeConnection(node)
@@ -466,6 +525,70 @@ export async function activate(
     await service.close(connection.id)
   })
   command('vortaq.newQuery', (node?: TreeNode) => newQuery(node))
+
+  /** A new SQL document targeted at a table's or view's connection, database and schema. */
+  async function objectDocument(
+    node: ObjectNode,
+    content: string
+  ): Promise<vscode.TextEditor | null> {
+    const connection = nodeConnection(node)
+    if (!connection) return null
+    const doc = await vscode.workspace.openTextDocument({ language: 'sql', content })
+    const editor = await vscode.window.showTextDocument(doc)
+    await sqlRunner.setTarget(doc.uri.toString(), {
+      connectionId: connection.id,
+      database: node.database,
+      ...(usesSchemaRef(connection.engine)
+        ? { schema: node.schema ?? defaultSchemaOf(connection.engine) }
+        : {})
+    })
+    return editor
+  }
+  const objectNode = (node?: TreeNode): ObjectNode | null =>
+    node && (node.kind === 'table' || node.kind === 'view') ? node : null
+
+  /* «Seleccionar las primeras 1000 filas»: a document with the SELECT, run at once. */
+  command('vortaq.selectTop', async (node?: TreeNode) => {
+    const object = objectNode(node)
+    const connection = object ? nodeConnection(object) : null
+    if (!object || !connection) return
+    const dialect = sqlDialectOf(connection)
+    const namespace = usesSchemaRef(connection.engine)
+      ? (object.schema ?? defaultSchemaOf(connection.engine))
+      : object.database
+    const editor = await objectDocument(
+      object,
+      `${selectFirstRows(dialect, dialect.qualified(namespace, object.name), 1000)};\n`
+    )
+    if (editor) await sqlRunner.run(editor, true)
+  })
+
+  /* «Script como CREATE»: the table's or view's DDL in a new document (nothing runs). */
+  command('vortaq.scriptCreate', async (node?: TreeNode) => {
+    const object = objectNode(node)
+    const connection = object ? nodeConnection(object) : null
+    if (!object || !connection) return
+    if (!(await service.open(connection.id))) return
+    const ref = usesSchemaRef(connection.engine)
+      ? {
+          database: object.database,
+          schema: object.schema ?? defaultSchemaOf(connection.engine) ?? ''
+        }
+      : object.database
+    const ddl = await core.invoke('db:showCreate', connection.id, ref, object.kind, object.name)
+    await objectDocument(object, `${ddl.trim()}\n`)
+  })
+
+  command('vortaq.findObject', (node?: TreeNode) =>
+    findObject(
+      {
+        core,
+        connections: service,
+        reveal: (target) => view.reveal(target, { select: true, focus: true, expand: true })
+      },
+      node
+    )
+  )
   command('vortaq.viewData', (node?: TreeNode) => {
     if (node && (node.kind === 'table' || node.kind === 'view'))
       return sqlRunner.viewData(node as ObjectNode)
@@ -489,6 +612,22 @@ export async function activate(
     context.subscriptions.push({ dispose: () => clearTimeout(timer) })
   }
 
+  command('vortaq.queryHistory', () =>
+    showQueryHistory(
+      queryHistory,
+      async (entry) => {
+        const doc = await vscode.workspace.openTextDocument({ language: 'sql', content: entry.sql })
+        await vscode.window.showTextDocument(doc)
+        if (service.get(entry.connectionId))
+          await sqlRunner.setTarget(doc.uri.toString(), {
+            connectionId: entry.connectionId,
+            database: entry.database,
+            ...(entry.schema ? { schema: entry.schema } : {})
+          })
+      },
+      historyEnabled()
+    )
+  )
   command('vortaq.mcp', () => showMcpManager(mcpDeps))
   command('vortaq.mcpConnection', async (node?: TreeNode) => {
     const connection = nodeConnection(node)
@@ -553,12 +692,24 @@ export async function activate(
     }
     await sqlRunner.pick(doc)
   })
+  command('vortaq.plan', () => planActive(false))
+  command('vortaq.planActual', () => planActive(true))
   command('vortaq.run', () => runActive(false))
   command('vortaq.runAll', () => runActive(true))
   command('vortaq.stop', async () => {
     const doc = vscode.window.activeTextEditor?.document
     if (doc) await sqlRunner.stop(doc.uri.toString())
   })
+
+  /** «Plan de ejecución» of the statement under the cursor of the active SQL document. */
+  async function planActive(actual: boolean): Promise<void> {
+    const editor = vscode.window.activeTextEditor
+    if (!editor || !isSqlDocument(editor.document)) {
+      void vscode.window.showInformationMessage('Abre un documento SQL para ver su plan.')
+      return
+    }
+    await sqlRunner.plan(editor, actual)
+  }
 
   async function runActive(all: boolean): Promise<void> {
     const editor = vscode.window.activeTextEditor
@@ -577,6 +728,7 @@ export async function activate(
   return {
     core,
     mcp,
+    history: queryHistory,
     connections: service,
     tree,
     view,

@@ -135,11 +135,7 @@ export {
 /* ---------- agents (MCP): the editor extension's server on 127.0.0.1 ---------- */
 export { McpRuntime, type McpRuntimeOptions } from '@main/mcp/runtime'
 export { activityLine, type McpActivity } from '@main/mcp/server'
-export {
-  EDITOR_MCP_COMMAND,
-  EDITOR_MCP_WORDING,
-  type McpWording
-} from '@main/mcp/access'
+export { EDITOR_MCP_COMMAND, EDITOR_MCP_WORDING, type McpWording } from '@main/mcp/access'
 export {
   mcpHttpUrl,
   pingMcpHttp,
@@ -162,6 +158,19 @@ export {
   type McpClientSnippet,
   type McpHttpEndpoint
 } from '@shared/mcp'
+
+/* ---------- «Historial de consultas» (pure; each host stores it) ---------- */
+export {
+  addHistoryEntry,
+  historySummary,
+  historyTitle,
+  normalizeHistory,
+  QUERY_HISTORY_LIMIT,
+  runOutcome,
+  searchHistory,
+  type NewHistoryEntry,
+  type QueryHistoryEntry
+} from '@shared/queryHistory'
 
 /* ---------- SQL dialects (splitting, both guard classifiers, quoting) ---------- */
 export {
@@ -212,6 +221,12 @@ export {
   parseSqlServerConnectionString,
   sqlServerConnectionString
 } from '@shared/sqlserver/connectionString'
+export {
+  CERTIFICATE_NAME_MISMATCH,
+  trustFixesError,
+  UNTRUSTED_CERTIFICATE
+} from '@shared/sqlserver/certificate'
+export { scanLocalSqlServers } from '@main/sqlserver/localInstances'
 /* SQL Server's Microsoft Entra sign-in opens the host's browser (VS Code: env.openExternal). */
 export { setEntraBrowserOpener } from '@main/sqlserver/browserOpener'
 export * as mongoShellFormat from '@shared/mongo/shellFormat'

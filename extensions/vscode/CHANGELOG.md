@@ -1,5 +1,28 @@
 # Cambios
 
+## 0.8.0 — plan de ejecución (2026-11-11)
+
+- **Plan de ejecución** de la sentencia del cursor (o de la selección), en una pestaña «Plan» del panel de
+  resultados: cada operador con su tabla e índice, condiciones, filas estimadas y su parte del coste; los más
+  caros se resaltan. **Plan estimado** no ejecuta nada (vale para `UPDATE` o `DELETE`); **Plan real** ejecuta un
+  `SELECT` de solo lectura donde nada puede quedar guardado y mide filas y tiempos. SQL Server, PostgreSQL,
+  MySQL, MariaDB y SQLite (este, solo estimado). SQL Server indica también índices recomendados.
+
+## 0.7.0 — autocompletado, formato, historial y más en el árbol (2026-11-11)
+
+- **Autocompletado con la estructura** en los documentos `.sql`: palabras clave del motor y las bases de datos,
+  esquemas, tablas, vistas, columnas (con su tipo) y funciones de la conexión del documento, con el mismo
+  análisis que el editor de escritorio (alias, `JOIN`, `[corchetes]` de SQL Server). Solo mientras la conexión
+  está abierta: autocompletar nunca la abre ni pide la contraseña.
+- **Dar formato al documento** (o a la selección) con la gramática de cada motor; en SQL Server, lote a lote y
+  conservando las líneas `GO`.
+- **Vortaq: Historial de consultas**: lo que ejecutaste, con buscador; lo abre en un documento nuevo con la
+  misma conexión y base de datos. Se guarda solo en este equipo, sin resultados ni errores
+  (`vortaq.queryHistory.enabled`).
+- **Árbol**: **Seleccionar las primeras 1000 filas** (se ejecuta al momento), **Script como CREATE** y **Buscar
+  tabla o vista…**.
+- **Resultados**: **Filtrar filas** de lo cargado, sin perder las ediciones pendientes.
+
 ## 0.6.0 — agentes (MCP) en el editor y actualizaciones con un clic (2026-11-10)
 
 - **Agentes (MCP) sin la aplicación de escritorio.** La extensión trae el servidor MCP de Vortaq y lo
@@ -14,6 +37,13 @@
   Vortaq mira una vez al día si hay una versión nueva en GitHub y la instala con un clic, después de
   comprobar su SHA-256 (**Vortaq: Buscar actualizaciones** lo hace en el momento;
   `vortaq.updates.check` apaga la comprobación diaria).
+- **SQL Server en Windows** (de Vortaq 2.7.0): en el formulario, **Buscar servidores en este equipo**
+  encuentra SQL Server Express y las demás instancias locales, dice si les falta TCP/IP (con los pasos
+  para activarlo) y rellena 127.0.0.1, el puerto y tu cuenta de Windows.
+- **Certificados autofirmados de SQL Server:** «Confiar y reintentar» al probar la conexión y «Confiar
+  en el certificado» si falla al abrirla desde el árbol.
+- El motor de una conexión nueva se elige en un selector «Motor»; las pestañas del formulario ya no se
+  recortan.
 - **Corrección:** «Importar conexiones de Vortaq (escritorio)» no copiaba el bloque de SQL Server
   (método de inicio de sesión, dominio, instancia con nombre, cifrado y «Confiar en el certificado»):
   ahora sí. El acceso para agentes nunca se importa.

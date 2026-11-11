@@ -60,7 +60,17 @@ const ALIAS = {
  * Renderer modules the extension host may use: pure TypeScript with no DOM, Vue or store
  * code at run time (the destructive-statement check of «Confirmar antes de borrar»).
  */
-const HOST_RENDERER_FILES = ['src/renderer/src/components/query/destructiveGuard.ts']
+const HOST_RENDERER_FILES = [
+  'src/renderer/src/components/query/destructiveGuard.ts',
+  // Autocompletion (CodeMirror sources run headless) and «Formatear SQL» of the query editor.
+  'src/renderer/src/components/common/editor/sqlCompletion.ts',
+  'src/renderer/src/components/common/editor/mariadbCompletion.ts',
+  'src/renderer/src/components/common/editor/pgCompletion.ts',
+  'src/renderer/src/components/common/editor/msCompletion.ts',
+  'src/renderer/src/components/common/editor/sqliteCompletion.ts',
+  'src/renderer/src/components/query/beautifySql.ts',
+  'src/renderer/src/components/query/formatSql.ts'
+]
 
 /**
  * Optional modules of the drivers that are not shipped (as in electron-builder.yml): each one

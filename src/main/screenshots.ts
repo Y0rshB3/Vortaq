@@ -2532,6 +2532,18 @@ const MS_STEPS: Step[] = [
       await H.sleep(900)`
   },
   {
+    // «Plan › Plan real»: the plan tree of a join with its cost shares and measured rows.
+    name: '54c2-sqlserver-plan',
+    script: `
+      const sql = "SELECT c.nombre, p.total FROM dbo.pedidos p JOIN dbo.clientes c ON c.id = p.cliente_id WHERE p.estado = N'enviado' ORDER BY p.total DESC;"
+      S.workspace.openQuery('${MS_ID}', 'dbo', { sql, name: 'Plan de pedidos' }, '${MS_DB}')
+      await H.sleep(1200)
+      await H.click('[data-test="plan"]', 8000)
+      await H.click('[data-test="plan-actual"]', 5000)
+      await H.waitFor('[data-test="plan-view"]', 20000)
+      await H.sleep(800)`
+  },
+  {
     name: '54d-sqlserver-table-data',
     script: `
       for (const t of [...S.tabs.tabs]) if (t.closable) S.tabs.close(t.id)

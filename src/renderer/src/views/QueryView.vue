@@ -38,7 +38,7 @@ import { invokeSilent } from '@renderer/api'
 import EditableResult from '@renderer/components/query/EditableResult.vue'
 import QueryConnectionPicker from '@renderer/components/query/QueryConnectionPicker.vue'
 import QueryMessages from '@renderer/components/query/QueryMessages.vue'
-import { beautifySql } from '@renderer/components/query/beautifySql'
+import { beautifySql, formatterDialectOf } from '@renderer/components/query/beautifySql'
 import {
   analyzeDestructiveScript,
   destructiveItems,
@@ -50,6 +50,13 @@ import { useWorkspace } from '@renderer/composables/useWorkspace'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
 import { useConnectionsStore } from '@renderer/stores/connections'
 import { useQueriesStore } from '@renderer/stores/queries'
+import { useQueryHistoryStore } from '@renderer/stores/queryHistory'
+import QueryHistoryDialog from '@renderer/components/query/QueryHistoryDialog.vue'
+import { runOutcome, type QueryHistoryEntry } from '@shared/queryHistory'
+import PlanView from '@renderer/components/plan/PlanView.vue'
+import { statementAt } from '@shared/plan/check'
+import type { ExecutionPlan } from '@shared/plan/types'
+import { sqlDialectIdOf } from '@renderer/engines/capabilities'
 import { useSettingsStore } from '@renderer/stores/settings'
 import { useTabsStore, type WorkspaceTab } from '@renderer/stores/tabs'
 import { formatDuration } from '@renderer/utils/format'
@@ -61,6 +68,11 @@ const props = defineProps<{ tab: WorkspaceTab }>()
 
 const tabs = useTabsStore()
 const queries = useQueriesStore()
+const queryHistory = useQueryHistoryStore()
+const historyOpen = ref(false)
+/* «Plan de ejecución» of the statement under the cursor (or the selection). */
+const plan = ref<ExecutionPlan | null>(null)
+const planning = ref(false)
 const connections = useConnectionsStore()
 const tree = useTreeStore()
 const settings = useSettingsStore()
@@ -324,9 +336,7 @@ function onSplitKey(event: KeyboardEvent): void {
 const connectionId = computed(() => props.tab.connectionId ?? '')
 const engineId = computed(() => connections.get(connectionId.value)?.engine)
 /** Tabs addressed as database + schema, each with its own server session (PostgreSQL, SQL Server). */
-const schemaTabs = computed(
-  () => engineId.value === 'postgresql' || engineId.value === 'sqlserver'
-)
+const schemaTabs = computed(() => engineId.value === 'postgresql' || engineId.value === 'sqlserver')
 const isMs = computed(() => engineId.value === 'sqlserver')
 const isLite = computed(() => connections.get(connectionId.value)?.engine === 'sqlite')
 /** Engines whose query tabs own a session (D12): transaction state, Confirmar/Deshacer, cancel. */
@@ -516,22 +526,22 @@ async function run(selectionOnly = false): Promise<void> {
   const check = ms
     ? sqlserverDialect.analyzeWrites(script)
     : pg
-    ? postgresqlDialect.analyzeWrites(script)
-    : lite
-      ? sqliteDialect.analyzeWrites(script)
-      : maria
-        ? mariadbDialect.analyzeWrites(script)
-        : analyzeWrites(script)
+      ? postgresqlDialect.analyzeWrites(script)
+      : lite
+        ? sqliteDialect.analyzeWrites(script)
+        : maria
+          ? mariadbDialect.analyzeWrites(script)
+          : analyzeWrites(script)
   const confirmProduction = connections.needsTypedConfirm(connectionId.value) && check.writes
   // DROP / TRUNCATE / DELETE / ALTER … DROP / UPDATE without WHERE ask on any connection (setting).
   const drops = settings.settings.confirmDestructiveEverywhere
     ? ms
       ? (sqlserverDialect.analyzeDestructive?.(script) ?? [])
       : pg
-      ? (postgresqlDialect.analyzeDestructive?.(script) ?? [])
-      : lite
-        ? (sqliteDialect.analyzeDestructive?.(script) ?? [])
-        : analyzeDestructiveScript(maria ? script.split('/*M!').join('/*!') : script)
+        ? (postgresqlDialect.analyzeDestructive?.(script) ?? [])
+        : lite
+          ? (sqliteDialect.analyzeDestructive?.(script) ?? [])
+          : analyzeDestructiveScript(maria ? script.split('/*M!').join('/*!') : script)
     : []
   if (confirmProduction || drops.length) {
     const allRows = drops.filter((d) => d.allRows).length
@@ -561,6 +571,7 @@ async function run(selectionOnly = false): Promise<void> {
   running.value = true
   notice.value = null
   results.value = []
+  plan.value = null
   pendingEdits.value = {}
   runId.value++
   // Where the results ran: «Exportar resultado completo» runs their statement there again.
@@ -573,6 +584,9 @@ async function run(selectionOnly = false): Promise<void> {
 
   totalMs.value = null
   const started = performance.now()
+  const ranOn = connectionId.value
+  const ranDatabase = pg ? (database.value ?? null) : (schema.value ?? null)
+  const ranSchema = pg ? (schema.value ?? null) : null
   try {
     // confirmProduction tells main the user typed the name; main rejects unconfirmed writes to
     // production and to the environments of Ajustes › Seguridad.
@@ -623,6 +637,21 @@ async function run(selectionOnly = false): Promise<void> {
       pgCompletion.value.clear()
       msCompletion.value.clear()
       sqliteCompletion.value.clear()
+    }
+    // «Historial de consultas»: what ran and how it went (never the error text or values).
+    if (seq === runSeq) {
+      const stored = connections.get(ranOn)
+      queryHistory.record({
+        sql: script,
+        connectionId: ranOn,
+        connectionName: stored?.name ?? ranOn,
+        engine: stored?.engine ?? 'mysql',
+        database: ranDatabase,
+        ...(ranSchema ? { schema: ranSchema } : {}),
+        at: new Date().toISOString(),
+        durationMs: Math.round(performance.now() - started),
+        ...runOutcome(results.value, !!notice.value)
+      })
     }
     // A lost PostgreSQL session reports itself as an error: re-read the state.
     if (pg && notice.value) void refreshSessionState()
@@ -748,12 +777,73 @@ function stop(): void {
   resultTab.value = 'messages'
 }
 
+/**
+ * «Plan estimado» never runs the statement; «Plan real» runs one read-only
+ * SELECT where nothing can be kept (main checks again, src/main/plan/service.ts).
+ */
+async function showPlan(actual: boolean): Promise<void> {
+  if (!connectionId.value || planning.value || running.value) return
+  const selection = editor.value?.getSelection() ?? ''
+  const statement = selection.trim()
+    ? selection
+    : statementAt(sqlDialectIdOf(engineId.value), sql.value, editor.value?.getCursorOffset() ?? 0)
+  if (!statement.trim()) {
+    notify.warning('No hay SQL para analizar')
+    return
+  }
+  planning.value = true
+  try {
+    plan.value = await api.invoke('db:plan', connectionId.value, {
+      sql: statement,
+      actual,
+      schema: schemaTabs.value
+        ? { database: database.value ?? '', schema: schema.value ?? '' }
+        : (schema.value ?? null)
+    })
+    resultTab.value = 'plan'
+  } catch {
+    /* already reported by invoke */
+  } finally {
+    planning.value = false
+  }
+}
+
+async function copyPlan(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    notify.success('Plan copiado al portapapeles')
+  } catch {
+    notify.error('No se pudo copiar el plan.')
+  }
+}
+
+/**
+ * «Historial» › Abrir: into this tab when its editor is empty, else a new tab
+ * on the connection and database where it ran (this tab's text is never replaced).
+ */
+function useHistory(entry: QueryHistoryEntry): void {
+  if (!sql.value.trim() && entry.connectionId === connectionId.value) {
+    sql.value = entry.sql
+    return
+  }
+  const known = !!connections.get(entry.connectionId)
+  const cid = known ? entry.connectionId : connectionId.value
+  const twoLevels = known && (entry.engine === 'postgresql' || entry.engine === 'sqlserver')
+  workspace.openQuery(
+    cid,
+    known ? (twoLevels ? (entry.schema ?? null) : entry.database) : null,
+    { sql: entry.sql, name: 'Del historial' },
+    twoLevels ? (entry.database ?? undefined) : undefined
+  )
+}
+
 /** «Formatear SQL»: formats the selection, or the whole editor when nothing is selected. */
 function format(): void {
   const selection = editor.value?.getSelection() ?? ''
   const source = selection.trim() ? selection : sql.value
   if (!source.trim()) return
-  const result = beautifySql(source)
+  // Each engine's own grammar (T-SQL keeps its GO batches); MySQL when there is no connection.
+  const result = beautifySql(source, formatterDialectOf(engineId.value ?? 'mysql'))
   if (selection.trim() && editor.value) editor.value.replaceSelection(result.sql)
   else sql.value = result.sql
   if (!result.structured) {
@@ -1072,6 +1162,47 @@ defineExpose({
         @click="saveAs"
         ><span class="query-view__label">Guardar como</span></v-btn
       >
+      <v-btn
+        prepend-icon="mdi-history"
+        size="small"
+        title="Historial de consultas: lo que ejecutaste, para volver a abrirlo"
+        aria-label="Historial"
+        data-test="history"
+        @click="historyOpen = true"
+        ><span class="query-view__label">Historial</span></v-btn
+      >
+      <v-menu location="bottom start">
+        <template #activator="{ props: planMenu }">
+          <v-btn
+            v-bind="planMenu"
+            prepend-icon="mdi-file-tree-outline"
+            size="small"
+            :loading="planning"
+            :disabled="running || !connectionId || engineId === 'mongodb'"
+            title="Plan de ejecución de la sentencia del cursor (o de la selección)"
+            aria-label="Plan de ejecución"
+            data-test="plan"
+            ><span class="query-view__label">Plan</span></v-btn
+          >
+        </template>
+        <v-list density="compact">
+          <v-list-item
+            prepend-icon="mdi-file-tree-outline"
+            title="Plan estimado"
+            subtitle="No ejecuta la sentencia"
+            data-test="plan-estimated"
+            @click="showPlan(false)"
+          />
+          <v-list-item
+            prepend-icon="mdi-timer-outline"
+            title="Plan real"
+            subtitle="Ejecuta la consulta (solo SELECT) y mide filas y tiempos"
+            :disabled="engineId === 'sqlite'"
+            data-test="plan-actual"
+            @click="showPlan(true)"
+          />
+        </v-list>
+      </v-menu>
       <template v-if="aiEnabled">
         <span class="nd-viewbar__sep" aria-hidden="true" />
         <v-btn
@@ -1260,6 +1391,10 @@ defineExpose({
                 aria-label="Cambios sin aplicar"
               />
             </v-tab>
+            <v-tab v-if="plan" value="plan" data-test="tab-plan">
+              <v-icon icon="mdi-file-tree-outline" size="14" class="query-view__tab-icon" />
+              Plan
+            </v-tab>
           </v-tabs>
           <!-- Every tab in one list: the rail scrolls when many results do not fit. -->
           <v-menu v-if="resultSets.length > 1" location="bottom start">
@@ -1350,6 +1485,9 @@ defineExpose({
               @dirty="setPendingEdits(rs.key, $event)"
             />
           </v-window-item>
+          <v-window-item v-if="plan" value="plan" class="fill">
+            <PlanView :plan="plan" @copy="copyPlan" />
+          </v-window-item>
         </v-window>
       </div>
     </div>
@@ -1386,6 +1524,13 @@ defineExpose({
         </v-card-actions>
       </v-card>
     </v-dialog>
+    <QueryHistoryDialog
+      v-if="historyOpen"
+      v-model="historyOpen"
+      :connection-id="connectionId || null"
+      :connection-name="connections.get(connectionId)?.name ?? ''"
+      @use="useHistory"
+    />
   </div>
 </template>
 

@@ -8,6 +8,7 @@
  *   `name + code + number` (describeForLog).
  */
 import { explainSqlServerError } from '@shared/dialects/sqlserver'
+import { CERTIFICATE_NAME_MISMATCH, UNTRUSTED_CERTIFICATE } from '@shared/sqlserver/certificate'
 import { DbUserError, describeNetworkError, withServerMessage } from '../db/errors'
 
 export class MsUserError extends DbUserError {
@@ -51,10 +52,20 @@ export function errorNumber(err: unknown): number | null {
   return null
 }
 
-/** Node socket code of the error or of its cause (ECONNREFUSED, ENOTFOUND…). */
+/**
+ * Node socket code of the error or of its cause (ECONNREFUSED, ENOTFOUND…).
+ * tedious wraps a failed connect in «Could not connect (sequence)» whose cause
+ * is an AggregateError with one socket error per address tried.
+ */
 function socketCode(err: MsErrorLike): string | null {
-  const cause = err.cause as { code?: unknown } | undefined
+  const cause = err.cause as { code?: unknown; errors?: unknown } | undefined
   if (cause && typeof cause.code === 'string') return cause.code
+  if (cause && Array.isArray(cause.errors)) {
+    const inner = cause.errors.find(
+      (e): e is { code: string } => typeof (e as { code?: unknown })?.code === 'string'
+    )
+    if (inner) return inner.code
+  }
   if (err.code && /^E[A-Z]+$/.test(err.code) && !TEDIOUS_CODES.has(err.code)) return err.code
   const m =
     /\b(ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN)\b/.exec(
@@ -98,15 +109,22 @@ export function isAuthRejected(err: unknown): boolean {
   return err.code === 'ELOGIN' && /^Login failed for user/i.test(err.message)
 }
 
+/**
+ * Nothing accepts connections there. SQL Server Express installs with TCP/IP
+ * off (the Microsoft tools on the same PC use shared memory), so say how to turn it on.
+ */
+export const CONNECTION_REFUSED =
+  'Nadie acepta conexiones en ese host y puerto. Comprueba que el servicio de SQL Server está en marcha y el puerto (1433 por defecto). SQL Server Express se instala con TCP/IP desactivado: actívalo en el Administrador de configuración de SQL Server › Configuración de red de SQL Server › Protocolos de <instancia> › TCP/IP, pon el puerto en «IPAll» y reinicia el servicio (en Windows, «Buscar servidores en este equipo» del formulario te dice qué falta)'
+
 function certificateProblem(message: string): string | null {
   if (
     /self[- ]signed certificate|unable to (get local issuer|verify)|certificate (chain|has expired)|UNABLE_TO_VERIFY|DEPTH_ZERO/i.test(
       message
     )
   )
-    return 'El servidor usa un certificado TLS que no es de confianza (por ejemplo, autofirmado). Si confías en este servidor, activa «Confiar en el certificado del servidor» en la pestaña SSL de la conexión; si no, instala su certificado de CA'
+    return UNTRUSTED_CERTIFICATE
   if (/does not match certificate's altnames|Hostname\/IP does not match/i.test(message))
-    return 'El nombre del servidor no coincide con su certificado TLS. Escribe el nombre que figura en el certificado en «Nombre en el certificado» (pestaña SSL)'
+    return CERTIFICATE_NAME_MISMATCH
   if (/strict|TDS 8|ALPN/i.test(message) && /encrypt|TLS|tds/i.test(message))
     return 'El servidor no admite el cifrado estricto (TDS 8.0, SQL Server 2022 o posterior): elige «Obligatorio» en Cifrado'
   return null
@@ -137,6 +155,7 @@ export function describeError(err: unknown): string {
     return `${withServerMessage('El servidor rechazó el inicio de sesión', message)} (ELOGIN)`
   }
   const socket = socketCode(err)
+  if (socket === 'ECONNREFUSED') return `${CONNECTION_REFUSED}. Detalle: ${message} (ECONNREFUSED)`
   const network = socket ? describeNetworkError(socket, message) : null
   if (network) return `${network} (${socket})`
   if (err.code === 'ETIMEOUT')

@@ -106,6 +106,37 @@ rolled back.
   Azure's gateway refuses a login addressed to an IP) and a `connector` opens the socket to the tunnel.
 - A named instance is resolved by SQL Server Browser over UDP 1434, which SSH cannot carry: with a tunnel the
   instance's port is required (validation and driver both refuse the combination).
+- **Trust and retry (2.7.0).** The two certificate texts live in `shared/sqlserver/certificate.ts`;
+  `trustFixesError(message, options)` says whether turning the option on would let the connection in (never
+  with `strict` or when it is already on). The form offers «Confiar y reintentar» after a failed test, the
+  desktop tree's error notice and the extension's open error «Confiar en el certificado» (saves the option and
+  opens again).
+- **Refused connections.** tedious wraps a refused connect in «Could not connect (sequence)» with an
+  `AggregateError` cause; `socketCode` reads the inner `ECONNREFUSED`, and the text (`CONNECTION_REFUSED`) says
+  that SQL Server Express installs with TCP/IP off and where to turn it on.
+
+## Local instances on Windows (2.7.0)
+
+The Microsoft tools reach a local SQL Server Express through shared memory, which needs no network protocol and
+exists only in their native drivers; tedious speaks TCP only, and Express installs with TCP/IP off. «Buscar
+servidores en este equipo» (`sqlserver:localInstances`, `main/sqlserver/localInstances.ts`, Electron-free and in
+the core for the extension) answers what is installed and what is missing, from:
+
+- the Windows service list: `Get-CimInstance Win32_Service` through `powershell.exe` (argument list, no shell,
+  15 s), or `sc.exe query state= all` when PowerShell is blocked (labels are translated, so only the shape is
+  read). `MSSQLSERVER` / `MSSQL$<instance>`, running or not, and the program folder `MSSQL16.<instance>` gives the
+  version and `SQLServerManager16.msc`;
+- SQL Server Browser when its service runs: MS-SQLR `CLNT_UCAST_EX` (0x03) to `127.0.0.1:1434`, whose answer lists
+  every instance with `tcp;<port>` only when TCP is on;
+- a TCP connect to `127.0.0.1:1433`, credited to the default instance or to the only running one.
+
+The registry and SQL Server's WMI configuration are not read (project rule: no other application's data, and WMI
+needs administrator rights). TCP is `enabled` (port known), `disabled` (Browser lists the instance without TCP)
+or `unknown`. «Usar» fills 127.0.0.1, the port (1433 when TCP still has to be turned on), Windows sign-in with
+`USERDOMAIN`/the user name (a local Express installs with Windows authentication only) and
+`trustServerCertificate`; `localInstanceSteps` lists the exact steps for that version. Shown only when the host
+platform is `win32`; untested on a real Windows in CI (unit tests with recorded PowerShell, `sc.exe` and Browser
+answers).
 
 ## Renderer and extension
 

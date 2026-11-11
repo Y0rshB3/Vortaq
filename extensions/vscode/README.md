@@ -62,6 +62,19 @@ macOS, Windows y Linux, con diseñador de tablas, copias de seguridad y automati
   siempre.
 - **Ver datos** de una tabla o vista y **Ver documentos** de una colección de MongoDB (como tabla o
   como JSON; en esta versión, de solo lectura).
+- **Autocompletado y formato.** En los documentos `.sql`, palabras clave del motor y las bases de
+  datos, esquemas, tablas, vistas, columnas y funciones de la conexión del documento (mientras está
+  abierta: autocompletar nunca la abre). **Dar formato al documento** con la gramática de cada motor
+  (en SQL Server, lote a lote, conservando `GO`).
+- **Historial de consultas.** **Vortaq: Historial de consultas** busca lo que ejecutaste y lo abre en
+  un documento nuevo con la misma conexión y base de datos. Solo en este equipo, sin resultados ni
+  errores.
+- **Árbol.** Botón derecho en una tabla o vista: **Seleccionar las primeras 1000 filas** (se ejecuta
+  al momento) y **Script como CREATE**. **Buscar tabla o vista…** (lupa de la vista Vortaq) busca en
+  toda la conexión. En los resultados, **Filtrar filas**.
+- **Plan de ejecución.** **Vortaq: Plan de ejecución estimado** (no ejecuta nada) o **real** (ejecuta
+  un `SELECT` de solo lectura y mide filas y tiempos), en el menú **…** del documento: un árbol con cada
+  operador, su tabla e índice y su parte del coste.
 - **El tema de tu editor.** Los paneles usan los colores, la fuente y el tamaño del editor, en
   temas claros, oscuros y de alto contraste.
 
@@ -138,6 +151,7 @@ también piden confirmación en el resto de conexiones.
 | `vortaq.typedConfirmEnvironments` | `["production"]` | Entornos que piden escribir el nombre de la conexión al escribir.     |
 | `vortaq.confirmDestructive`       | `true`           | Confirmar antes de borrar o eliminar en cualquier conexión.           |
 | `vortaq.codeLens`                 | `true`           | Mostrar la conexión y «Ejecutar todo» sobre los documentos SQL.       |
+| `vortaq.queryHistory.enabled`     | `true`           | Guardar en este equipo las consultas que ejecutas (sin resultados).   |
 | `vortaq.updates.check`            | `true`           | Buscar una vez al día una versión nueva de la extensión en GitHub.    |
 | `vortaq.mcp.enabled`              | `false`          | Permitir que agentes (MCP) usen las conexiones que actives.           |
 | `vortaq.mcp.port`                 | `39291`          | Puerto local del servidor MCP (si otro programa lo usa, no arranca).  |

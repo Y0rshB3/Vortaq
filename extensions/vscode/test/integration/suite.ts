@@ -639,6 +639,120 @@ test(
   'VORTAQ_TEST_MYSQL_URL'
 )
 
+test(
+  'autocompletes the target database’s tables and columns, and formats the document',
+  async () => {
+    if (!api.connections.isOpen(mysqlId)) await api.connections.open(mysqlId)
+    const editor = await sqlDocument('completion', 'select i. from item i', {
+      connectionId: mysqlId,
+      database: DB
+    })
+    const uri = editor.document.uri
+    // Columns of the alias, read from the server through the core.
+    const columns = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      uri,
+      new vscode.Position(0, 'select i.'.length)
+    )
+    const labels = columns.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label))
+    for (const column of ['id', 'name', 'note'])
+      assert.ok(labels.includes(column), labels.join(','))
+    // Tables after FROM.
+    await editor.edit((b) =>
+      b.replace(
+        new vscode.Range(0, 0, 0, editor.document.lineAt(0).text.length),
+        'select * from it'
+      )
+    )
+    const tables = await vscode.commands.executeCommand<vscode.CompletionList>(
+      'vscode.executeCompletionItemProvider',
+      uri,
+      new vscode.Position(0, 'select * from it'.length)
+    )
+    assert.ok(
+      tables.items.some((i) => (typeof i.label === 'string' ? i.label : i.label.label) === 'item')
+    )
+    // «Dar formato al documento»: MySQL grammar, upper-case keywords.
+    const edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
+      'vscode.executeFormatDocumentProvider',
+      uri,
+      { tabSize: 2, insertSpaces: true }
+    )
+    assert.ok(edits?.length)
+    // VS Code turns the replacement into minimal edits: apply them and read the document.
+    const change = new vscode.WorkspaceEdit()
+    change.set(uri, edits)
+    assert.ok(await vscode.workspace.applyEdit(change))
+    assert.equal(editor.document.getText(), 'SELECT\n\t*\nFROM\n\tit')
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
+test(
+  'the query history keeps the documents’ runs, without results or error texts',
+  async () => {
+    const entries = api.history.list().filter((e) => e.connectionId === mysqlId)
+    assert.ok(entries.length > 0, 'no MySQL run in the history')
+    for (const e of entries) {
+      assert.equal(e.connectionName, `IT MySQL ${process.pid}`)
+      assert.ok(!('error' in e) && !('results' in e))
+    }
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
+test(
+  '«Seleccionar las primeras 1000 filas» runs at once; «Script como CREATE» opens the DDL',
+  async () => {
+    const node = { kind: 'table' as const, connectionId: mysqlId, database: DB, name: 'item' }
+    await vscode.commands.executeCommand('vortaq.scriptCreate', node)
+    const ddl = vscode.window.activeTextEditor!.document
+    assert.match(ddl.getText(), /^CREATE TABLE `item`/)
+    assert.deepEqual(api.targets.get(ddl.uri.toString()), { connectionId: mysqlId, database: DB })
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+
+    await vscode.commands.executeCommand('vortaq.selectTop', node)
+    const doc = vscode.window.activeTextEditor!.document
+    assert.match(doc.getText(), /LIMIT 1000/)
+    // selectTop awaits the run: the panel already holds the rows.
+    const panel = api.results.get(`doc:${doc.uri.toString()}`)!
+    assert.equal(panel.state.running, false)
+    assert.equal(panel.state.results[0]?.resultSet?.rows.length, 2)
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
+test(
+  '«Plan de ejecución» of the statement under the cursor, in the results panel',
+  async () => {
+    const editor = await sqlDocument(
+      'plan',
+      'SELECT 1;\nSELECT i.name FROM item i WHERE i.id = 2;\n',
+      { connectionId: mysqlId, database: DB }
+    )
+    editor.selection = new vscode.Selection(1, 5, 1, 5)
+    const estimated = await api.runner.plan(editor, false)
+    assert.ok(estimated)
+    assert.equal(estimated.actual, false)
+    assert.equal(estimated.rawFormat, 'text')
+    const panel = api.results.get(`doc:${editor.document.uri.toString()}`)!
+    assert.equal(panel.state.plan?.root.operation, estimated.root.operation)
+    const actual = await api.runner.plan(editor, true)
+    assert.equal(actual?.actual, true)
+    assert.equal(panel.state.planId, 2)
+    // An UPDATE has an estimated plan only; the actual one is refused.
+    await editor.edit((b) =>
+      b.replace(new vscode.Range(1, 0, 1, 200), "UPDATE item SET name = 'x' WHERE id = 2;")
+    )
+    editor.selection = new vscode.Selection(1, 3, 1, 3)
+    await assert.rejects(api.runner.plan(editor, true), /solo lectura/)
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
 /* ---------- Agents (MCP): the server inside the editor ---------- */
 
 interface McpAnswer {

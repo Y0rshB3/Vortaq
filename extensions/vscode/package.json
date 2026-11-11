@@ -2,7 +2,7 @@
   "name": "vortaq",
   "displayName": "Vortaq",
   "description": "Cliente de bases de datos para VS Code",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "publisher": "y0rshb3",
   "license": "MIT",
   "author": "Y0rshB3",
@@ -98,6 +98,44 @@
         "title": "Refrescar",
         "category": "Vortaq",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "vortaq.plan",
+        "title": "Plan de ejecución estimado",
+        "shortTitle": "Plan estimado",
+        "category": "Vortaq",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "vortaq.planActual",
+        "title": "Plan de ejecución real (ejecuta la consulta)",
+        "shortTitle": "Plan real",
+        "category": "Vortaq",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "vortaq.selectTop",
+        "title": "Seleccionar las primeras 1000 filas",
+        "category": "Vortaq",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vortaq.scriptCreate",
+        "title": "Script como CREATE",
+        "category": "Vortaq",
+        "icon": "$(code)"
+      },
+      {
+        "command": "vortaq.findObject",
+        "title": "Buscar tabla o vista…",
+        "category": "Vortaq",
+        "icon": "$(search)"
+      },
+      {
+        "command": "vortaq.queryHistory",
+        "title": "Historial de consultas",
+        "category": "Vortaq",
+        "icon": "$(history)"
       },
       {
         "command": "vortaq.checkUpdates",
@@ -229,6 +267,16 @@
           "group": "2_agents@1"
         },
         {
+          "command": "vortaq.queryHistory",
+          "when": "view == vortaq.connections",
+          "group": "navigation@4"
+        },
+        {
+          "command": "vortaq.findObject",
+          "when": "view == vortaq.connections",
+          "group": "navigation@0"
+        },
+        {
           "command": "vortaq.checkUpdates",
           "when": "view == vortaq.connections",
           "group": "3_updates@1"
@@ -281,6 +329,21 @@
           "group": "2_query@2"
         },
         {
+          "command": "vortaq.selectTop",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "2_query@3"
+        },
+        {
+          "command": "vortaq.scriptCreate",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "2_query@4"
+        },
+        {
+          "command": "vortaq.findObject",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection\\.sql|database\\.sql|schema\\.sql)/",
+          "group": "2_query@5"
+        },
+        {
           "command": "vortaq.diagram",
           "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(database|schema)\\.sql$/",
           "group": "2_query@3"
@@ -331,6 +394,16 @@
           "command": "vortaq.pickConnection",
           "when": "editorLangId == sql",
           "group": "navigation@2"
+        },
+        {
+          "command": "vortaq.plan",
+          "when": "editorLangId == sql",
+          "group": "1_plan@1"
+        },
+        {
+          "command": "vortaq.planActual",
+          "when": "editorLangId == sql",
+          "group": "1_plan@2"
         }
       ],
       "commandPalette": [
@@ -340,6 +413,14 @@
         },
         {
           "command": "vortaq.mcpConnection",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.selectTop",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.scriptCreate",
           "when": "false"
         },
         {
@@ -482,6 +563,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Mostrar la conexión y «Ejecutar» encima de los documentos SQL."
+        },
+        "vortaq.queryHistory.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Guardar en este equipo las consultas que ejecutas (con su conexión, base de datos, duración y filas; nunca resultados ni errores) para **Vortaq: Historial de consultas**. Al desactivarlo no se guarda nada nuevo; lo guardado se borra desde el historial.",
+          "scope": "application"
         },
         "vortaq.updates.check": {
           "type": "boolean",

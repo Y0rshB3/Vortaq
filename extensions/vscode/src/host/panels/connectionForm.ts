@@ -26,7 +26,9 @@ export const CONNECTION_FORM_CHANNELS: ReadonlySet<string> = new Set([
   'connections:hasSshPassword',
   'connections:setSslKeyPassword',
   'connections:hasSslKeyPassword',
-  'sqlite:createFile'
+  'sqlite:createFile',
+  // «Buscar servidores en este equipo» (SQL Server on Windows): no arguments, read-only.
+  'sqlserver:localInstances'
 ])
 
 /** Channels whose first argument is the id of the connection being edited. */

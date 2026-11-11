@@ -661,6 +661,55 @@ then offers `workbench.action.reloadWindow`. «Omitir esta versión» is remembe
 development or test mode. When the extension reaches the Marketplace/Open VSX this check should
 step aside for gallery installs.
 
+### 9.13 Completion, formatting, history and tree commands (0.7.0)
+
+- **Completion** (`host/sqlEditing.ts`): the query editor's CodeMirror completion sources run headless in the
+  extension host: an `EditorState` (with `sql({ dialect })`) of whole lines around the cursor (20 000 characters
+  before, 4 000 after), a `CompletionContext` without a view, and the engine's `keywordCompletionSource`. The
+  `CompletionResult`s become `CompletionItem`s (label = displayLabel, insert = the quoted label, replacing range
+  to the end of the identifier, sortText from `boost`). Metadata comes from the core's `db:*` channels with the
+  document's target (structure only), cached per connection + database + schema for two minutes, dropped when the
+  connections change, on «Refrescar» and after a run that writes; nothing is read while the connection is closed,
+  so completing never opens one or asks for a password. The renderer modules are bundled through
+  `HOST_RENDERER_FILES` (pure, no DOM; `@codemirror/view` only guards `document`).
+- **Formatting**: `DocumentFormattingEditProvider` and the range variant call `beautifySql(text,
+formatterDialectOf(engine))`; `sql` (standard SQL) without a target. The desktop's «Formatear SQL» now uses the
+  same per-engine grammar (it was MySQL for every engine); T-SQL is formatted batch by batch keeping the GO lines,
+  and the keyword-only fallback (MySQL lexical rules) is used only for MySQL/MariaDB.
+- **History** (`host/queryHistory.ts`, model `shared/queryHistory.ts`): `SqlRunner.onDidRun` reports each finished
+  run; the entry keeps SQL (100 000 characters), connection, database, schema, time, duration, statements, rows and
+  ok/error, never results or error texts, in `globalState` (`vortaq.queryHistory`, 500 entries, one per SQL +
+  connection + database). The picker (`createQuickPick`) searches, opens in a new targeted document, copies,
+  removes and clears. The desktop keeps the same model in localStorage (`electrondb.queryHistory`).
+- **Tree**: `vortaq.selectTop` (selectFirstRows 1000, runs through the runner), `vortaq.scriptCreate`
+  (`db:showCreate` into a targeted document) and `vortaq.findObject` (`host/objectSearch.ts`: tables and views of
+  up to 60 namespaces, filled while the list is open; PostgreSQL and SQL Server use the selected or initial
+  database's schemas; reveals the node).
+- **Results**: «Filtrar filas» (`components/query/resultFilter.ts`, shared with the desktop) filters what the grid
+  shows; rows keep their uid, so edits, selection and Aplicar are unaffected.
+
+### 9.14 Execution plans (desktop 2.9.0 / extension 0.8.0)
+
+`db:plan` (`src/main/plan/service.ts`, Electron-free, in the core) takes a pooled session of the connection and
+asks for the plan of one statement (`shared/plan/check.ts`: one SELECT/WITH/INSERT/UPDATE/DELETE/MERGE/REPLACE;
+SQL Server one statement in one batch). Estimated plans never run it: SQL Server `SET SHOWPLAN_XML ON`, PostgreSQL
+`EXPLAIN (FORMAT JSON)` in `BEGIN READ ONLY`, MySQL 8 `EXPLAIN FORMAT=TREE` (tabular `EXPLAIN` on 5.7 and MariaDB),
+SQLite `EXPLAIN QUERY PLAN`. Actual plans run one read-only SELECT where nothing can be kept: PostgreSQL `EXPLAIN
+(ANALYZE, BUFFERS, FORMAT JSON)` in `BEGIN READ ONLY`, MySQL `EXPLAIN ANALYZE` / MariaDB `ANALYZE` in `START
+TRANSACTION READ ONLY`, SQL Server `SET STATISTICS XML ON` in a transaction always rolled back. Neither needs the
+typed confirmation. The session is marked as used by user SQL, so the pool resets it.
+
+`shared/plan/parse.ts` turns each format into one `PlanNode` tree (operation, object, details, estimated and actual
+rows, subtree cost, own cost share, time, warnings; SQL Server's missing indexes and PostgreSQL's planning and
+execution times go to `summary`); `shared/plan/xml.ts` is a small reader for SHOWPLAN XML (elements and attributes
+only). `components/plan/PlanView.vue` draws it (indented tree, cost bars, the most expensive operators
+highlighted, «Copiar plan» with the server's raw XML/JSON/text). Desktop: «Plan» in the query toolbar (statement
+under the cursor via `statementAt`, or the selection) and a «Plan» results tab. Extension: `vortaq.plan` /
+`vortaq.planActual` (editor «…» menu), `SqlRunner.plan` picks the statement with `runTarget` and puts the plan in
+the document's results panel (`ResultsState.plan`, `planId`). Tests: `shared/plan/parse.test.ts` and
+`tests/integration/plan.test.ts` (MySQL 8.4 and 5.7, MariaDB 11, SQL Server 2022, SQLite; PostgreSQL by recorded
+JSON), the VS Code suite, screenshots `54c2-sqlserver-plan` and `plan-*`.
+
 ## 10. Left for phase 3 (and later)
 
 - Table designer; `.vqb` backups and restore (core channels exist: `backups:*`).
@@ -669,7 +718,6 @@ step aside for gallery installs.
 - Pagination of SQL results and «Ver datos» (filters, sort on the server).
 - Transaction controls for PostgreSQL/SQLite document sessions (state in the status bar,
   Confirmar/Deshacer) and the desktop's «transacción abierta» prompt when closing a document.
-- Schema-aware SQL completion in `.sql` documents.
 - Structure-only AI context as a Language Model tool, reusing `MetadataQueryable`,
   `PgMetadataQueryable`, `SqliteMetadataQueryable` and `MongoStructureSource`; never rows.
 - `.ncx` import for a file the user picks; the SQLite fallback of section 8

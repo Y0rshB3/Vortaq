@@ -97,6 +97,8 @@ import type {
   AiTestResult
 } from './ai'
 import type { TourState } from './tour'
+import type { LocalSqlServerScan } from './sqlserver/local'
+import type { ExecutionPlan, PlanRequest } from './plan/types'
 import type { ExportQueryRequest, ExportResult, ExportRowsRequest } from './export/types'
 import type {
   BackupFormat,
@@ -206,6 +208,12 @@ export interface IpcInvokeMap {
     args: [input: ConnectionInput, password: string | null, sshPassword: string | null]
     result: ConnectionTestResult
   }
+  /**
+   * «Buscar servidores en este equipo» (SQL Server on Windows): the local
+   * instances, whether each one runs and takes TCP connections, and the Windows
+   * account for the sign-in. `supported: false` elsewhere.
+   */
+  'sqlserver:localInstances': { args: []; result: LocalSqlServerScan }
   'connections:setPassword': { args: [id: string, password: string | null]; result: void }
   'connections:hasPassword': { args: [id: string]; result: boolean }
   'connections:setSshPassword': { args: [id: string, password: string | null]; result: void }
@@ -235,6 +243,11 @@ export interface IpcInvokeMap {
     args: [connectionId: string, schema: SchemaRef, table: string]
     result: TableStructure
   }
+  /**
+   * «Plan de ejecución» of one statement (estimated: never runs it; actual: one
+   * read-only SELECT run where nothing can be kept). See src/main/plan/service.ts.
+   */
+  'db:plan': { args: [connectionId: string, request: PlanRequest]; result: ExecutionPlan }
   /** DDL of an object. PostgreSQL routines pass `{ type, name, signature }` (overloads). */
   'db:showCreate': {
     args: [connectionId: string, schema: SchemaRef, type: EngineObjectType, name: NameRef]
@@ -753,6 +766,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'connections:delete',
   'connections:setMcp',
   'connections:test',
+  'sqlserver:localInstances',
   'connections:setPassword',
   'connections:hasPassword',
   'connections:setSshPassword',
@@ -771,6 +785,7 @@ export const IPC_INVOKE_CHANNELS: readonly IpcChannel[] = [
   'db:columns',
   'db:tableStructure',
   'db:showCreate',
+  'db:plan',
   'db:schemas',
   'db:objects',
   'db:closeDatabase',
