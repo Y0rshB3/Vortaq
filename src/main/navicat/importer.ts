@@ -22,6 +22,7 @@ import type {
 } from '@shared/types'
 import type { AppContext } from '../context'
 import { newId, nowIso } from '../storage/ids'
+import { safeDirName } from '../storage/repos'
 import { isJobImportedFromNavicat, readNavicatJobs } from './batchJobs'
 import {
   isImportedFromNavicat,
@@ -32,17 +33,9 @@ import {
 /** The slice of the app context the importer needs (keeps tests free of Electron). */
 export type ImportContext = Pick<AppContext, 'connections' | 'jobs' | 'settings'>
 
-const DEFAULT_SCHEDULE: Job['schedule'] = { enabled: false, cron: '0 3 * * *', launchAgent: false }
+export { safeDirName }
 
-/** File-system safe folder name derived from a connection name. */
-export function safeDirName(name: string): string {
-  const cleaned = name
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\x00-\x1f\x7f/\\:*?"<>|]+/g, '_')
-    .replace(/^\.+/, '')
-    .trim()
-  return cleaned || 'connection'
-}
+const DEFAULT_SCHEDULE: Job['schedule'] = { enabled: false, cron: '0 3 * * *', launchAgent: false }
 
 /**
  * Environment on (re-)import. A record the user already flagged as production

@@ -25,6 +25,14 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.1',
+    date: '2026-11-11',
+    highlights: [
+      'Corrección: las copias de seguridad (y las tareas con copias) de una conexión creada en Vortaq fallaban con «no tiene carpeta de copias configurada»',
+      'Una conexión sin carpeta propia usa ahora la carpeta raíz de copias de Ajustes, en una subcarpeta con su nombre, como ya decía el formulario'
+    ]
+  },
+  {
     version: '2.9.0',
     date: '2026-11-11',
     highlights: [

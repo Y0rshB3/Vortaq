@@ -191,6 +191,10 @@ async function schemaDefaults(
 }
 
 /** Throws unless the password of an encrypted backup is acceptable. */
+/** A connection without backup folder (only without the default one, see ConnectionsRepo). */
+export const noBackupFolderMessage = (connectionName: string): string =>
+  `La conexión ${connectionName} no tiene carpeta de copias configurada: indícala en Editar conexión › Avanzado › Carpeta de copias de seguridad.`
+
 export function checkBackupPassword(password: string | null | undefined): string | null {
   if (password === null || password === undefined || password === '') return null
   if (typeof password !== 'string') throw new Error('Contraseña de la copia no válida.')
@@ -452,7 +456,7 @@ export async function createBackup(
   const targetDir =
     options.targetDir?.trim() || (connection.backupDir ? join(connection.backupDir, schema) : '')
   if (!targetDir) {
-    throw new Error(`La conexión ${connection.name} no tiene carpeta de copias configurada.`)
+    throw new Error(noBackupFolderMessage(connection.name))
   }
   const cancelled = (): boolean => signal?.aborted === true
   if (cancelled()) throw new Error(BACKUP_CANCELLED)

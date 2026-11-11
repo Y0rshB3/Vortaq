@@ -29,9 +29,43 @@ const listDefaults = <T>(): ListDoc<T> => ({ version: 1, items: [] })
 export const ENGINE_CHANGE_MESSAGE =
   'No se puede cambiar el motor de una conexión existente; crea una conexión nueva.'
 
+/** File-system safe folder name derived from a connection name. */
+export function safeDirName(name: string): string {
+  const cleaned = name
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f/\\:*?"<>|]+/g, '_')
+    .replace(/^\.+/, '')
+    .trim()
+  return cleaned || 'connection'
+}
+
+/** Backup folder of a connection whose own field is empty, from its name. */
+export type DefaultBackupDir = (connectionName: string) => string
+
+/**
+ * «Vacío = carpeta por defecto de Ajustes» (connection dialog):
+ * `<Ajustes › Carpeta de copias>/<nombre de la conexión>`, the folder the
+ * importers give every imported connection. `fallbackRoot` stands in for an
+ * emptied Ajustes field.
+ */
+export function defaultBackupDirFrom(
+  settings: Pick<SettingsRepo, 'get'>,
+  fallbackRoot: string
+): DefaultBackupDir {
+  return (name) => join(settings.get().backupsRootDir?.trim() || fallbackRoot, safeDirName(name))
+}
+
 export class ConnectionsRepo {
   private store: JsonStore<ListDoc<ConnectionConfig>>
-  constructor(dir: string) {
+  /**
+   * `defaultBackupDir` fills an empty backup folder (the app and the editor
+   * extension pass `defaultBackupDirFrom`); without it the field is kept as
+   * written and backups of such a connection are refused.
+   */
+  constructor(
+    dir: string,
+    private readonly defaultBackupDir?: DefaultBackupDir
+  ) {
     this.store = new JsonStore<ListDoc<ConnectionConfig>>(
       join(dir, 'connections.json'),
       listDefaults
@@ -39,22 +73,29 @@ export class ConnectionsRepo {
   }
   /*
    * Reads normalise each record (missing engine => 'mysql', engine block
-   * defaults) without writing the file: the stored JSON only changes when a
-   * record is saved.
+   * defaults, an empty backup folder => the default one) without writing the
+   * file: the stored JSON only changes when a record is saved.
    */
   list(): ConnectionConfig[] {
     return this.store
       .get()
-      .items.map(normalizeRecord)
+      .items.map((c) => this.read(c))
       .sort((a, b) => a.name.localeCompare(b.name))
   }
   get(id: string): ConnectionConfig | null {
     const found = this.store.get().items.find((c) => c.id === id)
-    return found ? normalizeRecord(found) : null
+    return found ? this.read(found) : null
   }
   findByName(name: string): ConnectionConfig | null {
     const found = this.store.get().items.find((c) => c.name === name)
-    return found ? normalizeRecord(found) : null
+    return found ? this.read(found) : null
+  }
+  private read(record: ConnectionConfig): ConnectionConfig {
+    return this.withBackupDir(normalizeRecord(record))
+  }
+  private withBackupDir<T extends { name: string; backupDir: string }>(record: T): T {
+    if (!this.defaultBackupDir || record.backupDir?.trim()) return record
+    return { ...record, backupDir: this.defaultBackupDir(record.name) }
   }
   /**
    * Creates or replaces a connection. The engine is fixed once saved (the
@@ -71,13 +112,17 @@ export class ConnectionsRepo {
     }
     const engine = existing ? keptEngine(existing.engine, input.engine) : input.engine
     const now = nowIso()
-    const record: ConnectionConfig = normalizeRecord({
-      ...input,
-      engine,
-      id: existing?.id ?? input.id ?? newId(),
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now
-    })
+    // An empty backup folder is saved as the default one, so renaming the
+    // connection later does not move its backups.
+    const record: ConnectionConfig = this.withBackupDir(
+      normalizeRecord({
+        ...input,
+        engine,
+        id: existing?.id ?? input.id ?? newId(),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now
+      })
+    )
     this.store.update((d) => {
       const idx = d.items.findIndex((c) => c.id === record.id)
       if (idx >= 0) d.items[idx] = record
@@ -122,7 +167,7 @@ export class ConnectionsRepo {
     })
     // Assigned inside the callback, which control-flow narrowing does not see.
     const result = updated as ConnectionConfig | null
-    return result ? normalizeRecord(result) : null
+    return result ? this.read(result) : null
   }
   delete(id: string): void {
     this.store.update((d) => {

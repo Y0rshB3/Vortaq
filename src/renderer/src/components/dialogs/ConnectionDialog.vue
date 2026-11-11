@@ -1924,7 +1924,7 @@ async function save(): Promise<void> {
               v-model="form.backupDir"
               kind="directory"
               label="Carpeta de copias de seguridad"
-              hint="Vacío = carpeta por defecto de Ajustes"
+              hint="Vacío = una carpeta con el nombre de la conexión dentro de la carpeta raíz de copias de Ajustes"
             />
             <div v-if="showBackupDirs && form.extraBackupDirs.length" class="mt-3">
               <div class="text-caption text-medium-emphasis">

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   ConnectionsRepo,
   DEFAULT_SETTINGS,
+  defaultBackupDirFrom,
   ENGINE_CHANGE_MESSAGE,
   defaultNavicatRootPath,
   JobsRepo,
@@ -270,6 +271,70 @@ describe('repos', () => {
     expect(new SettingsRepo(dir, home, 'linux').get().navicatRootPath).toBe('/home/test/navicat-cc')
     // on macOS the same path is the real default
     expect(new SettingsRepo(join(dir, 'mac'), home, 'darwin').get().navicatRootPath).toBe(stale)
+  })
+})
+
+describe('ConnectionsRepo default backup folder', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'vortaq-repos-backupdir-'))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  const file = (): string => join(dir, 'connections.json')
+  const stored = (id: string): { backupDir?: string } =>
+    JSON.parse(readFileSync(file(), 'utf8')).items.find((c: { id: string }) => c.id === id)
+
+  it('an empty folder reads as <Ajustes root>/<name>, and saving keeps that folder', () => {
+    const settings = new SettingsRepo(dir, dir)
+    settings.update({ backupsRootDir: join(dir, 'copias') })
+    // A record written by a build that left the field empty: reading never rewrites the file.
+    writeFileSync(
+      file(),
+      JSON.stringify({
+        version: 1,
+        items: [
+          {
+            ...connInput('Legacy postgresql'),
+            backupDir: '',
+            engine: 'postgresql',
+            id: 'pg-1',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z'
+          }
+        ]
+      })
+    )
+    const before = readFileSync(file(), 'utf8')
+    const repo = new ConnectionsRepo(dir, defaultBackupDirFrom(settings, join(dir, 'backups')))
+    const expected = join(dir, 'copias', 'Legacy postgresql')
+    expect(repo.get('pg-1')?.backupDir).toBe(expected)
+    expect(repo.list()[0].backupDir).toBe(expected)
+    expect(repo.findByName('Legacy postgresql')?.backupDir).toBe(expected)
+    expect(readFileSync(file(), 'utf8')).toBe(before)
+
+    // A new connection saved with the field empty (or blank) stores the default folder, so
+    // renaming it later does not move its backups.
+    const created = repo.save({ ...connInput('Nueva: a/b'), backupDir: '  ' })
+    expect(created.backupDir).toBe(join(dir, 'copias', 'Nueva_ a_b'))
+    expect(stored(created.id).backupDir).toBe(join(dir, 'copias', 'Nueva_ a_b'))
+    const renamed = repo.save({ ...created, name: 'Otra' })
+    expect(renamed.backupDir).toBe(join(dir, 'copias', 'Nueva_ a_b'))
+
+    // A folder of its own is kept as written; setMcp returns the folder too.
+    const own = repo.save({ ...connInput('Propia'), backupDir: '/datos/copias' })
+    expect(own.backupDir).toBe('/datos/copias')
+    expect(repo.setMcp('pg-1', { enabled: true, access: 'read' })?.backupDir).toBe(expected)
+    expect(stored('pg-1').backupDir).toBe('')
+
+    // An emptied Ajustes field falls back to <profile>/backups.
+    settings.update({ backupsRootDir: '' })
+    expect(repo.get('pg-1')?.backupDir).toBe(join(dir, 'backups', 'Legacy postgresql'))
+  })
+
+  it('without a default (tests, the read-only agents profile) the field stays as written', () => {
+    const repo = new ConnectionsRepo(dir)
+    expect(repo.save({ ...connInput('Sin carpeta'), backupDir: '' }).backupDir).toBe('')
   })
 })
 
