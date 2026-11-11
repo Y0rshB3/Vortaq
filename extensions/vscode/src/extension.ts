@@ -13,6 +13,7 @@ import {
   ENGINES,
   environmentName,
   runOutcome,
+  sshHostKeyIssue,
   trustFixesError,
   selectFirstRows,
   usesSchemaRef,
@@ -311,6 +312,10 @@ export async function activate(
     const edit = 'Editar conexión'
     const password = 'Cambiar contraseña'
     const trust = 'Confiar en el certificado'
+    const trustSsh = 'Confiar en el servidor SSH'
+    // An SSH server not confirmed yet: the message carries its fingerprint to check.
+    const sshIssue = sshHostKeyIssue(message)
+    const sshTrustable = sshIssue?.kind === 'unknown' && !connection.ssh.hostKey
     const usesPassword =
       ENGINES[connection.engine].capabilities.needsHost && connection.authMode !== 'none'
     // SQL Server with a self-signed certificate (SQL Server Express, a server of one's own).
@@ -318,11 +323,24 @@ export async function activate(
       connection.engine === 'sqlserver' && trustFixesError(message, connection.sqlserver)
     const answer = await showError(
       message,
+      ...(sshTrustable ? [trustSsh] : []),
       ...(trustFixes ? [trust] : []),
       ...(usesPassword ? [password] : []),
       edit
     )
     if (answer === edit) openForm(service.get(connection.id))
+    if (answer === trustSsh && sshIssue?.kind === 'unknown') {
+      await service.save({
+        ...connection,
+        ssh: { ...connection.ssh, hostKey: sshIssue.fingerprint }
+      })
+      try {
+        if (await service.open(connection.id))
+          tree.refresh({ kind: 'connection', connectionId: connection.id })
+      } catch (err) {
+        void showOpenError(service.get(connection.id) ?? connection, errorText(err))
+      }
+    }
     if (answer === trust && connection.sqlserver) {
       await service.save({
         ...connection,

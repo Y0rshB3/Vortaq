@@ -383,6 +383,12 @@ derecha, el asistente de IA (✦) y los ajustes (⚙).
 2. Rellena host, puerto, usuario y contraseña (en SQLite, el archivo). Elige el **Entorno**: marca como **Producción** cualquier servidor
    real que no quieras modificar por accidente.
 3. Opcional: túnel SSH (contraseña o archivo de clave privada) y SSL (CA, certificado y clave de cliente).
+   La primera vez que Vortaq conecta con un servidor SSH te muestra su **huella** (`SHA256:…`, la misma que da
+   `ssh-keygen -lf`) y no sigue hasta que confías en ella («Confiar y reintentar» al probar la conexión, o
+   «Confiar en el servidor SSH» al abrirla); desde entonces solo acepta esa clave. Si un día la huella cambia, no
+   se conecta: si quien administra el servidor cambió su clave, olvida la huella en la pestaña SSH y confirma la
+   nueva. Las tareas programadas y los agentes (MCP) nunca confían por su cuenta: abre la conexión una vez en
+   Vortaq antes.
 4. **Probar conexión** y guarda.
 
 **Conexiones sin contraseña.** Si el servidor no pide contraseña (un proxy local que autentica por su cuenta,

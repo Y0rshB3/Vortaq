@@ -8,6 +8,7 @@ import type {
   ServerInfo
 } from '@shared/types'
 import { trustFixesError } from '@shared/sqlserver/certificate'
+import { sshHostKeyIssue } from '@shared/sshHostKey'
 import { api, ApiError, invokeSilent } from '@renderer/api'
 import { errorMessage, useNotify } from '@renderer/composables/useNotify'
 import { useSettingsStore } from '@renderer/stores/settings'
@@ -101,7 +102,14 @@ export const useConnectionsStore = defineStore('connections', () => {
     } catch (err) {
       const message = errorMessage(err)
       const stored = get(id)
-      if (stored?.engine === 'sqlserver' && trustFixesError(message, stored.sqlserver))
+      const ssh = sshHostKeyIssue(message)
+      if (ssh?.kind === 'unknown')
+        // The message carries the fingerprint to check before trusting it.
+        useNotify().error(message, {
+          label: 'Confiar en el servidor SSH',
+          handler: () => void trustSshHost(id, ssh.fingerprint)
+        })
+      else if (stored?.engine === 'sqlserver' && trustFixesError(message, stored.sqlserver))
         useNotify().error(message, {
           label: 'Confiar en el certificado',
           handler: () => void trustCertificate(id)
@@ -110,6 +118,18 @@ export const useConnectionsStore = defineStore('connections', () => {
       if (err instanceof ApiError) err.notified = true
       throw err
     }
+  }
+
+  /**
+   * Pins the SSH server's host key the user just checked (shared/sshHostKey.ts)
+   * and opens the connection. Only for a connection without a pinned key: a
+   * changed key is forgotten in the form first, never replaced from here.
+   */
+  async function trustSshHost(id: string, fingerprint: string): Promise<void> {
+    const stored = get(id)
+    if (!stored?.ssh.enabled || stored.ssh.hostKey) return
+    await save({ ...stored, ssh: { ...stored.ssh, hostKey: fingerprint } })
+    await open(id)
   }
 
   /** Turns on «Confiar en el certificado del servidor» for a SQL Server connection and opens it. */

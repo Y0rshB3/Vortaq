@@ -226,6 +226,7 @@ export {
   trustFixesError,
   UNTRUSTED_CERTIFICATE
 } from '@shared/sqlserver/certificate'
+export { isSshFingerprint, sshHostKeyIssue, type SshHostKeyIssue } from '@shared/sshHostKey'
 export { scanLocalSqlServers } from '@main/sqlserver/localInstances'
 /* SQL Server's Microsoft Entra sign-in opens the host's browser (VS Code: env.openExternal). */
 export { setEntraBrowserOpener } from '@main/sqlserver/browserOpener'

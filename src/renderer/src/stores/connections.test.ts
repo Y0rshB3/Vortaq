@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useConnectionsStore } from './connections'
 import { useNotify } from '@renderer/composables/useNotify'
 import { UNTRUSTED_CERTIFICATE } from '@shared/sqlserver/certificate'
+import { sshChangedHostMessage, sshUnknownHostMessage } from '@shared/sshHostKey'
 import {
   installBridge,
   makeConnection,
@@ -140,6 +141,76 @@ describe('connections store', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(saved!.sqlserver?.trustServerCertificate).toBe(true)
     expect(store.isOpen('ms')).toBe(true)
+  })
+
+  it('an SSH server not confirmed yet offers «Confiar en el servidor SSH», which pins its key and opens', async () => {
+    const FP = 'SHA256:I3agu1Hn5jip3mSooabPbauC1z2hLi6VNbXNqrmlRX8'
+    const tunnelled = makeConnection({
+      id: 't',
+      name: 'Por SSH',
+      ssh: {
+        enabled: true,
+        host: 'bastion.example',
+        port: 22,
+        username: 'ana',
+        authType: 'password',
+        savePassword: true
+      }
+    })
+    let saved: { ssh?: { hostKey?: string } } | null = null
+    bridge = installBridge({
+      'connections:list': [tunnelled],
+      'connections:open': () => {
+        if (saved?.ssh?.hostKey !== FP)
+          throw new Error(sshUnknownHostMessage('bastion.example', 22, FP))
+        return makeServerInfo()
+      },
+      'connections:save': (input: unknown) => {
+        saved = input as typeof saved
+        return input
+      }
+    })
+    const store = useConnectionsStore()
+    await store.load()
+    const notify = useNotify()
+    await expect(store.open('t')).rejects.toThrow(FP)
+    const notice = notify.queue[notify.queue.length - 1]
+    expect(notice.action?.label).toBe('Confiar en el servidor SSH')
+    notice.action!.handler()
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(saved!.ssh?.hostKey).toBe(FP)
+    expect(store.isOpen('t')).toBe(true)
+  })
+
+  it('a changed SSH key never offers to trust it', async () => {
+    const FP = 'SHA256:I3agu1Hn5jip3mSooabPbauC1z2hLi6VNbXNqrmlRX8'
+    const OTHER = `SHA256:${'A'.repeat(43)}`
+    bridge = installBridge({
+      'connections:list': [
+        makeConnection({
+          id: 't',
+          name: 'Por SSH',
+          ssh: {
+            enabled: true,
+            host: 'bastion.example',
+            port: 22,
+            username: 'ana',
+            authType: 'password',
+            savePassword: true,
+            hostKey: FP
+          }
+        })
+      ],
+      'connections:open': () => {
+        throw new Error(sshChangedHostMessage('bastion.example', 22, FP, OTHER))
+      }
+    })
+    const store = useConnectionsStore()
+    await store.load()
+    const notify = useNotify()
+    await expect(store.open('t')).rejects.toThrow('ha cambiado')
+    expect(notify.queue[notify.queue.length - 1].action).toBeUndefined()
   })
 
   it('upserts saved connections and removes deleted ones', async () => {

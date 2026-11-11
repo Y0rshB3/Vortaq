@@ -25,6 +25,7 @@ import {
   firstEditable,
   resultSource
 } from '../../src/renderer/src/components/query/resultEditability'
+import { sshHostKeyIssue } from '@shared/sshHostKey'
 import { POSTGRES_TARGET, describeServer } from './targets'
 
 const SCHEMA = `vortaq_pg_${process.pid}`
@@ -964,6 +965,16 @@ describeServer(POSTGRES_TARGET, 'PostgreSQL driver (integration)', (url) => {
           savePassword: true
         }
       })
+      // A server not confirmed yet is refused with its fingerprint («Probar conexión» offers it).
+      const first = await manager.test(
+        input,
+        decodeURIComponent(u.password),
+        decodeURIComponent(s.password)
+      )
+      const issue = sshHostKeyIssue(first.error)
+      expect(first.ok).toBe(false)
+      expect(issue?.kind).toBe('unknown')
+      if (issue?.kind === 'unknown') input.ssh.hostKey = issue.fingerprint
       const result = await manager.test(
         input,
         decodeURIComponent(u.password),

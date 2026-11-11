@@ -48,11 +48,7 @@ export interface PostgresOptions {
  * Entra user + password (ROPC) is not offered: Microsoft deprecated it and it fails with MFA.
  */
 export type SqlServerAuth =
-  | 'sql'
-  | 'windows'
-  | 'entra-interactive'
-  | 'entra-azure-cli'
-  | 'entra-service-principal'
+  'sql' | 'windows' | 'entra-interactive' | 'entra-azure-cli' | 'entra-service-principal'
 
 /**
  * TLS of the TDS connection: 'strict' (TDS 8.0, SQL Server 2022+ and Azure),
@@ -154,6 +150,12 @@ export interface SshConfig {
   authType: SshAuthType
   privateKeyPath?: string
   savePassword: boolean
+  /**
+   * SHA-256 fingerprint of the server's host key («SHA256:…», as OpenSSH
+   * prints it), confirmed by the user (2.9.3, shared/sshHostKey.ts). Absent =
+   * not confirmed yet: the tunnel refuses and the UI offers to trust the key seen.
+   */
+  hostKey?: string
 }
 
 /**
