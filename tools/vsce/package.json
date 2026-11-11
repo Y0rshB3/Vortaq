@@ -1,0 +1,9 @@
+{
+  "name": "vortaq-vsce",
+  "private": true,
+  "description": "vsce for .github/workflows/publish-extension.yml: the exact version and its whole tree pinned by package-lock.json (changes only by PR).",
+  "license": "MIT",
+  "dependencies": {
+    "@vscode/vsce": "4.1.0"
+  }
+}

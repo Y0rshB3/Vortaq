@@ -1,5 +1,9 @@
 import { join } from 'node:path'
-import type { BrowserWindowConstructorOptions, TitleBarOverlayOptions } from 'electron'
+import type {
+  BrowserWindowConstructorOptions,
+  TitleBarOverlayOptions,
+  WebPreferences
+} from 'electron'
 import type { AppSettings } from '@shared/types'
 
 /**
@@ -66,4 +70,26 @@ export function windowIconPath(input: WindowIconInput): string | undefined {
   return input.packaged
     ? join(input.resourcesPath, 'icon.png')
     : join(input.appPath, 'build', 'icons', '512x512.png')
+}
+
+/**
+ * The main window's webPreferences. Every value that keeps the renderer
+ * contained is written out, also the ones that are already Electron's default,
+ * so an upgrade or an edit cannot change them silently (windowOptions.test.ts).
+ */
+export function mainWebPreferences(preload: string): WebPreferences {
+  return {
+    preload,
+    contextIsolation: true,
+    nodeIntegration: false,
+    nodeIntegrationInWorker: false,
+    nodeIntegrationInSubFrames: false,
+    sandbox: true,
+    webSecurity: true,
+    allowRunningInsecureContent: false,
+    webviewTag: false,
+    // A file or link dropped on the window never opens in it.
+    navigateOnDragDrop: false,
+    spellcheck: false
+  }
 }

@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import type { ConnectionConfig, RestoreOptions, RestoreResult } from '@shared/types'
+import { featuresOf } from '../../postgres/catalogCompat'
 import { describeError } from '../../postgres/errors'
 import type { PgSession } from '../../postgres/session'
 import type { ProgressReporter } from '../index'
@@ -91,6 +92,18 @@ function validate(options: RestoreOptions): void {
     throw new Error(
       `«${options.targetSchema.trim()}» es una plantilla del servidor y nunca se restaura sobre ella. Elige otra base de datos de destino.`
     )
+}
+
+/** CREATE SCHEMA IF NOT EXISTS, which servers before 9.3 do not have. */
+async function createSchemaIfMissing(session: PgSession, schema: string): Promise<void> {
+  if (featuresOf(session).createSchemaIfNotExists) {
+    await session.query(`CREATE SCHEMA IF NOT EXISTS ${qi(schema)}`)
+    return
+  }
+  const found = await session.query('SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = $1', [
+    schema
+  ])
+  if (!found.length) await session.query(`CREATE SCHEMA ${qi(schema)}`)
 }
 
 export async function databaseExists(session: PgSession, name: string): Promise<boolean> {
@@ -307,7 +320,9 @@ async function runRestore(
     const target = qn(item.object.schema ?? 'public', item.object.name)
     const width = columns.length
     const maxRows = Math.max(1, Math.min(INSERT_MAX_ROWS, Math.floor(INSERT_MAX_PARAMS / width)))
-    const head = `INSERT INTO ${target} (${columns.map((c) => qi(c.name)).join(', ')}) OVERRIDING SYSTEM VALUE VALUES `
+    // OVERRIDING SYSTEM VALUE (identity GENERATED ALWAYS) is PostgreSQL 10: older servers have no identity.
+    const overriding = featuresOf(session).identity ? 'OVERRIDING SYSTEM VALUE ' : ''
+    const head = `INSERT INTO ${target} (${columns.map((c) => qi(c.name)).join(', ')}) ${overriding}VALUES `
     let params: (string | null)[] = []
     let tuples: string[] = []
     let bytes = 0
@@ -352,8 +367,7 @@ async function runRestore(
     if (options.replaceAll)
       for (const schema of await listSchemas(session))
         await session.query(`DROP SCHEMA ${qi(schema)} CASCADE`)
-    if (structure)
-      for (const schema of schemas) await session.query(`CREATE SCHEMA IF NOT EXISTS ${qi(schema)}`)
+    if (structure) for (const schema of schemas) await createSchemaIfMissing(session, schema)
 
     const of = (...types: VqbObjectType[]): Item[] =>
       items.filter((i) => types.includes(i.object.type))

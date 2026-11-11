@@ -450,7 +450,9 @@ MySQL nada cambia.
 
 ### PostgreSQL
 
-**Conexión › Nueva conexión PostgreSQL…** crea una conexión PostgreSQL.
+**Conexión › Nueva conexión PostgreSQL…** crea una conexión PostgreSQL. Funciona con **PostgreSQL 9.2 o
+posterior** (pensado para la 12 o posterior): en servidores antiguos, lo que el servidor no tiene (identidades,
+columnas generadas, particiones, vistas materializadas, procedimientos) simplemente no aparece.
 
 - **Conexión**: host, puerto (5432), usuario, contraseña o «Sin contraseña», **base de datos inicial**,
   `search_path` opcional y «Mostrar esquemas y bases de datos del sistema». Pestaña **SSL** con los modos de
@@ -2196,6 +2198,7 @@ ejecución, y su carpeta debe llamarse `profile`.
 | `VORTAQ_TEST_MYSQL57_URL`       | MySQL 5.7 desechable para `npm run test:integration[:required]` (incluye la restauración 5.7 → 8.4).                                                                                                      |
 | `VORTAQ_TEST_MARIADB_URL`       | MariaDB 11 desechable (`mysql://…:33311/…`) para el motor MariaDB y las correcciones de MariaDB en `npm run test:integration[:required]`.                                                                 |
 | `VORTAQ_TEST_PG_URL`            | PostgreSQL 17 desechable (`postgres://…:55432/…`) para `npm run test:integration[:required]`.                                                                                                             |
+| `VORTAQ_TEST_PG_LEGACY_URL`     | Opcional: PostgreSQL 9.2 desechable (`postgres://postgres:navidog@127.0.0.1:55492/navidog_test`, servicio `postgres92`) para `tests/integration/postgresLegacy.test.ts`, servidores anteriores a la 10.   |
 | `VORTAQ_TEST_MONGO_URL`         | MongoDB 8.2 independiente desechable (`mongodb://root:…@127.0.0.1:57017/?authSource=admin`) para `npm run test:integration[:required]`; también activa el paso de MongoDB de `VORTAQ_SMOKE`.              |
 | `VORTAQ_TEST_MONGO_RS_URL`      | Conjunto de réplicas MongoDB 8.2 de un miembro (`mongodb://127.0.0.1:57018/?replicaSet=rs0`) para las transacciones en `npm run test:integration[:required]`.                                             |
 | `VORTAQ_TEST_MSSQL_URL`         | SQL Server 2022 desechable (`mssql://sa:Navidog_2026@127.0.0.1:51433/navidog_test`, servicio `mssql22`) para `npm run test:integration[:required]` y `npm run ext:test`.                                  |

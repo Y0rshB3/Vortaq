@@ -92,6 +92,23 @@ services:
       retries: 60
       start_period: 5s
 
+  # VORTAQ_TEST_PG_LEGACY_URL=postgres://postgres:navidog@127.0.0.1:55492/navidog_test  (optional)
+  # PostgreSQL before 10 (2.9.2: tests/integration/postgresLegacy.test.ts). amd64 only.
+  postgres92:
+    image: postgres:9.2
+    environment:
+      POSTGRES_PASSWORD: navidog
+      POSTGRES_DB: navidog_test
+    ports:
+      - '127.0.0.1:55492:5432'
+    healthcheck:
+      # pg_isready came with 9.3.
+      test: ['CMD', 'psql', '-U', 'postgres', '-d', 'navidog_test', '-tAc', 'SELECT 1']
+      interval: 2s
+      timeout: 5s
+      retries: 60
+      start_period: 5s
+
   # VORTAQ_TEST_SSH_URL=ssh://vortaq:navidog@127.0.0.1:52222  (optional)
   # Throwaway SSH server on the compose network: the PostgreSQL tunnel test connects to it and
   # forwards to `postgres17:5432`. Password login for a test-only user; never reuse elsewhere.
