@@ -40,6 +40,7 @@ import { SqlRunner } from './host/runner'
 import { readSettings, syncSettings, type ExtensionSettings } from './host/settings'
 import { SqlCompletionProvider, SqlFormattingProvider } from './host/sqlEditing'
 import { ExtensionQueryHistory, showQueryHistory } from './host/queryHistory'
+import { findObject } from './host/objectSearch'
 import { isSqlDocument, TargetCodeLens, TargetStatusBar } from './host/sqlDocuments'
 import { DocumentTargets } from './host/targets'
 import {
@@ -524,6 +525,70 @@ export async function activate(
     await service.close(connection.id)
   })
   command('vortaq.newQuery', (node?: TreeNode) => newQuery(node))
+
+  /** A new SQL document targeted at a table's or view's connection, database and schema. */
+  async function objectDocument(
+    node: ObjectNode,
+    content: string
+  ): Promise<vscode.TextEditor | null> {
+    const connection = nodeConnection(node)
+    if (!connection) return null
+    const doc = await vscode.workspace.openTextDocument({ language: 'sql', content })
+    const editor = await vscode.window.showTextDocument(doc)
+    await sqlRunner.setTarget(doc.uri.toString(), {
+      connectionId: connection.id,
+      database: node.database,
+      ...(usesSchemaRef(connection.engine)
+        ? { schema: node.schema ?? defaultSchemaOf(connection.engine) }
+        : {})
+    })
+    return editor
+  }
+  const objectNode = (node?: TreeNode): ObjectNode | null =>
+    node && (node.kind === 'table' || node.kind === 'view') ? node : null
+
+  /* «Seleccionar las primeras 1000 filas»: a document with the SELECT, run at once. */
+  command('vortaq.selectTop', async (node?: TreeNode) => {
+    const object = objectNode(node)
+    const connection = object ? nodeConnection(object) : null
+    if (!object || !connection) return
+    const dialect = sqlDialectOf(connection)
+    const namespace = usesSchemaRef(connection.engine)
+      ? (object.schema ?? defaultSchemaOf(connection.engine))
+      : object.database
+    const editor = await objectDocument(
+      object,
+      `${selectFirstRows(dialect, dialect.qualified(namespace, object.name), 1000)};\n`
+    )
+    if (editor) await sqlRunner.run(editor, true)
+  })
+
+  /* «Script como CREATE»: the table's or view's DDL in a new document (nothing runs). */
+  command('vortaq.scriptCreate', async (node?: TreeNode) => {
+    const object = objectNode(node)
+    const connection = object ? nodeConnection(object) : null
+    if (!object || !connection) return
+    if (!(await service.open(connection.id))) return
+    const ref = usesSchemaRef(connection.engine)
+      ? {
+          database: object.database,
+          schema: object.schema ?? defaultSchemaOf(connection.engine) ?? ''
+        }
+      : object.database
+    const ddl = await core.invoke('db:showCreate', connection.id, ref, object.kind, object.name)
+    await objectDocument(object, `${ddl.trim()}\n`)
+  })
+
+  command('vortaq.findObject', (node?: TreeNode) =>
+    findObject(
+      {
+        core,
+        connections: service,
+        reveal: (target) => view.reveal(target, { select: true, focus: true, expand: true })
+      },
+      node
+    )
+  )
   command('vortaq.viewData', (node?: TreeNode) => {
     if (node && (node.kind === 'table' || node.kind === 'view'))
       return sqlRunner.viewData(node as ObjectNode)

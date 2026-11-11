@@ -100,6 +100,24 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "vortaq.selectTop",
+        "title": "Seleccionar las primeras 1000 filas",
+        "category": "Vortaq",
+        "icon": "$(play)"
+      },
+      {
+        "command": "vortaq.scriptCreate",
+        "title": "Script como CREATE",
+        "category": "Vortaq",
+        "icon": "$(code)"
+      },
+      {
+        "command": "vortaq.findObject",
+        "title": "Buscar tabla o vista…",
+        "category": "Vortaq",
+        "icon": "$(search)"
+      },
+      {
         "command": "vortaq.queryHistory",
         "title": "Historial de consultas",
         "category": "Vortaq",
@@ -240,6 +258,11 @@
           "group": "navigation@4"
         },
         {
+          "command": "vortaq.findObject",
+          "when": "view == vortaq.connections",
+          "group": "navigation@0"
+        },
+        {
           "command": "vortaq.checkUpdates",
           "when": "view == vortaq.connections",
           "group": "3_updates@1"
@@ -290,6 +313,21 @@
           "command": "vortaq.newQuery",
           "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
           "group": "2_query@2"
+        },
+        {
+          "command": "vortaq.selectTop",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "2_query@3"
+        },
+        {
+          "command": "vortaq.scriptCreate",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(table|view)$/",
+          "group": "2_query@4"
+        },
+        {
+          "command": "vortaq.findObject",
+          "when": "view == vortaq.connections && viewItem =~ /^vortaq\\.(connection\\.sql|database\\.sql|schema\\.sql)/",
+          "group": "2_query@5"
         },
         {
           "command": "vortaq.diagram",
@@ -351,6 +389,14 @@
         },
         {
           "command": "vortaq.mcpConnection",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.selectTop",
+          "when": "false"
+        },
+        {
+          "command": "vortaq.scriptCreate",
           "when": "false"
         },
         {

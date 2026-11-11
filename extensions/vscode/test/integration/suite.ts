@@ -702,6 +702,28 @@ test(
   'VORTAQ_TEST_MYSQL_URL'
 )
 
+test(
+  '«Seleccionar las primeras 1000 filas» runs at once; «Script como CREATE» opens the DDL',
+  async () => {
+    const node = { kind: 'table' as const, connectionId: mysqlId, database: DB, name: 'item' }
+    await vscode.commands.executeCommand('vortaq.scriptCreate', node)
+    const ddl = vscode.window.activeTextEditor!.document
+    assert.match(ddl.getText(), /^CREATE TABLE `item`/)
+    assert.deepEqual(api.targets.get(ddl.uri.toString()), { connectionId: mysqlId, database: DB })
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+
+    await vscode.commands.executeCommand('vortaq.selectTop', node)
+    const doc = vscode.window.activeTextEditor!.document
+    assert.match(doc.getText(), /LIMIT 1000/)
+    // selectTop awaits the run: the panel already holds the rows.
+    const panel = api.results.get(`doc:${doc.uri.toString()}`)!
+    assert.equal(panel.state.running, false)
+    assert.equal(panel.state.results[0]?.resultSet?.rows.length, 2)
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
+  },
+  'VORTAQ_TEST_MYSQL_URL'
+)
+
 /* ---------- Agents (MCP): the server inside the editor ---------- */
 
 interface McpAnswer {
