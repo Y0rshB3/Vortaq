@@ -649,6 +649,9 @@ Database o Azure SQL Managed Instance.
     MFA); Vortaq no guarda nada.
   - **Microsoft Entra ID, aplicación**: inquilino, ID de aplicación y su secreto (en el campo de contraseña).
   - El usuario y contraseña de Entra sin navegador no se ofrece: Microsoft lo retiró y no funciona con MFA.
+  - Con cualquier método de Entra, Vortaq solo pide y entrega tokens para **Azure SQL** (nube pública, Azure
+    Government y Azure China), y solo por TLS con el certificado verificado: cifrado **Obligatorio** o
+    **Estricto** y sin «Confiar en el certificado del servidor».
 - **Conexión**: servidor y puerto (1433) o **instancia con nombre** (`SQLEXPRESS`, por SQL Server Browser; con
   túnel SSH escribe el puerto de la instancia), **base de datos inicial** (vacía = la del inicio de sesión) y
   «Mostrar bases de datos y esquemas del sistema». Pestaña **SSL**: cifrado **Obligatorio**, **Estricto** (TDS

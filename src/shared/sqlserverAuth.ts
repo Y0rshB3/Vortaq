@@ -44,6 +44,32 @@ export function sqlServerNeedsUser(auth: SqlServerAuth | undefined): boolean {
   return auth === undefined || auth === 'sql' || auth === 'windows'
 }
 
+/** A Microsoft Entra ID sign-in method (the server receives an access token). */
+export function isEntraAuth(auth: SqlServerAuth | undefined): boolean {
+  return (
+    auth === 'entra-interactive' || auth === 'entra-azure-cli' || auth === 'entra-service-principal'
+  )
+}
+
+export const ENTRA_NEEDS_ENCRYPTION =
+  'Con Microsoft Entra ID el cifrado tiene que ser «Obligatorio» o «Estricto»: el token de acceso no puede viajar sin cifrar.'
+export const ENTRA_NEEDS_VERIFIED_CERTIFICATE =
+  'Con Microsoft Entra ID no se puede «Confiar en el certificado del servidor»: el certificado tiene que verificarse, o el token podría acabar en otro servidor. Instala la CA del servidor en el sistema o indícala en la pestaña SSL.'
+
+/**
+ * Why this connection must not send a Microsoft Entra token as configured
+ * (null when it may): only over TLS whose certificate is verified.
+ */
+export function entraTransportProblem(
+  options:
+    Partial<Pick<SqlServerOptions, 'auth' | 'encrypt' | 'trustServerCertificate'>> | undefined
+): string | null {
+  if (!isEntraAuth(options?.auth)) return null
+  if (options?.encrypt === 'optional') return ENTRA_NEEDS_ENCRYPTION
+  if (options?.trustServerCertificate === true) return ENTRA_NEEDS_VERIFIED_CERTIFICATE
+  return null
+}
+
 /** Problems of the SQL Server block, in Spanish (empty when it is fine). */
 export function sqlServerOptionErrors(
   options: Partial<SqlServerOptions> | undefined,
@@ -64,6 +90,8 @@ export function sqlServerOptionErrors(
     errors.push(
       'SQL Server: el inicio de sesión en el navegador necesita el ID de aplicación de Microsoft Entra.'
     )
+  const transport = entraTransportProblem({ ...options, auth })
+  if (transport) errors.push(`SQL Server: ${transport}`)
   if (options?.instanceName?.trim() && input.ssh?.enabled)
     errors.push(
       'SQL Server: con túnel SSH escribe el puerto de la instancia y deja vacío «Instancia».'

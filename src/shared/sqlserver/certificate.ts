@@ -4,6 +4,7 @@
  * connection form, the desktop tree and the editor extension): the UI offers
  * the button only for errors that the trust option fixes.
  */
+import { isEntraAuth } from '../sqlserverAuth'
 import type { SqlServerOptions } from '../types'
 
 export const UNTRUSTED_CERTIFICATE =
@@ -15,13 +16,16 @@ export const CERTIFICATE_NAME_MISMATCH =
 /**
  * Turning on «Confiar en el certificado del servidor» would let this connection
  * in: the error is an untrusted or mismatched certificate and the option is
- * off and allowed (strict encryption always verifies).
+ * off and allowed (strict encryption always verifies; Microsoft Entra sign-ins
+ * never skip the check, sqlserverAuth.ts entraTransportProblem).
  */
 export function trustFixesError(
   message: string | null | undefined,
-  options: Partial<Pick<SqlServerOptions, 'encrypt' | 'trustServerCertificate'>> | undefined
+  options:
+    Partial<Pick<SqlServerOptions, 'auth' | 'encrypt' | 'trustServerCertificate'>> | undefined
 ): boolean {
   if (!message) return false
   if (options?.trustServerCertificate === true || options?.encrypt === 'strict') return false
+  if (isEntraAuth(options?.auth)) return false
   return message.includes(UNTRUSTED_CERTIFICATE) || message.includes(CERTIFICATE_NAME_MISMATCH)
 }

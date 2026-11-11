@@ -35,6 +35,63 @@ import { MsUserError } from './errors'
 /** Scope of Azure SQL on the public cloud (sovereign clouds send their own). */
 export const AZURE_SQL_SCOPE = 'https://database.windows.net/.default'
 
+/**
+ * The only resources a SQL Server sign-in gets a token for: Azure SQL on the
+ * public cloud, Azure Government and Azure China. tedious asks for the scope
+ * the SERVER names (its FEDAUTHINFO SPN), so without this a server could ask
+ * for a token of another Azure service (management, Graph, Key Vault…).
+ */
+const AZURE_SQL_HOSTS = new Set([
+  'database.windows.net',
+  'database.usgovcloudapi.net',
+  'database.chinacloudapi.cn'
+])
+
+/** `https://<Azure SQL host>/.default`, nothing else (no port, user, query or other path). */
+export function isAzureSqlScope(scope: string): boolean {
+  let url: URL
+  try {
+    url = new URL(scope)
+  } catch {
+    return false
+  }
+  return (
+    url.protocol === 'https:' &&
+    AZURE_SQL_HOSTS.has(url.hostname.toLowerCase()) &&
+    url.port === '' &&
+    url.username === '' &&
+    url.password === '' &&
+    url.pathname === '/.default' &&
+    url.search === '' &&
+    url.hash === ''
+  )
+}
+
+/** Wraps a sign-in method: a scope outside Azure SQL is refused before any token is asked for. */
+class AzureSqlOnlyCredential implements TokenCredential {
+  constructor(private readonly inner: TokenCredential) {}
+
+  async getToken(
+    scopes: string | string[],
+    options?: Parameters<TokenCredential['getToken']>[1]
+  ): Promise<AccessToken | null> {
+    const list = scopesOf(scopes)
+    if (list.length !== 1 || !isAzureSqlScope(list[0])) {
+      let asked = 'otro servicio'
+      try {
+        asked = new URL(list[0] ?? '').hostname || asked
+      } catch {
+        /* not a URL */
+      }
+      throw new MsUserError(
+        `El servidor pidió un token de Microsoft Entra para ${asked}, no para Azure SQL: Vortaq no lo entrega. No uses esta conexión hasta comprobar a qué servidor apunta.`,
+        'E_MS_ENTRA_AUDIENCE'
+      )
+    }
+    return this.inner.getToken(list[0], options)
+  }
+}
+
 /** How long the browser sign-in may take before the connection gives up. */
 const INTERACTIVE_TIMEOUT_MS = 5 * 60_000
 
@@ -258,8 +315,21 @@ class AzureCliCredential implements TokenCredential {
 
 /* ---------- entry point ---------- */
 
-/** The TokenCredential of a connection's Entra sign-in method. */
+/** The TokenCredential of a connection's Entra sign-in method: tokens for Azure SQL only. */
 export function entraCredential(
+  config: Pick<ConnectionInput, 'username'>,
+  options: SqlServerOptions,
+  secret: string
+): TokenCredential {
+  return azureSqlOnly(signInCredential(config, options, secret))
+}
+
+/** `inner`, refusing every scope that is not Azure SQL's before it is asked (isAzureSqlScope). */
+export function azureSqlOnly(inner: TokenCredential): TokenCredential {
+  return new AzureSqlOnlyCredential(inner)
+}
+
+function signInCredential(
   config: Pick<ConnectionInput, 'username'>,
   options: SqlServerOptions,
   secret: string
