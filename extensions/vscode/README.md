@@ -1,7 +1,7 @@
 # Vortaq
 
 Cliente de bases de datos para VS Code y los editores compatibles (Cursor, VSCodium, Windsurf).
-Conecta con **MySQL, MariaDB, PostgreSQL, SQLite y MongoDB**, ejecuta SQL desde tus archivos
+Conecta con **MySQL, MariaDB, PostgreSQL, SQLite, MongoDB y SQL Server** (también Azure SQL), ejecuta SQL desde tus archivos
 `.sql`, edita los resultados y cópialos o expórtalos sin salir del editor. Es la extensión de
 [Vortaq](https://github.com/Y0rshB3/Vortaq), el cliente de bases de datos de escritorio de código
 abierto, y usa su mismo núcleo: los mismos controladores, el mismo análisis de SQL y la misma
@@ -17,7 +17,7 @@ macOS, Windows y Linux, con diseñador de tablas, copias de seguridad y automati
   Colecciones y Vistas; en SQLite, la base principal y las adjuntas. Cada conexión muestra el icono
   de su motor en su color, su entorno (L, S, P) y un candado si sus escrituras piden confirmación.
   Al desplegar una conexión se abre.
-- **Añadir y editar conexiones** con el formulario de Vortaq: los cinco motores, túnel SSH,
+- **Añadir y editar conexiones** con el formulario de Vortaq: los seis motores, túnel SSH,
   SSL/TLS, entorno (incluido Producción), «Sin contraseña» y «Probar conexión».
 - **Importar desde Vortaq de escritorio.** «Importar de Vortaq» lee las conexiones de la aplicación
   de escritorio instalada en este equipo y te deja elegir cuáles traer. **Las contraseñas no se
@@ -99,14 +99,18 @@ deja fuera a los clientes con la anterior. Vortaq nunca envía al agente la cont
 usuario ni la ruta de una conexión, y el registro de cada llamada (panel Salida › Vortaq) no incluye
 el SQL ni los valores.
 
-## Actualizaciones
+## Instalación y actualizaciones
 
-La extensión se instala desde un `.vsix`, así que el «Auto Update» del editor no la actualiza. En
-su lugar, Vortaq mira una vez al día si hay una versión nueva publicada en GitHub y te la ofrece:
-**Instalar** descarga el `.vsix`, comprueba su SHA-256 con el `SHA256SUMS.txt` de esa versión, lo
-instala y te pide recargar la ventana. **Vortaq: Buscar actualizaciones** lo comprueba en el momento
-(también en el menú **…** de la vista Vortaq). Desactiva la comprobación diaria con
-`vortaq.updates.check`.
+- **Desde el Marketplace de VS Code** (busca «Vortaq» en la vista Extensiones, o
+  `code --install-extension y0rshb3.vortaq`): el editor la actualiza solo, como cualquier otra
+  extensión.
+- **Desde un `.vsix`** de las [versiones de GitHub](https://github.com/Y0rshB3/Vortaq/releases)
+  (Cursor, VSCodium y Windsurf, mientras no esté en Open VSX): el editor no actualiza una extensión
+  instalada desde un archivo, así que Vortaq mira una vez al día si hay una versión nueva en GitHub y
+  te la ofrece. **Instalar** descarga el `.vsix`, comprueba su SHA-256 con el `SHA256SUMS.txt` de esa
+  versión, lo instala y te pide recargar la ventana. **Vortaq: Buscar actualizaciones** lo comprueba
+  en el momento (también en el menú **…** de la vista Vortaq). Desactiva la comprobación diaria con
+  `vortaq.updates.check`.
 
 ## Conexiones de producción
 
@@ -152,7 +156,7 @@ también piden confirmación en el resto de conexiones.
 | `vortaq.confirmDestructive`       | `true`           | Confirmar antes de borrar o eliminar en cualquier conexión.           |
 | `vortaq.codeLens`                 | `true`           | Mostrar la conexión y «Ejecutar todo» sobre los documentos SQL.       |
 | `vortaq.queryHistory.enabled`     | `true`           | Guardar en este equipo las consultas que ejecutas (sin resultados).   |
-| `vortaq.updates.check`            | `true`           | Buscar una vez al día una versión nueva de la extensión en GitHub.    |
+| `vortaq.updates.check`            | `true`           | Instalada desde un `.vsix`: buscar a diario una versión nueva.        |
 | `vortaq.mcp.enabled`              | `false`          | Permitir que agentes (MCP) usen las conexiones que actives.           |
 | `vortaq.mcp.port`                 | `39291`          | Puerto local del servidor MCP (si otro programa lo usa, no arranca).  |
 
@@ -162,8 +166,8 @@ los de un espacio de trabajo.
 ## En esta versión todavía no
 
 Diseñador de tablas, copias de seguridad `.vqb`, edición de documentos de MongoDB, consultas de
-MongoDB desde el editor, paginación de resultados («Cargar más») y autocompletado con la estructura
-de la base de datos. Llegarán en las próximas versiones.
+MongoDB desde el editor y paginación de resultados («Cargar más»). Llegarán en las próximas
+versiones.
 
 ## Licencia
 

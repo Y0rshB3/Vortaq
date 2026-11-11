@@ -12,10 +12,14 @@
  *   the User-Agent is the product name.
  * - `vortaq.updates.check` (user settings) turns the daily check off; the
  *   command always works.
+ * - Installed from the editor's gallery (VS Code Marketplace, or Open VSX in
+ *   Cursor, VSCodium and Windsurf), the editor updates it: no GitHub check,
+ *   and the command points at the editor's own update check. Installing a
+ *   .vsix over it would pin it and stop those updates.
  */
 import { createHash } from 'node:crypto'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import * as vscode from 'vscode'
 
 export const UPDATE_REPO = 'Y0rshB3/Vortaq'
@@ -159,6 +163,43 @@ export async function fetchBytes(
   throw new Error('Demasiadas redirecciones al descargar la actualización.')
 }
 
+/** Where the editor installed this extension from. */
+export type InstallSource = 'gallery' | 'vsix' | 'unknown'
+
+const MAX_INSTALL_LIST_BYTES = 16 * 1024 * 1024
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * The editor's API does not say where an extension came from; the editor writes
+ * it in `extensions.json`, next to the installed extensions' folders:
+ * `metadata.source` is 'gallery' (Marketplace or Open VSX) or 'vsix' (a file,
+ * which the editor also pins). Only this extension's own entry is read, found
+ * by its folder name.
+ */
+export function installSourceIn(listing: unknown, folderName: string): InstallSource {
+  if (!Array.isArray(listing)) return 'unknown'
+  const entry: unknown = listing.find((e) => isRecord(e) && e.relativeLocation === folderName)
+  const source = isRecord(entry) && isRecord(entry.metadata) ? entry.metadata.source : undefined
+  return source === 'gallery' || source === 'vsix' ? source : 'unknown'
+}
+
+/**
+ * `installSourceIn` for the extension installed at `extensionPath`. A missing
+ * or unexpected list (a development run, a list kept elsewhere by a profile,
+ * another format) is 'unknown', which keeps the GitHub check on.
+ */
+export function readInstallSource(extensionPath: string): InstallSource {
+  try {
+    const file = join(dirname(extensionPath), 'extensions.json')
+    if (statSync(file).size > MAX_INSTALL_LIST_BYTES) return 'unknown'
+    return installSourceIn(JSON.parse(readFileSync(file, 'utf8')), basename(extensionPath))
+  } catch {
+    return 'unknown'
+  }
+}
+
 export interface UpdaterOptions {
   currentVersion: string
   state: vscode.Memento
@@ -167,6 +208,8 @@ export interface UpdaterOptions {
   /** `vortaq.updates.check`. */
   enabled: () => boolean
   log: (message: string) => void
+  /** `readInstallSource` of this extension; absent = 'unknown'. */
+  installSource?: () => InstallSource
   fetcher?: Fetcher
   now?: () => number
 }
@@ -198,9 +241,13 @@ export class ExtensionUpdater {
     return latest && isNewer(latest.version, this.options.currentVersion) ? latest : null
   }
 
+  private fromGallery(): boolean {
+    return (this.options.installSource?.() ?? 'unknown') === 'gallery'
+  }
+
   /** The daily check on start-up: quiet unless there is something new. */
   async checkInBackground(): Promise<void> {
-    if (!this.options.enabled()) return
+    if (!this.options.enabled() || this.fromGallery()) return
     const now = (this.options.now ?? Date.now)()
     const last = this.options.state.get<number>(LAST_CHECK_KEY, 0)
     if (now - last < CHECK_INTERVAL_MS) return
@@ -216,6 +263,16 @@ export class ExtensionUpdater {
 
   /** «Vortaq: Buscar actualizaciones»: always answers. */
   async checkNow(): Promise<void> {
+    if (this.fromGallery()) {
+      const check = 'Buscar actualizaciones de extensiones'
+      const answer = await vscode.window.showInformationMessage(
+        `Vortaq ${this.options.currentVersion} se instaló desde la galería de extensiones del editor, que la actualiza sola.`,
+        check
+      )
+      if (answer === check)
+        await vscode.commands.executeCommand('workbench.extensions.action.checkForUpdates')
+      return
+    }
     let release: ExtensionRelease | null
     try {
       release = await vscode.window.withProgress(

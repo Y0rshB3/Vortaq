@@ -1,0 +1,55 @@
+# Publishes each editor extension release (tags vscode-v*) to the Visual Studio
+# Marketplace with Trusted Publishing: GitHub's OIDC token is exchanged for a
+# short Marketplace session, so no token is stored anywhere. It uploads the very
+# .vsix of the GitHub release, after checking it against the release's
+# SHA256SUMS.txt and its manifest against the tag. The publisher's policy
+# (y0rshb3 › Trusted Publishing) accepts only this repository, this file and the
+# `marketplace` environment, which only `vscode-v*` tags may use.
+# Re-run by hand: `gh workflow run publish-extension.yml --ref vscode-v<x.y.z>`.
+name: Publicar la extensión en el Marketplace
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-extension-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Desktop releases (v*) and runs from a branch are skipped.
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'vscode-v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Descargar el .vsix de la versión y comprobarlo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#vscode-v}"
+          dir="$RUNNER_TEMP/vsix"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" \
+            --pattern "vortaq-$version.vsix" --pattern SHA256SUMS.txt
+          cd "$dir"
+          sha256sum --check --strict SHA256SUMS.txt
+          manifest="$(unzip -p "vortaq-$version.vsix" extension/package.json)"
+          test "$(jq -r .publisher <<<"$manifest")" = y0rshb3
+          test "$(jq -r .name <<<"$manifest")" = vortaq
+          test "$(jq -r .version <<<"$manifest")" = "$version"
+          echo "VSIX=$dir/vortaq-$version.vsix" >> "$GITHUB_ENV"
+      - name: Publicar (Trusted Publishing)
+        # Exact vsce version: the step can mint the publisher's Marketplace session.
+        run: npx --yes @vscode/vsce@4.1.0 publish --oidc --packagePath "$VSIX" --skip-duplicate

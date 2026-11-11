@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
 import {
+  installSourceIn,
+  readInstallSource,
   allowedUpdateUrl,
   CHECK_INTERVAL_MS,
   digestFor,
@@ -76,6 +78,54 @@ describe('extension releases on GitHub', () => {
     await expect(fetchBytes(out, 'https://github.com/a', 10)).rejects.toThrow(/fuera de GitHub/)
     const big: Fetcher = async () => new Response('x'.repeat(20))
     await expect(fetchBytes(big, 'https://github.com/a', 10)).rejects.toThrow(/más grande/)
+  })
+})
+
+describe('where the editor installed the extension from', () => {
+  // The entries the editor wrote (VS Code 1.145) for a .vsix and for a gallery install.
+  const vsixEntry = {
+    identifier: { id: 'y0rshb3.vortaq' },
+    version: '0.8.0',
+    relativeLocation: 'y0rshb3.vortaq-0.8.0',
+    metadata: { installedTimestamp: 1794412615835, pinned: true, source: 'vsix' }
+  }
+  const galleryEntry = {
+    identifier: { id: 'y0rshb3.vortaq' },
+    version: '0.8.1',
+    relativeLocation: 'y0rshb3.vortaq-0.8.1',
+    metadata: {
+      installedTimestamp: 1794412629877,
+      source: 'gallery',
+      id: '3792588c-3d35-442d-91ea-fe6a755e8155',
+      publisherDisplayName: 'Y0rshb3',
+      isPreReleaseVersion: false
+    }
+  }
+
+  it('reads only this extension’s own entry, by its folder', () => {
+    const listing = [vsixEntry, galleryEntry]
+    expect(installSourceIn(listing, 'y0rshb3.vortaq-0.8.0')).toBe('vsix')
+    expect(installSourceIn(listing, 'y0rshb3.vortaq-0.8.1')).toBe('gallery')
+    expect(installSourceIn(listing, 'y0rshb3.vortaq-0.9.0')).toBe('unknown')
+    expect(installSourceIn({ items: listing }, 'y0rshb3.vortaq-0.8.0')).toBe('unknown')
+    expect(
+      installSourceIn([{ ...vsixEntry, metadata: { source: 'resource' } }], 'y0rshb3.vortaq-0.8.0')
+    ).toBe('unknown')
+  })
+
+  it('reads extensions.json next to the extension folder; anything else is unknown', () => {
+    const root = mkdtempSync(join(tmpdir(), 'vortaq-install-source-'))
+    try {
+      const extensionPath = join(root, 'y0rshb3.vortaq-0.8.1')
+      mkdirSync(extensionPath)
+      expect(readInstallSource(extensionPath)).toBe('unknown')
+      writeFileSync(join(root, 'extensions.json'), JSON.stringify([vsixEntry, galleryEntry]))
+      expect(readInstallSource(extensionPath)).toBe('gallery')
+      writeFileSync(join(root, 'extensions.json'), '{ not json')
+      expect(readInstallSource(extensionPath)).toBe('unknown')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
@@ -182,6 +232,39 @@ describe('ExtensionUpdater', () => {
     await updater(fetcher, now + CHECK_INTERVAL_MS + 1).checkInBackground()
     expect(fetcher.urls.length).toBeGreaterThan(calls)
     expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
+  })
+
+  it('installed from the gallery: no GitHub request; the command points at the editor’s check', async () => {
+    const fetcher = github()
+    const gallery = new ExtensionUpdater({
+      currentVersion: '0.6.0',
+      state: memento(),
+      downloadDir: dir,
+      enabled: () => true,
+      log: () => undefined,
+      installSource: () => 'gallery',
+      fetcher,
+      now: () => 1_000_000_000_000
+    })
+    await gallery.checkInBackground()
+    expect(fetcher.urls).toEqual([])
+    expect(state.has(LAST_CHECK_KEY)).toBe(false)
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce(
+      'Buscar actualizaciones de extensiones' as never
+    )
+    await gallery.checkNow()
+    expect(fetcher.urls).toEqual([])
+    expect(vi.mocked(vscode.window.showInformationMessage).mock.calls[0][0]).toMatch(
+      /galería de extensiones del editor, que la actualiza sola/
+    )
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'workbench.extensions.action.checkForUpdates'
+    )
+    expect(
+      vi
+        .mocked(vscode.commands.executeCommand)
+        .mock.calls.some((c) => c[0] === 'workbench.extensions.installExtension')
+    ).toBe(false)
   })
 
   it('says when this is already the newest version', async () => {
