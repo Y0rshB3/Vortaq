@@ -45,7 +45,12 @@ describe('connection form scope', () => {
 
   it('the webviews never get settings, app, job or SQL-execution channels', () => {
     for (const channel of CONNECTION_FORM_CHANNELS)
-      expect(channel).toMatch(/^(connections|db|sqlite):/)
+      if (channel !== 'sqlserver:localInstances')
+        expect(channel).toMatch(/^(connections|db|sqlite):/)
+    // «Buscar servidores en este equipo» (no arguments, read-only) is the only SQL Server one.
+    expect([...CONNECTION_FORM_CHANNELS].filter((c) => c.startsWith('sqlserver:'))).toEqual([
+      'sqlserver:localInstances'
+    ])
     // Results: the grid's editability check and Aplicar, «Elegir de <tabla>» and «Exportar».
     expect([...RESULTS_CHANNELS].sort()).toEqual([
       'db:applyRowChanges',

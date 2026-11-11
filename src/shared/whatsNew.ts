@@ -25,6 +25,23 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.7.0',
+    date: '2026-11-11',
+    highlights: [
+      'SQL Server en Windows: «Buscar servidores en este equipo» encuentra SQL Server Express y rellena la conexión con tu cuenta de Windows',
+      'Si a la instancia le falta TCP/IP, el formulario muestra los pasos exactos para activarlo',
+      'Certificados autofirmados de SQL Server: «Confiar y reintentar» al probar o abrir la conexión',
+      'El motor de una conexión nueva se elige en un selector «Motor», y las pestañas ya no se recortan en ventanas bajas'
+    ],
+    tour: [
+      {
+        target: 'toolbar-connection',
+        title: 'SQL Server en este equipo',
+        text: 'Conexión › Nueva conexión SQL Server… › Buscar servidores en este equipo (en Windows). Usar rellena la conexión; escribe tu contraseña de Windows y pulsa Probar conexión.'
+      }
+    ]
+  },
+  {
     version: '2.6.0',
     date: '2026-11-10',
     highlights: [
