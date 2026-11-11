@@ -79,6 +79,33 @@ export enum ProgressLocation {
   Notification = 15
 }
 
+export enum QuickPickItemKind {
+  Separator = -1,
+  Default = 0
+}
+
+export enum ConfigurationTarget {
+  Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3
+}
+
+export class McpHttpServerDefinition {
+  constructor(
+    readonly label: string,
+    public uri: Uri,
+    public headers: Record<string, string> = {},
+    readonly version?: string
+  ) {}
+}
+
+/** VS Code's MCP provider registry: tests read the provider a module registered. */
+export const lm = {
+  registerMcpServerDefinitionProvider: vi.fn((_id: string, _provider: unknown) => ({
+    dispose: vi.fn()
+  }))
+}
+
 export enum ExtensionMode {
   Production = 1,
   Development = 2,
@@ -95,8 +122,8 @@ export class Uri {
     return new Uri('file', path)
   }
   static parse(value: string): Uri {
-    const [scheme, rest = ''] = value.split(':', 2)
-    return new Uri(scheme, rest)
+    const colon = value.indexOf(':')
+    return colon < 0 ? new Uri(value, '') : new Uri(value.slice(0, colon), value.slice(colon + 1))
   }
   static from(parts: { scheme: string; path?: string; query?: string }): Uri {
     return new Uri(parts.scheme, parts.path ?? '', parts.query ?? '')

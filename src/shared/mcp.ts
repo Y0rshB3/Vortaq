@@ -327,6 +327,103 @@ export function mcpClientSnippets(launch: McpLaunchInfo): McpClientSnippet[] {
   ]
 }
 
+/* ---------- clients of the editor extension's server (HTTP on 127.0.0.1) ---------- */
+
+/** Where the editor extension's MCP server answers, and the key it asks for. */
+export interface McpHttpEndpoint {
+  /** http://127.0.0.1:<port>/mcp */
+  url: string
+  key: string
+  /** `process.platform` of this computer (quoting and file locations). */
+  platform: string
+}
+
+export const MCP_KEY_NOTE =
+  'La clave da acceso a las conexiones que actives para agentes, mientras el editor está abierto. Si la pegas en un archivo de configuración, no lo subas a un repositorio; puedes regenerarla cuando quieras (los clientes con la clave anterior dejan de entrar).'
+
+const bearer = (e: McpHttpEndpoint): Record<string, string> => ({
+  Authorization: `Bearer ${e.key}`
+})
+
+/** `claude mcp add --transport http vortaq <url> --header "Authorization: Bearer …"`. */
+export function claudeCodeHttpCommand(e: McpHttpEndpoint): string {
+  const header = shellQuote(`Authorization: Bearer ${e.key}`, e.platform, true)
+  return `claude mcp add --transport http ${MCP_SERVER_NAME} ${e.url} --header ${header}`
+}
+
+/** ~/.codex/config.toml (Codex): Streamable HTTP with a static header. */
+export function codexHttpConfig(e: McpHttpEndpoint): string {
+  return [
+    `[mcp_servers.${MCP_SERVER_NAME}]`,
+    `url = ${tomlString(e.url)}`,
+    `http_headers = { "Authorization" = ${tomlString(`Bearer ${e.key}`)} }`,
+    'tool_timeout_sec = 130'
+  ].join('\n')
+}
+
+/** Every client that can reach the extension's server, in the order the editor shows them. */
+export function mcpHttpClientSnippets(e: McpHttpEndpoint): McpClientSnippet[] {
+  const { platform } = e
+  const headers = bearer(e)
+  return [
+    {
+      id: 'claudeCode',
+      label: 'Claude Code',
+      where: 'Terminal (añade --scope user antes de «vortaq» para todos tus proyectos)',
+      text: claudeCodeHttpCommand(e)
+    },
+    {
+      id: 'codex',
+      label: 'Codex',
+      where: `${homeFile(platform, '.codex/config.toml')} o .codex/config.toml de un proyecto de confianza`,
+      text: codexHttpConfig(e)
+    },
+    {
+      id: 'gemini',
+      label: 'Gemini CLI',
+      where: `${homeFile(platform, '.gemini/settings.json')} o .gemini/settings.json del proyecto`,
+      text: json({ mcpServers: { [MCP_SERVER_NAME]: { httpUrl: e.url, headers } } })
+    },
+    {
+      id: 'antigravity',
+      label: 'Antigravity',
+      where: `${homeFile(platform, '.gemini/config/mcp_config.json')} (Antigravity CLI y el editor) o .agents/mcp_config.json del proyecto`,
+      text: json({ mcpServers: { [MCP_SERVER_NAME]: { serverUrl: e.url, headers } } })
+    },
+    {
+      id: 'cursor',
+      label: 'Cursor',
+      where: `.cursor/mcp.json del proyecto o ${homeFile(platform, '.cursor/mcp.json')}`,
+      text: json({ mcpServers: { [MCP_SERVER_NAME]: { url: e.url, headers } } })
+    },
+    {
+      id: 'vscode',
+      label: 'VS Code (a mano)',
+      where:
+        '.vscode/mcp.json, solo en un VS Code donde la extensión no lo registra sola (en este editor no hace falta)',
+      text: json({ servers: { [MCP_SERVER_NAME]: { type: 'http', url: e.url, headers } } })
+    },
+    {
+      id: 'opencode',
+      label: 'OpenCode',
+      where: `opencode.json del proyecto o ${homeFile(platform, '.config/opencode/opencode.json')}`,
+      text: json({
+        mcp: { [MCP_SERVER_NAME]: { type: 'remote', url: e.url, headers, oauth: false } }
+      })
+    },
+    {
+      id: 'other',
+      label: 'Otro cliente',
+      where: 'Añade un servidor MCP remoto (Streamable HTTP) con estos datos',
+      text: [
+        'Tipo: HTTP (Streamable HTTP)',
+        `URL: ${e.url}`,
+        `Cabecera: Authorization: Bearer ${e.key}`
+      ].join('\n')
+    }
+  ]
+}
+
 /** True when the process was started in MCP mode (`--mcp` anywhere in argv). */
 export function isMcpArgv(argv: readonly string[]): boolean {
   return argv.includes(MCP_ARG)

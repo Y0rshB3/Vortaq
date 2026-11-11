@@ -1,8 +1,8 @@
 /**
- * Vortaq's MCP server (stdio only; no HTTP or SSE transport): the tool
- * definitions an agent sees, the checks every call goes through and the
- * activity log. Electron-free; `Vortaq --mcp` (src/main/mcpMain.ts) connects it
- * to stdin/stdout, the tests to the SDK's in-memory transport.
+ * Vortaq's MCP server: the tool definitions an agent sees, the checks every
+ * call goes through and the activity log. Electron-free; `Vortaq --mcp`
+ * (src/main/mcpMain.ts) connects it to stdin/stdout, the editor extension to
+ * the loopback HTTP server of http.ts, the tests to the SDK's in-memory transport.
  *
  * Every call: the profile must be ready and the global switch on; the named
  * connection must be available to agents; its level must allow the tool
@@ -14,7 +14,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { MCP_LIMITS, mapStrings } from './values'
 import { getLogger } from '../log'
-import { McpToolError, requireLevel, type McpOutcome, type McpToolName } from './access'
+import {
+  DESKTOP_MCP_WORDING,
+  McpToolError,
+  requireLevel,
+  type McpOutcome,
+  type McpToolName
+} from './access'
 import { redactGeneric } from './redact'
 import type { McpRuntime, ResolvedConnection } from './runtime'
 import {
@@ -52,7 +58,9 @@ export function activityLine(e: McpActivity): string {
   return `tool=${e.tool} connection=${JSON.stringify(e.connection)} access=${e.access} outcome=${e.outcome} ms=${e.durationMs} rows=${e.rows ?? '-'}`
 }
 
-export const MCP_INSTRUCTIONS = `Vortaq exposes the database connections its user saved in the Vortaq desktop app and explicitly made available to agents. Vortaq never sends you a connection's own configuration (password, host, port, user, SSH tunnel, connection string or file path), not even in error messages: refer to a connection by the id or name that list_connections returns. Query results still show whatever the database user can see, including what the server reports about itself.
+/** What an agent reads first; `source` says where the connections were saved. */
+export function mcpInstructions(source = DESKTOP_MCP_WORDING.source): string {
+  return `Vortaq exposes the database connections its user saved in ${source} and explicitly made available to agents. Vortaq never sends you a connection's own configuration (password, host, port, user, SSH tunnel, connection string or file path), not even in error messages: refer to a connection by the id or name that list_connections returns. Query results still show whatever the database user can see, including what the server reports about itself.
 
 Each connection has a level chosen by the user:
 - structure: list_databases, list_tables and describe_table only (no row values).
@@ -60,6 +68,9 @@ Each connection has a level chosen by the user:
 - write: also execute_sql (scripts, writes and DDL, autocommit). Never available on production connections or other environments where Vortaq asks the user to type the connection name: those stay read-only.
 
 Start with list_connections, then list_databases / list_tables / describe_table before writing queries. Limits: max_rows defaults to ${MCP_LIMITS.defaultRows} (at most ${MCP_LIMITS.maxRows}) and "truncated": true means there are more rows; timeout_seconds defaults to ${MCP_LIMITS.defaultTimeoutSec} (at most ${MCP_LIMITS.maxTimeoutSec}) and a query that exceeds it is cancelled on the server; long texts are cut at ${MCP_LIMITS.maxCellChars} characters and a response at about ${Math.round(MCP_LIMITS.maxResponseChars / 1000)} KB. Values are JSON: big integers and decimals as strings, binary data as {"type":"binary","hex":…}, MongoDB documents as canonical Extended JSON. MongoDB connections use mongo shell syntax (db.collection.find({...}), aggregate([...]), countDocuments, distinct…; no variables, functions or loops) in the "sql" argument. Error messages are in Spanish; when a tool refuses, its message says what the user can change in Vortaq.`
+}
+
+export const MCP_INSTRUCTIONS = mcpInstructions()
 
 const connection = z
   .string()
@@ -103,7 +114,7 @@ type Args = Record<string, unknown>
 export function createMcpServer(rt: McpRuntime, options: McpServerOptions): McpServer {
   const server = new McpServer(
     { name: 'vortaq', title: 'Vortaq', version: options.version },
-    { instructions: MCP_INSTRUCTIONS, capabilities: { tools: {} } }
+    { instructions: mcpInstructions(rt.wording.source), capabilities: { tools: {} } }
   )
   const record = options.onActivity ?? ((e: McpActivity) => activityLog.info(activityLine(e)))
 
@@ -124,7 +135,13 @@ export function createMcpServer(rt: McpRuntime, options: McpServerOptions): McpS
       rt.assertAvailable()
       if (tool !== 'list_connections') {
         resolved = rt.resolve(args.connection)
-        requireLevel(resolved.config, resolved.access, resolved.requested, tool)
+        requireLevel(
+          resolved.config,
+          resolved.access,
+          resolved.requested,
+          tool,
+          rt.wording.whereToChange
+        )
         end = rt.begin(resolved.config.id)
         await rt.prepare(resolved.config)
       }
@@ -164,7 +181,7 @@ export function createMcpServer(rt: McpRuntime, options: McpServerOptions): McpS
     {
       title: 'List connections',
       description:
-        'Connections the user made available to agents in Vortaq: id, name, engine (mysql, mariadb, postgresql, sqlite, mongodb), environment (local, staging, production, other) and access level (structure, read or write). Connections that are not listed do not exist for you.',
+        'Connections the user made available to agents in Vortaq: id, name, engine (mysql, mariadb, postgresql, sqlite, mongodb, sqlserver), environment (local, staging, production, other) and access level (structure, read or write). Connections that are not listed do not exist for you.',
       annotations: READ_ONLY
     },
     () => call('list_connections', {}, () => listConnections(rt))

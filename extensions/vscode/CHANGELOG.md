@@ -1,5 +1,23 @@
 # Cambios
 
+## 0.6.0 — agentes (MCP) en el editor y actualizaciones con un clic (2026-11-10)
+
+- **Agentes (MCP) sin la aplicación de escritorio.** La extensión trae el servidor MCP de Vortaq y lo
+  ejecuta dentro del editor con sus propias conexiones: **Vortaq: Agentes (MCP)…** lo activa, elige el
+  nivel de cada conexión («Solo estructura», «Lectura», «Lectura y escritura»; nunca escritura en
+  Producción) y copia la configuración de Claude Code, Codex, Gemini CLI, Antigravity, Cursor u
+  OpenCode. **VS Code (Copilot en modo agente) lo encuentra solo**, sin editar `mcp.json`.
+- Solo en `127.0.0.1`, con una clave guardada en el almacén seguro del editor (**Regenerar la clave**),
+  sin atender páginas web. Con varias ventanas abiertas atiende una y otra la sustituye al cerrarse.
+- El nivel de cada conexión aparece al pasar el ratón por ella en el árbol.
+- **Actualizaciones desde la extensión.** El «Auto Update» del editor no sirve con un `.vsix`: ahora
+  Vortaq mira una vez al día si hay una versión nueva en GitHub y la instala con un clic, después de
+  comprobar su SHA-256 (**Vortaq: Buscar actualizaciones** lo hace en el momento;
+  `vortaq.updates.check` apaga la comprobación diaria).
+- **Corrección:** «Importar conexiones de Vortaq (escritorio)» no copiaba el bloque de SQL Server
+  (método de inicio de sesión, dominio, instancia con nombre, cifrado y «Confiar en el certificado»):
+  ahora sí. El acceso para agentes nunca se importa.
+
 ## 0.5.0 — SQL Server y Azure SQL (2026-11-10)
 
 - **Nuevo motor: SQL Server** (2012 o posterior), **Azure SQL Database** y **Managed Instance**, con los mismos

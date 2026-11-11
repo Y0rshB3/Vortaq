@@ -132,6 +132,37 @@ export {
   type MongoWriteAnalysis
 } from '@shared/mongo/classify'
 
+/* ---------- agents (MCP): the editor extension's server on 127.0.0.1 ---------- */
+export { McpRuntime, type McpRuntimeOptions } from '@main/mcp/runtime'
+export { activityLine, type McpActivity } from '@main/mcp/server'
+export {
+  EDITOR_MCP_COMMAND,
+  EDITOR_MCP_WORDING,
+  type McpWording
+} from '@main/mcp/access'
+export {
+  mcpHttpUrl,
+  pingMcpHttp,
+  startMcpHttpServer,
+  type McpHttpOptions,
+  type McpHttpServer
+} from '@main/mcp/http'
+export {
+  DEFAULT_MCP_ACCESS,
+  effectiveMcpAccess,
+  MCP_ACCESS_HINTS,
+  MCP_ACCESS_LABELS,
+  MCP_ACCESS_LEVELS,
+  MCP_KEY_NOTE,
+  MCP_PRIVACY_NOTE,
+  MCP_WRITE_BLOCKED,
+  mcpHttpClientSnippets,
+  mcpWriteBlocked,
+  normalizeMcpConfig,
+  type McpClientSnippet,
+  type McpHttpEndpoint
+} from '@shared/mcp'
+
 /* ---------- SQL dialects (splitting, both guard classifiers, quoting) ---------- */
 export {
   dialectForEngine,

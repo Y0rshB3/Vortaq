@@ -20,7 +20,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 [**Linux**](https://github.com/Y0rshB3/Vortaq/releases/latest)
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
-[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.5.0/vortaq-0.5.0.vsix) ·
+[**descargar `.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.6.0/vortaq-0.6.0.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -1396,6 +1396,9 @@ salida estándar). Funciona con la app abierta o cerrada; los cambios que hagas 
 cambiar su nivel o su entorno, apagar el acceso) se aplican en la siguiente llamada del agente, sin reiniciarlo.
 El modo MCP solo **lee** tu perfil: nunca modifica `connections.json`, `settings.json` ni las contraseñas.
 
+¿No puedes instalar la aplicación de escritorio? La [extensión para editores](#agentes-mcp-en-el-editor) trae su
+propio servidor MCP, que corre dentro de VS Code (o Cursor, VSCodium, Windsurf) con las conexiones del editor.
+
 ### Activarlo
 
 1. **Ajustes › Agentes (MCP)**: activa «Permitir que agentes usen Vortaq (MCP)» (desactivado por defecto).
@@ -1559,7 +1562,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.5.0):
+Qué hace (versión 0.6.0):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1583,13 +1586,45 @@ Qué hace (versión 0.5.0):
   consulta** y **Ejecutar** llevan el SQL a un documento nuevo con la misma conexión.
 - **Ver datos** de tablas y vistas y **Ver documentos** de MongoDB (de solo lectura en esta versión).
 - **Producción**: cualquier escritura pide escribir el nombre de la conexión, igual que en escritorio.
+- **Agentes (MCP) sin la aplicación de escritorio** (desde la 0.6.0): la extensión trae su propio servidor MCP
+  con las conexiones del editor; Copilot en VS Code lo ve solo y los demás clientes se configuran copiando un
+  bloque ([Agentes (MCP) en el editor](#agentes-mcp-en-el-editor)).
 - Los paneles siguen el **tema del editor** (claro, oscuro y alto contraste).
 
 **Importar desde la aplicación de escritorio.** El botón «Importar de Vortaq» de la extensión lee las conexiones
 de la aplicación de escritorio instalada en el mismo equipo y te deja elegir cuáles traer. **Las contraseñas no
 se importan** (la aplicación de escritorio las guarda cifradas con su propia clave): las escribes una vez al
 conectar y la extensión las guarda cifradas en el almacén seguro del editor. Cada aplicación conserva sus
-propias conexiones y contraseñas.
+propias conexiones y contraseñas. El acceso para agentes (MCP) tampoco se copia: en el editor se activa de nuevo,
+conexión por conexión.
+
+### Agentes (MCP) en el editor
+
+Desde la 0.6.0 la extensión incluye el mismo servidor MCP que la aplicación de escritorio, pero **corriendo dentro
+del editor**: no hace falta instalar la aplicación de escritorio ni Node. Usa las conexiones de la extensión y
+responde mientras el editor está abierto, en `http://127.0.0.1:<puerto>/mcp` (solo en tu equipo) y con una clave.
+
+1. Ejecuta **Vortaq: Agentes (MCP)…** (paleta de comandos, el menú **…** de la vista Vortaq o el botón derecho
+   sobre una conexión › **Agentes (MCP)…**).
+2. Activa **Permitir que agentes usen Vortaq (MCP)** y elige el nivel de cada conexión: «Solo estructura»,
+   «Lectura» o «Lectura y escritura». Las reglas son las de escritorio: está apagado por defecto, solo existen
+   para el agente las conexiones que actives, y en Producción (o en los entornos que piden escribir el nombre)
+   nunca se escribe.
+3. **VS Code (Copilot en modo agente)** lo ve solo: «Vortaq» aparece en **MCP: List Servers** y en las
+   herramientas del chat, sin editar `mcp.json`. Para **Claude Code, Codex, Gemini CLI, Antigravity, Cursor,
+   OpenCode** u otro cliente, elige **Copiar configuración para otro cliente…** y pega el bloque donde dice.
+
+La clave se crea al activarlo y se guarda en el almacén seguro del editor. VS Code la recibe al arrancar el
+servidor; en los demás clientes queda en su archivo de configuración, así que no lo subas a un repositorio. Con
+**Regenerar la clave** los clientes con la clave anterior dejan de entrar. El servidor solo atiende en
+`127.0.0.1`, rechaza peticiones de páginas web y nunca envía la configuración de la conexión (contraseña, host,
+usuario, ruta). Cada llamada deja una línea en la salida «Vortaq» del editor, nunca el SQL ni los valores.
+
+Ajustes (solo en los ajustes de usuario): `vortaq.mcp.enabled` y `vortaq.mcp.port` (39291 por defecto). Si otro
+programa usa ese puerto, Vortaq no arranca el servidor ni cambia de puerto por su cuenta (los clientes ya
+configurados le enviarían la clave a ese programa): elige otro puerto, copia de nuevo la configuración y, si
+hace falta, regenera la clave. Con varias ventanas del editor abiertas, atiende una y las demás la sustituyen si
+se cierra; para comprobar que el puerto es suyo, Vortaq nunca envía la clave.
 
 ### Instalar la extensión
 
@@ -1597,8 +1632,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`**:
   1. Descarga
-     [**`vortaq-0.5.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.5.0/vortaq-0.5.0.vsix)
-     (versión [`vscode-v0.5.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.5.0), con su
+     [**`vortaq-0.6.0.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.6.0/vortaq-0.6.0.vsix)
+     (versión [`vscode-v0.6.0`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.6.0), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1606,17 +1641,23 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.5.0.vsix       # VS Code
-  cursor --install-extension vortaq-0.5.0.vsix     # Cursor
-  codium --install-extension vortaq-0.5.0.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.5.0.vsix   # Windsurf
+  code --install-extension vortaq-0.6.0.vsix       # VS Code
+  cursor --install-extension vortaq-0.6.0.vsix     # Cursor
+  codium --install-extension vortaq-0.6.0.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.6.0.vsix   # Windsurf
   ```
+
+- **Actualizaciones:** desde la 0.6.0 la extensión mira una vez al día si hay una versión nueva en GitHub y la
+  ofrece; con **Instalar** descarga el `.vsix`, comprueba su SHA-256 con el `SHA256SUMS.txt` publicado y la
+  instala (después pide recargar la ventana). También con **Vortaq: Buscar actualizaciones**. El «Auto Update»
+  del editor no sirve para extensiones instaladas desde un `.vsix`. Si tienes la 0.5.0 o anterior, instala la
+  0.6.0 a mano una vez.
 
 - **Desde el Marketplace de VS Code y Open VSX** (próximamente): cuando esté publicada se podrá instalar
   buscando «Vortaq» en la vista Extensiones. VSCodium, Cursor y Windsurf usan Open VSX.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.5.0.vsix`.
+`extensions/vscode/vortaq-0.6.0.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

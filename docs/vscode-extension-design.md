@@ -506,7 +506,8 @@ mapping is the table that stood here, with these changes:
 there), copies known fields only (a hand-edited file may carry anything), drops ids, dates and
 the desktop's backup folders, validates each entry with `connectionSaveError` and lists them with
 checkboxes (duplicate names unchecked). It never opens `credentials.json`; the unit test checks
-the only file read. `VORTAQ_TEST_DESKTOP_PROFILE` (test-only) points at the fixture in
+the only file read. Since 0.6.0 it also copies the `sqlserver` block (0.5.0 left SQL Server
+connections on the defaults) and never the `mcp` setting: agents are chosen again in the editor. `VORTAQ_TEST_DESKTOP_PROFILE` (test-only) points at the fixture in
 `extensions/vscode/test/fixtures/desktop-profile/`.
 
 ### 9.7 Naming
@@ -598,6 +599,67 @@ Tests: `schemaViews.test.ts` (scope, save dialog, messages), `bridge.test.ts` (m
 `SchemaApp.web.test.ts` (both apps in jsdom with a fake host) and the VS Code suite (SQLite: the
 diagram's reads, a refused other namespace and `db:tableData`, and «Ejecutar» running the SELECT in
 a document). Screenshots: `diagram-*` and `query-builder-*` in the three themes.
+
+### 9.11 Agents (MCP) inside the editor (0.6.0)
+
+For people who cannot install the desktop app, the extension runs Vortaq's MCP server itself, with
+the extension's connections. Same rules as `Vortaq --mcp`: off by default, every connection made
+available one by one with its level, «Lectura y escritura» never effective where the typed name
+applies, the same tools, redaction and limits (`src/main/mcp/`, unchanged except for the wording).
+
+- **Transport.** stdio would need a Node to launch and the vault key outside the extension host, so
+  the server is **Streamable HTTP inside the extension host** (`src/main/mcp/http.ts`, Electron-free,
+  in the core): `127.0.0.1` only, Host must be `127.0.0.1:<port>`/`localhost:<port>` (DNS
+  rebinding), any web Origin refused, `Authorization: Bearer <key>` compared on digests, POST `/mcp`
+  only and **stateless** (a new `McpServer` and transport per request, JSON answers), 4 MB bodies,
+  8 requests at once. `GET /vortaq/ping?nonce=…` answers `HMAC-SHA256(key, "vortaq-ping:<port>:<nonce>")`:
+  a window proves the server is its own without ever sending the key (the first version sent the
+  Bearer key, which a program squatting the port would have recorded; found in the security review).
+  The ping has one overall deadline and a 4 KB answer cap.
+- **Runtime.** `McpRuntime` over a copy of the core's `AppContext` (`headless`, no events): a new
+  key for `getConnectionManager`, so agents never share the user's sessions. `EDITOR_MCP_WORDING`
+  makes the refusals name «Vortaq: Agentes (MCP)…» instead of the desktop's Ajustes; the
+  instructions say «the Vortaq editor extension».
+- **Host** (`host/mcp.ts`). `vortaq.mcp.enabled` (application scope, copied into settings.json as
+  `mcpEnabled`, which the runtime checks on every call) and `vortaq.mcp.port` (39291). The key is
+  32 random bytes in SecretStorage (`vortaq.mcp.key`); `onDidChange` follows a key another window
+  regenerated. Every window listens on `vortaq.mcp.port`, or proves with the ping that a window
+  of its own serves there and polls it every 10 s to take over when it closes. A port held by any
+  other program (or Vortaq with another key, e.g. in Cursor) leaves the server off (`busy`, retried
+  every 10 s) with a message to pick another port and regenerate the key: moving silently to the
+  next port would leave configured clients sending their key to that program. Activation adds `onStartupFinished`
+  so the server is up when the editor opens.
+- **VS Code.** `contributes.mcpServerDefinitionProviders` + `lm.registerMcpServerDefinitionProvider`:
+  the listed `McpHttpServerDefinition` carries no headers (VS Code may cache listed definitions);
+  `resolveMcpServerDefinition` adds the Bearer header when it starts the server. Editors without the
+  API (Cursor's MCP extension API drops headers on remote servers) use the copied configuration.
+- **UI** (`host/mcpManager.ts`). Native QuickPicks: the switch, every connection with its effective
+  level (`connections:setMcp`), «Copiar configuración para otro cliente…»
+  (`mcpHttpClientSnippets`: Claude Code, Codex, Gemini CLI, Antigravity, Cursor, VS Code by hand,
+  OpenCode, other), «Regenerar la clave», the privacy note; «Agentes (MCP)…» on a connection opens
+  its level. The tree tooltip shows the level. The connection form keeps its MCP tab hidden.
+- **Log.** One `activityLine` per call in the «Vortaq» output channel; never SQL, values or the key.
+
+Tests: `src/main/mcp/http.test.ts` (SDK client over HTTP, key, Host, Origin, limits, busy port,
+wording), `host/mcp.test.ts` (ports, takeover, key rotation, provider; the real core behind the
+HTTP server), `host/mcpManager.test.ts`, and the VS Code suite (a MySQL connection made available
+read-only, `run_query` and a refused `execute_sql` over HTTP, off again). Screenshots:
+`mcp-manager-dark`, `mcp-servers-dark`, `mcp-server-actions-dark`, `mcp-servers-running-dark`
+(VS Code's own client starts «Vortaq» and discovers its 7 tools).
+
+### 9.12 Updates without the Marketplace (0.6.0)
+
+A `.vsix` install is not updated by the editor's Auto Update. `host/updates.ts` reads
+`api.github.com/repos/Y0rshB3/Vortaq/releases` once a day (globalState `vortaq.updates.lastCheck`,
+shared by every window; `vortaq.updates.check`) and on «Vortaq: Buscar actualizaciones». It takes
+the newest `vscode-v<x.y.z>` release that is neither draft nor prerelease and has
+`vortaq-<x.y.z>.vsix` and `SHA256SUMS.txt`; download URLs are built from the tag. «Instalar»
+fetches both with redirects followed by hand (https only, api.github.com, github.com,
+objects/release-assets.githubusercontent.com), size caps, refuses a SHA-256 that differs, writes the
+file under globalStorage, installs it with `workbench.extensions.installExtension` and deletes it,
+then offers `workbench.action.reloadWindow`. «Omitir esta versión» is remembered. Not checked in
+development or test mode. When the extension reaches the Marketplace/Open VSX this check should
+step aside for gallery installs.
 
 ## 10. Left for phase 3 (and later)
 

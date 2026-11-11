@@ -6,6 +6,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import * as vscode from 'vscode'
 import {
   defaultSchemaOf,
@@ -27,6 +28,9 @@ import {
   type DesktopImportPreview
 } from './host/desktopImport'
 import { sqlDialectOf, vscodePrompter, WriteGuard, type Prompter } from './host/guard'
+import { coreMcpPorts, McpService, registerMcpProvider } from './host/mcp'
+import { showConnectionMcp, showMcpManager, type McpManagerDeps } from './host/mcpManager'
+import { ExtensionUpdater } from './host/updates'
 import { ConnectionFormPanel } from './host/panels/connectionForm'
 import { ResultsPanels } from './host/panels/results'
 import { SchemaPanels } from './host/panels/schemaViews'
@@ -46,6 +50,7 @@ import type { SchemaViewState, WebviewSettings } from './webviewState'
 /** What the integration tests reach (only returned in ExtensionMode.Test). */
 export interface VortaqTestApi {
   core: import('@core').VortaqCore
+  mcp: McpService
   connections: ConnectionService
   tree: ConnectionsTree
   view: vscode.TreeView<TreeNode>
@@ -148,6 +153,30 @@ export async function activate(
   })
   const statusBar = new TargetStatusBar(targets, service, (c) => guard.needsTyped(c))
   const codeLens = new TargetCodeLens(targets, service)
+
+  /* ---------- agents (MCP): the server inside the editor (host/mcp.ts) ---------- */
+  const version = context.extension.packageJSON.version as string
+  const logLine = (message: string): void => output.info(message)
+  const mcp = new McpService({
+    secrets: context.secrets,
+    settings: () => settings.mcp,
+    platform: process.platform,
+    ports: coreMcpPorts(core, version, logLine),
+    log: logLine
+  })
+  const mcpProvider = registerMcpProvider(mcp, version)
+  context.subscriptions.push(mcp, ...(mcpProvider ? [mcpProvider] : []))
+  const mcpDeps: McpManagerDeps = {
+    core,
+    service: mcp,
+    connections: () => service.list(),
+    setEnabled: (on) =>
+      vscode.workspace
+        .getConfiguration('vortaq')
+        .update('mcp.enabled', on, vscode.ConfigurationTarget.Global),
+    changed: () => service.refreshAll()
+  }
+
   context.subscriptions.push(
     service,
     tree,
@@ -165,6 +194,8 @@ export async function activate(
       codeLens.refresh()
       tree.refresh()
       statusBar.update()
+      // Starts, moves or stops the agents' server (vortaq.mcp.enabled / .port).
+      void mcp.refresh()
     })
   )
   void vscode.commands.executeCommand('setContext', 'vortaq.sqliteUnavailable', !!sqliteProblem)
@@ -442,6 +473,28 @@ export async function activate(
   command('vortaq.viewDocuments', (node?: TreeNode) => {
     if (node?.kind === 'collection') return sqlRunner.viewDocuments(node)
   })
+  /* ---------- updates (the .vsix is not updated by the editor's Auto Update) ---------- */
+  const updater = new ExtensionUpdater({
+    currentVersion: version,
+    state: context.globalState,
+    downloadDir: join(context.globalStorageUri.fsPath, 'updates'),
+    enabled: () =>
+      vscode.workspace.getConfiguration('vortaq').get<boolean>('updates.check', true) !== false,
+    log: logLine
+  })
+  command('vortaq.checkUpdates', () => updater.checkNow())
+  if (context.extensionMode === vscode.ExtensionMode.Production) {
+    // A little after start-up, at most once a day for all the editor's windows.
+    const timer = setTimeout(() => void updater.checkInBackground(), 15_000)
+    context.subscriptions.push({ dispose: () => clearTimeout(timer) })
+  }
+
+  command('vortaq.mcp', () => showMcpManager(mcpDeps))
+  command('vortaq.mcpConnection', async (node?: TreeNode) => {
+    const connection = nodeConnection(node)
+    if (connection) await showConnectionMcp(mcpDeps, connection)
+    else await showMcpManager(mcpDeps)
+  })
   command('vortaq.diagram', (node?: TreeNode) => openSchemaView('diagram', node))
   command('vortaq.queryBuilder', (node?: TreeNode) => openSchemaView('queryBuilder', node))
 
@@ -523,6 +576,7 @@ export async function activate(
   if (context.extensionMode !== vscode.ExtensionMode.Test) return undefined
   return {
     core,
+    mcp,
     connections: service,
     tree,
     view,

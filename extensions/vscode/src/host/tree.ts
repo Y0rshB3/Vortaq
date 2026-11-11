@@ -10,6 +10,8 @@ import {
   defaultSchemaOf,
   ENGINES,
   environmentName,
+  MCP_ACCESS_LABELS,
+  normalizeMcpConfig,
   usesSchemaRef,
   type ConnectionConfig,
   type MongoCollectionInfo,
@@ -241,6 +243,12 @@ export class ConnectionsTree implements vscode.TreeDataProvider<TreeNode>, vscod
     tooltip.appendMarkdown(`${engine.label} · ${escapeMd(where)}\n\n`)
     tooltip.appendMarkdown(`Entorno: ${environmentName(connection.environment)}`)
     if (locked) tooltip.appendMarkdown(' · las escrituras piden escribir el nombre de la conexión')
+    // Agents (MCP): the level saved for it (write is read-only where the typed name applies).
+    const mcp = normalizeMcpConfig(connection.mcp)
+    if (mcp?.enabled) {
+      const level = mcp.access === 'write' && locked ? 'read' : mcp.access
+      tooltip.appendMarkdown(`\n\nAgentes (MCP): ${MCP_ACCESS_LABELS[level]}`)
+    }
     if (unavailable) tooltip.appendMarkdown(`\n\n${escapeMd(this.connections.sqliteProblem ?? '')}`)
     item.tooltip = tooltip
     return item

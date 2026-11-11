@@ -65,6 +65,36 @@ macOS, Windows y Linux, con diseñador de tablas, copias de seguridad y automati
 - **El tema de tu editor.** Los paneles usan los colores, la fuente y el tamaño del editor, en
   temas claros, oscuros y de alto contraste.
 
+## Agentes (MCP)
+
+La extensión incluye el servidor [MCP](https://modelcontextprotocol.io) de Vortaq: un agente de IA
+puede usar las conexiones que tú elijas, **sin la aplicación de escritorio** y sin instalar nada
+más. El servidor corre dentro del editor, en `http://127.0.0.1:<puerto>/mcp` (solo en tu equipo), y
+responde mientras el editor está abierto.
+
+1. **Vortaq: Agentes (MCP)…** (paleta de comandos, menú **…** de la vista Vortaq, o botón derecho en
+   una conexión › **Agentes (MCP)…**).
+2. Activa **Permitir que agentes usen Vortaq (MCP)** y elige el nivel de cada conexión: «Solo
+   estructura» (nunca filas), «Lectura» o «Lectura y escritura». Está apagado por defecto, solo
+   existen para el agente las conexiones que actives, y en Producción nunca se escribe.
+3. **VS Code (Copilot en modo agente)** lo encuentra solo («MCP: List Servers» › Vortaq). Para
+   Claude Code, Codex, Gemini CLI, Antigravity, Cursor, OpenCode u otro cliente: **Copiar
+   configuración para otro cliente…** y pega el bloque donde se indica.
+
+Cada petición lleva una clave que se guarda en el almacén seguro del editor; **Regenerar la clave**
+deja fuera a los clientes con la anterior. Vortaq nunca envía al agente la contraseña, el host, el
+usuario ni la ruta de una conexión, y el registro de cada llamada (panel Salida › Vortaq) no incluye
+el SQL ni los valores.
+
+## Actualizaciones
+
+La extensión se instala desde un `.vsix`, así que el «Auto Update» del editor no la actualiza. En
+su lugar, Vortaq mira una vez al día si hay una versión nueva publicada en GitHub y te la ofrece:
+**Instalar** descarga el `.vsix`, comprueba su SHA-256 con el `SHA256SUMS.txt` de esa versión, lo
+instala y te pide recargar la ventana. **Vortaq: Buscar actualizaciones** lo comprueba en el momento
+(también en el menú **…** de la vista Vortaq). Desactiva la comprobación diaria con
+`vortaq.updates.check`.
+
 ## Conexiones de producción
 
 Cualquier escritura en una conexión marcada como **Producción** te pide escribir el nombre de la
@@ -87,6 +117,9 @@ también piden confirmación en el resto de conexiones.
   que configures (y a sus túneles SSH). Exportar escribe únicamente en el archivo que eliges en el
   diálogo de guardar.
 - El registro («Vortaq» en el panel Salida) nunca incluye contraseñas ni datos de las filas.
+- Los agentes (MCP) están apagados por defecto. Encendidos, solo ven las conexiones que actives, en
+  `127.0.0.1` y con una clave; con «Lectura» o «Lectura y escritura», los resultados de sus consultas
+  llegan al proveedor de IA del agente.
 - Las conexiones de la extensión son independientes de las de Vortaq de escritorio: cada aplicación
   guarda las suyas.
 
@@ -105,9 +138,12 @@ también piden confirmación en el resto de conexiones.
 | `vortaq.typedConfirmEnvironments` | `["production"]` | Entornos que piden escribir el nombre de la conexión al escribir.     |
 | `vortaq.confirmDestructive`       | `true`           | Confirmar antes de borrar o eliminar en cualquier conexión.           |
 | `vortaq.codeLens`                 | `true`           | Mostrar la conexión y «Ejecutar todo» sobre los documentos SQL.       |
+| `vortaq.updates.check`            | `true`           | Buscar una vez al día una versión nueva de la extensión en GitHub.    |
+| `vortaq.mcp.enabled`              | `false`          | Permitir que agentes (MCP) usen las conexiones que actives.           |
+| `vortaq.mcp.port`                 | `39291`          | Puerto local del servidor MCP (si otro programa lo usa, no arranca).  |
 
-Los dos ajustes de seguridad solo se pueden cambiar en los ajustes de usuario, no en los de un
-espacio de trabajo.
+Los ajustes de seguridad y los de agentes solo se pueden cambiar en los ajustes de usuario, no en
+los de un espacio de trabajo.
 
 ## En esta versión todavía no
 
