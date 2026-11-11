@@ -2,9 +2,17 @@
 # Marketplace with Trusted Publishing: GitHub's OIDC token is exchanged for a
 # short Marketplace session, so no token is stored anywhere. It uploads the very
 # .vsix of the GitHub release, after checking it against the release's
-# SHA256SUMS.txt and its manifest against the tag. The publisher's policy
-# (y0rshb3 › Trusted Publishing) accepts only this repository, this file and the
-# `marketplace` environment, which only `vscode-v*` tags may use.
+# SHA256SUMS.txt (integrity of the download, not authenticity: both come from
+# the same release) and its manifest against the tag.
+#
+# Guards around the job that can publish:
+# - the publisher's policy (y0rshb3 › Trusted Publishing) accepts only this
+#   repository, this file and the `marketplace` environment;
+# - `marketplace` may only run for `vscode-v*` tags and waits for the owner's
+#   approval (required reviewer);
+# - vsce and its whole dependency tree come from tools/vsce/package-lock.json
+#   (exact versions and hashes, changed only by PR), installed without install
+#   scripts; actions are pinned by commit.
 # Re-run by hand: `gh workflow run publish-extension.yml --ref vscode-v<x.y.z>`.
 name: Publicar la extensión en el Marketplace
 
@@ -30,9 +38,15 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: tools/vsce
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+      - name: Instalar vsce (árbol fijado, sin scripts de instalación)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix tools/vsce
       - name: Descargar el .vsix de la versión y comprobarlo
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,5 +65,4 @@ jobs:
           test "$(jq -r .version <<<"$manifest")" = "$version"
           echo "VSIX=$dir/vortaq-$version.vsix" >> "$GITHUB_ENV"
       - name: Publicar (Trusted Publishing)
-        # Exact vsce version: the step can mint the publisher's Marketplace session.
-        run: npx --yes @vscode/vsce@4.1.0 publish --oidc --packagePath "$VSIX" --skip-duplicate
+        run: tools/vsce/node_modules/.bin/vsce publish --oidc --packagePath "$VSIX" --skip-duplicate
