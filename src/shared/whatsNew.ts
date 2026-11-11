@@ -25,6 +25,14 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.2',
+    date: '2026-11-11',
+    highlights: [
+      'Correcciones de robustez y de seguridad: recomendamos actualizar',
+      'Electron 44.11.1 (Chromium 152.0.7977.169), con sus correcciones de seguridad'
+    ]
+  },
+  {
     version: '2.9.1',
     date: '2026-11-11',
     highlights: [

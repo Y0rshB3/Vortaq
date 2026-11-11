@@ -1,5 +1,9 @@
 # Cambios
 
+## 0.8.2 — correcciones (2026-11-11)
+
+- Correcciones de robustez y de seguridad: recomendamos actualizar.
+
 ## 0.8.1 — en el Marketplace de VS Code (2026-11-11)
 
 - **Vortaq está en el Marketplace de VS Code** (`y0rshb3.vortaq`): búscala en la vista Extensiones. Instalada

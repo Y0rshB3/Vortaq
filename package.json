@@ -1,7 +1,7 @@
 {
   "name": "vortaq",
   "productName": "Vortaq",
-  "version": "2.9.1",
+  "version": "2.9.2",
   "description": "Vortaq: independent, open-source desktop database client (connections, object explorer, query editor, backups and automation).",
   "private": true,
   "main": "./out/main/index.js",
@@ -97,7 +97,7 @@
     "@types/vscode": "1.120.0",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.0",
-    "electron": "^44.3.0",
+    "electron": "^44.11.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.5",
