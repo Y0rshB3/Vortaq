@@ -6,6 +6,7 @@
   exist», y el árbol, la estructura, los datos, la edición, el plan de ejecución y los agentes (MCP)
   funcionan con esos servidores. Lo que no tienen (identidades, columnas generadas, particiones, vistas
   materializadas, procedimientos) simplemente no aparece.
+- Correcciones de robustez y de seguridad: recomendamos actualizar.
 
 ## 0.8.1 — en el Marketplace de VS Code (2026-11-11)
 
