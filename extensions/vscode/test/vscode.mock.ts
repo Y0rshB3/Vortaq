@@ -79,6 +79,57 @@ export enum ProgressLocation {
   Notification = 15
 }
 
+export enum CompletionItemKind {
+  Text = 0,
+  Method = 1,
+  Function = 2,
+  Field = 4,
+  Variable = 5,
+  Class = 6,
+  Interface = 7,
+  Module = 8,
+  Property = 9,
+  Enum = 12,
+  Keyword = 13,
+  Constant = 20
+}
+
+export enum CompletionTriggerKind {
+  Invoke = 0,
+  TriggerCharacter = 1,
+  TriggerForIncompleteCompletions = 2
+}
+
+export class Position {
+  constructor(
+    readonly line: number,
+    readonly character: number
+  ) {}
+}
+
+export class Range {
+  constructor(
+    readonly start: Position,
+    readonly end: Position
+  ) {}
+}
+
+export class CompletionItem {
+  insertText?: string
+  filterText?: string
+  sortText?: string
+  detail?: string
+  range?: unknown
+  constructor(
+    readonly label: string | { label: string; description?: string },
+    readonly kind?: CompletionItemKind
+  ) {}
+}
+
+export const TextEdit = {
+  replace: (range: Range, newText: string) => ({ range, newText })
+}
+
 export enum QuickPickItemKind {
   Separator = -1,
   Default = 0
