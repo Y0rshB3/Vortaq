@@ -24,7 +24,13 @@ import { HandlerRegistry } from '@main/ipc/router'
 import { configureLog } from '@main/log'
 import { setSqliteSpawner, type ProcessSpawner } from '@main/sqlite/spawner'
 import { setJsonStoreReload } from '@main/storage/jsonStore'
-import { ConnectionsRepo, JobsRepo, RunsRepo, SettingsRepo } from '@main/storage/repos'
+import {
+  ConnectionsRepo,
+  defaultBackupDirFrom,
+  JobsRepo,
+  RunsRepo,
+  SettingsRepo
+} from '@main/storage/repos'
 
 export interface CoreOptions {
   /**
@@ -92,13 +98,14 @@ export function createCore(options: CoreOptions): VortaqCore {
   if (options.sqliteSpawner) setSqliteSpawner(options.sqliteSpawner)
   if (options.fetch) setAiFetch(options.fetch)
   const dir = options.dataDir
+  const settings = new SettingsRepo(dir, options.home ?? homedir())
   const context: AppContext = {
     userDataPath: dir,
     logDir: join(dir, 'logs'),
-    connections: new ConnectionsRepo(dir),
+    connections: new ConnectionsRepo(dir, defaultBackupDirFrom(settings, join(dir, 'backups'))),
     jobs: new JobsRepo(dir),
     runs: new RunsRepo(dir),
-    settings: new SettingsRepo(dir, options.home ?? homedir()),
+    settings,
     credentials: new CredentialStore(dir, options.secrets.codec, options.secrets.codecName),
     emit: options.emit ?? (() => undefined),
     headless: false

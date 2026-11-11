@@ -9,7 +9,7 @@ import type { SqlExportOptions, SqlExportResult } from '@shared/importers'
 import { CAPABILITY_MESSAGES, requireConnectionCapability } from '../db/errors'
 import { describeError } from '../mysql/errors'
 import type { MysqlSession } from '../mysql/types'
-import { objectWeight, partialWork, type CreateDeps } from './create'
+import { noBackupFolderMessage, objectWeight, partialWork, type CreateDeps } from './create'
 import type { ProgressReporter } from './index'
 import { literalKindOf, quoteString, renderTuple, type LiteralKind } from './mysqlLiterals'
 import { formatSqlDumpFileName } from './naming'
@@ -495,8 +495,7 @@ export async function exportSchemaToSql(
   if (!target) {
     const dir =
       options.targetDir?.trim() || (connection.backupDir ? join(connection.backupDir, schema) : '')
-    if (!dir)
-      throw new Error(`La conexión ${connection.name} no tiene carpeta de copias configurada.`)
+    if (!dir) throw new Error(noBackupFolderMessage(connection.name))
     target = await uniqueTarget(dir, now, options.label, gzip)
   }
 

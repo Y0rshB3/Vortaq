@@ -9,7 +9,13 @@ import { electronCodec } from './credentials/electronCodec'
 import { envVar } from './env'
 import { configureLog, getLogger } from './log'
 import { raiseNotice } from './notices'
-import { ConnectionsRepo, JobsRepo, RunsRepo, SettingsRepo } from './storage/repos'
+import {
+  ConnectionsRepo,
+  defaultBackupDirFrom,
+  JobsRepo,
+  RunsRepo,
+  SettingsRepo
+} from './storage/repos'
 
 /** Shown once when no system keyring is available (Linux without GNOME Keyring/KWallet). */
 export const PLAIN_SECRETS_NOTICE: StartupNotice = {
@@ -118,13 +124,17 @@ export function createContext(options: { headless: boolean }): AppContext {
     }
   }
 
+  const settings = new SettingsRepo(userDataPath, homedir())
   const ctx: AppContext = {
     userDataPath,
     logDir,
-    connections: new ConnectionsRepo(userDataPath),
+    connections: new ConnectionsRepo(
+      userDataPath,
+      defaultBackupDirFrom(settings, join(userDataPath, 'backups'))
+    ),
     jobs: new JobsRepo(userDataPath),
     runs: new RunsRepo(userDataPath),
-    settings: new SettingsRepo(userDataPath, homedir()),
+    settings,
     credentials,
     headless: options.headless,
     isolatedProfile: switches.userDataPath !== null,

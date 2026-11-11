@@ -164,6 +164,31 @@ describe('createCore (Node host, no Electron)', () => {
     await core.invoke('connections:delete', prod.id)
   })
 
+  it('backs up a connection saved without a backup folder into <profile>/backups/<name>', async () => {
+    const file = join(dir, 'sin-carpeta.db')
+    await core.invoke('sqlite:createFile', file)
+    const saved = await core.invoke(
+      'connections:save',
+      sqliteInput(file, { name: 'Sin carpeta', backupDir: '' })
+    )
+    const folder = join(dir, 'profile', 'backups', 'Sin carpeta')
+    expect(saved.backupDir).toBe(folder)
+    await core.invoke('connections:open', saved.id)
+    ok(await core.invoke('db:execute', saved.id, 'CREATE TABLE t (id INTEGER PRIMARY KEY)'))
+    const result = await core.invoke('backups:create', 'op-sin-carpeta', {
+      connectionId: saved.id,
+      schema: 'main',
+      includeData: true
+    })
+    expect(result.path.startsWith(join(folder, 'main'))).toBe(true)
+    expect(existsSync(result.path)).toBe(true)
+    expect((await core.invoke('backups:list', saved.id, 'main')).map((b) => b.path)).toContain(
+      result.path
+    )
+    await core.invoke('connections:close', saved.id)
+    await core.invoke('connections:delete', saved.id)
+  })
+
   it('runs SQL, edits a row and refuses an unconfirmed write on production', async () => {
     const file = join(dir, 'core.db')
     await core.invoke('sqlite:createFile', file)

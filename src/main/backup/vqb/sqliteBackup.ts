@@ -13,7 +13,8 @@ import {
   checkBackupPassword,
   objectWeight,
   partialWork,
-  uniqueTarget
+  uniqueTarget,
+  noBackupFolderMessage
 } from '../create'
 import type { ProgressReporter } from '../index'
 import type { ScryptParams } from './crypto'
@@ -125,8 +126,7 @@ export async function createSqliteBackup(
   if (!config) throw new Error('La conexión de la copia ya no existe.')
   const targetDir =
     options.targetDir?.trim() || (config.backupDir ? join(config.backupDir, db) : '')
-  if (!targetDir)
-    throw new Error(`La conexión ${config.name} no tiene carpeta de copias configurada.`)
+  if (!targetDir) throw new Error(noBackupFolderMessage(config.name))
   const started = performance.now()
   const cancelled = (): boolean => signal?.aborted === true
   if (cancelled()) throw new Error(BACKUP_CANCELLED)

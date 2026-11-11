@@ -13,7 +13,8 @@ import {
   checkBackupPassword,
   objectWeight,
   partialWork,
-  uniqueTarget
+  uniqueTarget,
+  noBackupFolderMessage
 } from '../create'
 import type { ProgressReporter } from '../index'
 import type { ScryptParams } from './crypto'
@@ -125,8 +126,7 @@ export async function createPgBackup(
   if (!connection) throw new Error('La conexión de la copia ya no existe.')
   const targetDir =
     options.targetDir?.trim() || (connection.backupDir ? join(connection.backupDir, database) : '')
-  if (!targetDir)
-    throw new Error(`La conexión ${connection.name} no tiene carpeta de copias configurada.`)
+  if (!targetDir) throw new Error(noBackupFolderMessage(connection.name))
   const started = performance.now()
   const cancelled = (): boolean => signal?.aborted === true
   if (cancelled()) throw new Error(BACKUP_CANCELLED)
