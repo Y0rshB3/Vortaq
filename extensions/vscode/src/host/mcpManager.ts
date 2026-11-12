@@ -26,6 +26,7 @@ import {
   type VortaqCore
 } from '@core'
 import type { McpService } from './mcp'
+import { showError, showInformation, showWarning } from './notice'
 
 export interface McpManagerDeps {
   core: VortaqCore
@@ -169,7 +170,7 @@ export async function pickConnectionLevel(
   try {
     await deps.core.invoke('connections:setMcp', connection.id, picked.config)
   } catch (err) {
-    void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err))
+    void showError(err instanceof Error ? err.message : String(err))
     return false
   }
   deps.changed()
@@ -186,7 +187,7 @@ async function copyClientConfig(service: McpService): Promise<void> {
   )
   if (!picked) return
   await vscode.env.clipboard.writeText(picked.snippet.text)
-  void vscode.window.showInformationMessage(
+  void showInformation(
     `Configuración de ${picked.snippet.label} copiada. Pégala en: ${picked.snippet.where}. ${MCP_KEY_NOTE}`
   )
 }
@@ -214,7 +215,7 @@ export async function showMcpManager(deps: McpManagerDeps): Promise<void> {
         await pickConnectionLevel(deps, action.connection)
         break
       case 'vscode':
-        void vscode.window.showInformationMessage(
+        void showInformation(
           'En VS Code no hace falta configurar nada: con los agentes activados, «Vortaq» aparece en «MCP: List Servers» y en las herramientas del chat en modo agente. Si el chat pide confianza para el servidor, acéptala.'
         )
         return
@@ -223,7 +224,7 @@ export async function showMcpManager(deps: McpManagerDeps): Promise<void> {
         return
       case 'key': {
         const yes = 'Regenerar'
-        const answer = await vscode.window.showWarningMessage(
+        const answer = await showWarning(
           '¿Regenerar la clave de los agentes? Los clientes configurados con la clave actual (Claude Code, Codex, Cursor…) dejarán de entrar hasta que copies de nuevo su configuración.',
           { modal: true },
           yes
@@ -232,7 +233,7 @@ export async function showMcpManager(deps: McpManagerDeps): Promise<void> {
         break
       }
       case 'privacy':
-        await vscode.window.showInformationMessage(MCP_PRIVACY_NOTE, { modal: true })
+        await showInformation(MCP_PRIVACY_NOTE, { modal: true })
         break
     }
   }
@@ -251,7 +252,7 @@ export async function showConnectionMcp(
   const fresh = deps.core.context.connections.get(connection.id)
   if (!fresh || !normalizeMcpConfig(fresh.mcp)?.enabled) return
   const turnOn = 'Activar agentes'
-  const answer = await vscode.window.showInformationMessage(
+  const answer = await showInformation(
     `«${connection.name}» quedó disponible para agentes, pero los agentes están desactivados en Vortaq.`,
     turnOn
   )

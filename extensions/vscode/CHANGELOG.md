@@ -1,5 +1,17 @@
 # Cambios
 
+## 0.8.3 — huella de los servidores SSH (2026-11-11)
+
+- **Túneles SSH** (de Vortaq 2.9.3): Vortaq recuerda la huella de cada servidor SSH y rechaza la conexión si
+  cambia. La primera vez que abras una conexión con túnel, el aviso de error ofrece «Confiar en el servidor
+  SSH» después de mostrarte la huella.
+- **PostgreSQL:** una copia `.vqb` de un servidor más nuevo se restaura en uno de la 9.2 a la 11, y cancelar
+  una copia la detiene enseguida (antes esperaba a terminar la tabla que estaba copiando).
+- **SQL Server con Microsoft Entra ID** necesita cifrado «Obligatorio» o «Estricto» con el certificado
+  verificado.
+- Los avisos de la extensión muestran siempre el texto tal cual.
+- Correcciones de robustez y de seguridad: recomendamos actualizar.
+
 ## 0.8.2 — PostgreSQL 9.2 a 11 (2026-11-11)
 
 - **PostgreSQL 9.2 a 11** (de Vortaq 2.9.2): la conexión ya no falla con «relation "pg_stat_ssl" does not

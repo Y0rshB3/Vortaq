@@ -14,6 +14,7 @@ import {
   type NewHistoryEntry,
   type QueryHistoryEntry
 } from '@core'
+import { showWarning } from './notice'
 
 export const HISTORY_STATE_KEY = 'vortaq.queryHistory'
 
@@ -108,7 +109,7 @@ export function showQueryHistory(
     pick.onDidTriggerButton(async (button) => {
       if (button !== CLEAR) return
       const yes = 'Borrar'
-      const answer = await vscode.window.showWarningMessage(
+      const answer = await showWarning(
         '¿Borrar todo el historial de consultas de este editor?',
         { modal: true },
         yes

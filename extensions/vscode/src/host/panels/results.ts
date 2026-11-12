@@ -15,6 +15,7 @@ import { confirmDetail, handleWebviewMessage } from '../webview/bridge'
 import { webviewHtml, webviewOptions } from '../webview/html'
 import type { WriteGuard } from '../guard'
 import { EXPORT_CHANNELS, ExportOperations, PanelExports, type ExportTable } from './exports'
+import { showError, showInformation, showWarning } from '../notice'
 
 /**
  * Core channels a results webview may call: EditableResult's editability check and
@@ -179,7 +180,7 @@ export class ResultsPanel {
           case 'confirm': {
             const request = message.request
             const confirmText = request.notice ? 'Aceptar' : (request.confirmText ?? 'Confirmar')
-            const answer = await vscode.window.showWarningMessage(
+            const answer = await showWarning(
               request.title,
               { modal: true, detail: confirmDetail(request) },
               confirmText
@@ -206,9 +207,9 @@ export function showNotification(
   level: 'success' | 'info' | 'warning' | 'error',
   text: string
 ): void {
-  if (level === 'error') void vscode.window.showErrorMessage(text)
-  else if (level === 'warning') void vscode.window.showWarningMessage(text)
-  else void vscode.window.showInformationMessage(text)
+  if (level === 'error') void showError(text)
+  else if (level === 'warning') void showWarning(text)
+  else void showInformation(text)
 }
 
 export class ResultsPanels implements vscode.Disposable {
@@ -241,7 +242,7 @@ export class ResultsPanels implements vscode.Disposable {
     const panel = this.panels.get(key)
     if (!panel || panel.isDisposed || !panel.dirty) return true
     const discard = 'Descartar y ejecutar'
-    const answer = await vscode.window.showWarningMessage(
+    const answer = await showWarning(
       'Cambios sin aplicar',
       {
         modal: true,

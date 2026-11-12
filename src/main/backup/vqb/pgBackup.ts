@@ -144,7 +144,7 @@ export async function createPgBackup(
     )
     const versionNum = Number(info?.num ?? 0)
     const schemas = await listSchemas(session)
-    const plan = await planObjects(session, schemas, versionNum, options.includeData)
+    const plan = await planObjects(session, schemas, versionNum, options.includeData, cancelled)
 
     const date = (deps.now ?? (() => new Date()))()
     const target = await uniqueTarget(targetDir, date, options.label, VQB_EXTENSION)
@@ -294,7 +294,9 @@ async function planObjects(
   session: PgSession,
   schemas: string[],
   versionNum: number,
-  includeData: boolean
+  includeData: boolean,
+  /** Checked between batches of rows: a large table stops within one batch. */
+  cancelled: () => boolean
 ): Promise<{ objects: Planned[]; warnings: string[] }> {
   const objects: Planned[] = []
   const warnings: string[] = []
@@ -369,6 +371,7 @@ async function planObjects(
           try {
             let next = ROW_PROGRESS_EVERY
             for (;;) {
+              if (cancelled()) throw new Error(BACKUP_CANCELLED)
               const batch = await readBatch(cursor, ROW_BATCH)
               if (batch.length === 0) break
               for (const row of batch) await object.addRow(row)

@@ -79,7 +79,9 @@ const SSH_KEYS = [
   'username',
   'authType',
   'privateKeyPath',
-  'savePassword'
+  'savePassword',
+  // The SSH server fingerprint the same user confirmed in the desktop app.
+  'hostKey'
 ]
 const SSL_KEYS = [
   'enabled',
@@ -162,9 +164,7 @@ function inputOf(record: Json): ConnectionInput {
     ...(sqlite ? { sqlite } : {}),
     ...(record.mongo !== undefined ? { mongo: pick(record.mongo, MONGO_KEYS) } : {}),
     // Sign-in method, instance and TLS of SQL Server (0.5.0 left them at the defaults).
-    ...(record.sqlserver !== undefined
-      ? { sqlserver: pick(record.sqlserver, SQLSERVER_KEYS) }
-      : {})
+    ...(record.sqlserver !== undefined ? { sqlserver: pick(record.sqlserver, SQLSERVER_KEYS) } : {})
     // `mcp` is never copied: agents are chosen again in the editor (Vortaq: Agentes (MCP)…).
   } as ConnectionInput
   return withEngineDefaults(input)

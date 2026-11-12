@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import type { ConnectionConfig, RestoreOptions, RestoreResult } from '@shared/types'
-import { featuresOf } from '../../postgres/catalogCompat'
+import { ddlForServer, featuresOf } from '../../postgres/catalogCompat'
 import { describeError } from '../../postgres/errors'
 import type { PgSession } from '../../postgres/session'
 import type { ProgressReporter } from '../index'
@@ -22,7 +22,8 @@ import { pgParam, type VqbValue } from './values'
  * progress), sequences, tables and their rows, functions and procedures,
  * views (retried), then indexes, foreign keys, triggers and sequence values.
  * Ownership and privileges are not restored: objects belong to the user
- * that restores.
+ * that restores. A backup of a newer server is written in the target's
+ * syntax where both mean the same (`ddlForServer`, catalogCompat.ts).
  */
 
 export interface PgRestoreDeps {
@@ -211,6 +212,11 @@ async function runRestore(
   let done = 0
   /** First failure when «Continuar en caso de error» is off: the transaction is rolled back. */
   let fatal: { label: string; message: string } | null = null
+  const features = featuresOf(session)
+  /** A statement of the backup, in the target server's syntax. */
+  const run = async (sql: string): Promise<void> => {
+    await session.query(ddlForServer(sql, features))
+  }
 
   const detailOf = (item: Item) => ({
     objectType: TYPE_LABEL[item.object.type] ?? item.object.type,
@@ -277,10 +283,9 @@ async function runRestore(
       if (drop) await session.query(drop)
     }
     if (!item.ddl.trim()) throw new Error(`La copia no contiene la definición de ${item.label}`)
-    await session.query(item.ddl)
-    if (item.object.type !== 'sequence')
-      for (const sql of item.meta.postDdl ?? []) await session.query(sql)
-    for (const sql of item.meta.comments ?? []) await session.query(sql)
+    await run(item.ddl)
+    if (item.object.type !== 'sequence') for (const sql of item.meta.postDdl ?? []) await run(sql)
+    for (const sql of item.meta.comments ?? []) await run(sql)
   }
 
   /** Structure objects of one phase, in order; `passes` retries failures while some succeed. */
@@ -321,7 +326,7 @@ async function runRestore(
     const width = columns.length
     const maxRows = Math.max(1, Math.min(INSERT_MAX_ROWS, Math.floor(INSERT_MAX_PARAMS / width)))
     // OVERRIDING SYSTEM VALUE (identity GENERATED ALWAYS) is PostgreSQL 10: older servers have no identity.
-    const overriding = featuresOf(session).identity ? 'OVERRIDING SYSTEM VALUE ' : ''
+    const overriding = features.identity ? 'OVERRIDING SYSTEM VALUE ' : ''
     const head = `INSERT INTO ${target} (${columns.map((c) => qi(c.name)).join(', ')}) ${overriding}VALUES `
     let params: (string | null)[] = []
     let tuples: string[] = []
@@ -417,7 +422,7 @@ async function runRestore(
       const post = async (item: Item, statements: string[]): Promise<void> => {
         if (fatal || !statements.length) return
         const err = await attempt(async () => {
-          for (const sql of statements) await session.query(sql)
+          for (const sql of statements) await run(sql)
         })
         if (err) fail(item, err)
       }

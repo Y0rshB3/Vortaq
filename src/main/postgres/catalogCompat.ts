@@ -9,6 +9,7 @@
  * unnest (9.4) in catalog SQL; `array_to_json(array_agg(x ORDER BY …))`,
  * `generate_series` and array subscripts work on every supported server.
  */
+import { codeTokens, tokenizePg, type PgToken } from '@shared/dialects/pgLexer'
 
 /** A server whose version is not known yet (a session opened before it was read). */
 export const UNKNOWN_SERVER_VERSION = 0
@@ -39,6 +40,8 @@ export interface PgCatalogFeatures {
   prokind: boolean
   /** 11: INCLUDE columns of an index (indnkeyatts). */
   includeColumns: boolean
+  /** 11: CREATE TRIGGER … EXECUTE FUNCTION (EXECUTE PROCEDURE before). */
+  triggerExecuteFunction: boolean
   /** 12: generated columns (attgenerated). */
   generated: boolean
 }
@@ -58,6 +61,7 @@ export function pgCatalogFeatures(versionNum: number | null | undefined): PgCata
     sequenceCatalog: v >= 100000,
     prokind: v >= 110000,
     includeColumns: v >= 110000,
+    triggerExecuteFunction: v >= 110000,
     generated: v >= 120000
   }
 }
@@ -140,3 +144,77 @@ export const relispopulatedSql = (f: PgCatalogFeatures, c = 'c'): string =>
 /** A view accepts INSERT: automatically updatable views exist since 9.3. */
 export const viewInsertableSql = (f: PgCatalogFeatures, c = 'c'): string =>
   f.updatableViews ? `(pg_relation_is_updatable(${c}.oid, false) & 4) = 4` : 'false'
+
+/* ---------- DDL from a newer server ---------- */
+
+const wordAt = (tokens: PgToken[], i: number): string =>
+  tokens[i]?.kind === 'word' ? tokens[i].value.toUpperCase() : ''
+
+/** Index just after a (possibly schema-qualified) name starting at `i`. */
+function afterName(tokens: PgToken[], i: number): number {
+  const part = (t: PgToken | undefined): boolean => t?.kind === 'word' || t?.kind === 'ident'
+  if (!part(tokens[i])) return i
+  i++
+  while (tokens[i]?.kind === 'punct' && tokens[i].value === '.' && part(tokens[i + 1])) i += 2
+  return i
+}
+
+/**
+ * A statement of a .vqb taken on a newer server, in the syntax `f`'s server
+ * understands, where both mean the same:
+ * - `CREATE SEQUENCE … AS smallint|integer|bigint` (10) loses its AS clause:
+ *   older sequences are all bigint, and the backup writes MINVALUE and
+ *   MAXVALUE out (introspect.ts), so the range stays the type's;
+ * - `CREATE TRIGGER … EXECUTE FUNCTION` (11) becomes EXECUTE PROCEDURE.
+ * Anything else comes back unchanged: what the old server really lacks
+ * (identity, generated columns, jsonb…) still fails there with its own error.
+ */
+export function ddlForServer(sql: string, f: PgCatalogFeatures): string {
+  if (f.sequenceCatalog && f.triggerExecuteFunction) return sql
+  const tokens = codeTokens(tokenizePg(sql))
+  if (wordAt(tokens, 0) !== 'CREATE') return sql
+  let i = 1
+  if (wordAt(tokens, i) === 'OR' && wordAt(tokens, i + 1) === 'REPLACE') i += 2
+  if (!f.sequenceCatalog && wordAt(tokens, i) === 'SEQUENCE')
+    return withoutSequenceType(sql, tokens, i + 1)
+  if (wordAt(tokens, i) === 'CONSTRAINT') i++
+  if (!f.triggerExecuteFunction && wordAt(tokens, i) === 'TRIGGER')
+    return triggerWithProcedure(sql, tokens)
+  return sql
+}
+
+function withoutSequenceType(sql: string, tokens: PgToken[], i: number): string {
+  if (
+    wordAt(tokens, i) === 'IF' &&
+    wordAt(tokens, i + 1) === 'NOT' &&
+    wordAt(tokens, i + 2) === 'EXISTS'
+  )
+    i += 3
+  const name = afterName(tokens, i)
+  if (name === i) return sql
+  // Options in any order up to the end of the statement: AS takes one type name.
+  for (let k = name; k < tokens.length; k++) {
+    if (tokens[k].kind === 'punct' && tokens[k].value === ';') break
+    if (wordAt(tokens, k) !== 'AS') continue
+    const end = afterName(tokens, k + 1)
+    if (end === k + 1) return sql
+    return sql.slice(0, tokens[k - 1].end) + sql.slice(tokens[end - 1].end)
+  }
+  return sql
+}
+
+function triggerWithProcedure(sql: string, tokens: PgToken[]): string {
+  // The last EXECUTE FUNCTION outside parentheses: only the arguments (string
+  // literals) follow it, and a WHEN (…) condition is inside parentheses.
+  let depth = 0
+  let at = -1
+  for (let k = 0; k < tokens.length; k++) {
+    const t = tokens[k]
+    if (t.kind === 'punct' && t.value === '(') depth++
+    else if (t.kind === 'punct' && t.value === ')') depth = Math.max(0, depth - 1)
+    else if (depth === 0 && wordAt(tokens, k) === 'EXECUTE' && wordAt(tokens, k + 1) === 'FUNCTION')
+      at = k + 1
+  }
+  if (at < 0) return sql
+  return sql.slice(0, tokens[at].start) + 'PROCEDURE' + sql.slice(tokens[at].end)
+}

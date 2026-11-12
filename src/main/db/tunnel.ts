@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createServer, type AddressInfo, type Server, type Socket } from 'node:net'
 import { Client, utils as sshUtils, type ConnectConfig } from 'ssh2'
+import { sshChangedHostMessage, sshUnknownHostMessage } from '@shared/sshHostKey'
 import type { SshConfig } from '@shared/types'
 import { getLogger } from '../log'
 // Moved verbatim from src/main/mysql/tunnel.ts (P1a). It keeps throwing
@@ -93,8 +95,26 @@ export async function buildConnectConfig(opts: SshTunnelOptions): Promise<Connec
  * Opens an SSH connection and a local TCP listener on 127.0.0.1 whose
  * connections are forwarded to targetHost:targetPort through the SSH server.
  */
+/** OpenSSH's fingerprint of a host key blob: `SHA256:` + unpadded base64 of its SHA-256. */
+export function sshFingerprint(key: Buffer): string {
+  return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`
+}
+
 export async function openSshTunnel(opts: SshTunnelOptions): Promise<SshTunnel> {
   const config = await buildConnectConfig(opts)
+  // Only the host key the user confirmed (shared/sshHostKey.ts); never any key, never silently.
+  let hostKeyRefusal: string | null = null
+  config.hostVerifier = (key: Buffer): boolean => {
+    const seen = sshFingerprint(key)
+    const saved = opts.ssh.hostKey
+    if (saved && saved === seen) return true
+    const port = opts.ssh.port || 22
+    hostKeyRefusal = saved
+      ? sshChangedHostMessage(opts.ssh.host, port, saved, seen)
+      : sshUnknownHostMessage(opts.ssh.host, port, seen)
+    log.warn(`ssh host key ${saved ? 'changed' : 'not confirmed yet'}: connection refused`)
+    return false
+  }
   const client = new Client()
   const closeListeners: ((reason: string) => void)[] = []
   let server: Server | null = null
@@ -112,7 +132,11 @@ export async function openSshTunnel(opts: SshTunnelOptions): Promise<SshTunnel> 
   await new Promise<void>((resolve, reject) => {
     const onError = (err: Error): void => {
       client.removeListener('ready', onReady)
-      reject(new MysqlUserError(`No se pudo conectar por SSH a ${opts.ssh.host}: ${err.message}`))
+      reject(
+        new MysqlUserError(
+          hostKeyRefusal ?? `No se pudo conectar por SSH a ${opts.ssh.host}: ${err.message}`
+        )
+      )
     }
     const onReady = (): void => {
       client.removeListener('error', onError)

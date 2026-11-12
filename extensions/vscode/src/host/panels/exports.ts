@@ -31,6 +31,7 @@ import type {
 } from '@core'
 import { CANCELLED_EXPORT } from '@core'
 import { dialogFilters, localHome, localPath, safeFileName, type FileFilters } from './dialogs'
+import { showError, showInformation } from '../notice'
 
 export const EXPORT_CHANNELS: ReadonlySet<string> = new Set([
   'export:rows',
@@ -244,7 +245,7 @@ export class PanelExports {
       if (op.last?.phase === 'cancelled' || message === CANCELLED_EXPORT)
         vscode.window.setStatusBarMessage(`$(circle-slash) ${CANCELLED_EXPORT}`, 6000)
       // Without any progress event the webview shows the error itself (ExportDialog).
-      else if (op.sawEvent || !op.post) void vscode.window.showErrorMessage(message)
+      else if (op.sawEvent || !op.post) void showError(message)
       throw err
     } finally {
       operations.finish(operationId)
@@ -271,7 +272,7 @@ const count = (n: number): string => String(Math.round(n)).replace(/\B(?=(\d{3})
 /** «N filas exportadas a x.csv» with «Abrir» and «Mostrar en carpeta». */
 export async function showExported(result: ExportResult): Promise<void> {
   const rows = result.rows
-  const choice = await vscode.window.showInformationMessage(
+  const choice = await showInformation(
     `${count(rows)} ${rows === 1 ? 'fila exportada' : 'filas exportadas'} a ${basename(result.filePath)}`,
     OPEN,
     REVEAL

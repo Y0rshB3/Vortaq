@@ -6,6 +6,7 @@
  * multi-engine (main throws the first problem, the dialog lists them all);
  * engine rules only add messages for engines other than MySQL.
  */
+import { isSshFingerprint } from './sshHostKey'
 import { engineOf, isEngineId } from './engines'
 import { sqlServerNeedsUser, sqlServerOptionErrors } from './sqlserverAuth'
 import { mcpConfigError } from './mcp'
@@ -162,6 +163,8 @@ export function connectionFormErrors(
     if (!input.ssh.username.trim()) errors.push('SSH: el usuario es obligatorio.')
     if (input.ssh.authType === 'key' && !input.ssh.privateKeyPath?.trim())
       errors.push('SSH: selecciona el archivo de clave privada.')
+    if (input.ssh.hostKey !== undefined && !isSshFingerprint(input.ssh.hostKey))
+      errors.push('SSH: la huella del servidor no es válida (SHA256:… de OpenSSH).')
   }
   errors.push(...engineBlockErrors(input, options))
   const mcp = mcpProblem(input, options)

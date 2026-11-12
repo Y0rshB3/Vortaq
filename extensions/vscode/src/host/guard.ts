@@ -25,6 +25,7 @@ import {
   destructiveItems,
   destructiveTitle
 } from '@renderer/components/query/destructiveGuard'
+import { showWarning } from './notice'
 
 /** How the guard talks to the user (VS Code UI; tests replace it). */
 export interface Prompter {
@@ -53,11 +54,7 @@ export const vscodePrompter: Prompter = {
     })
   },
   async confirm({ title, detail, confirmText }) {
-    const answer = await vscode.window.showWarningMessage(
-      title,
-      { modal: true, detail },
-      confirmText
-    )
+    const answer = await showWarning(title, { modal: true, detail }, confirmText)
     return answer === confirmText
   }
 }

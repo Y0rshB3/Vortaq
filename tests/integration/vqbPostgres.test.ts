@@ -7,7 +7,7 @@
  * table's digest, sequence and object must match. Uses its own databases so
  * the whole-database backup never sees other suites' objects.
  */
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -20,6 +20,7 @@ import { getConnectionManager, getSessionFactory } from '@main/db/manager'
 import { isPgConnection, type PgDriverConnection } from '@main/postgres/connection'
 import type { PgSession } from '@main/postgres/session'
 import { createBackupService, type BackupService } from '@main/backup/index'
+import { BACKUP_CANCELLED } from '@main/backup/create'
 import { VqbReader } from '@main/backup/vqb/reader'
 import { POSTGRES_TARGET, describeServer } from './targets'
 
@@ -27,6 +28,7 @@ const SRC = `vqb_src_${process.pid}`
 const DST = `vqb_dst_${process.pid}`
 const DST_ENC = `vqb_enc_${process.pid}`
 const DST_NEVER = `vqb_never_${process.pid}`
+const BIG = `vqb_big_${process.pid}`
 const ROWS = 3000
 const CHEAP = { N: 1024, r: 8, p: 1 }
 
@@ -213,7 +215,7 @@ describeServer(POSTGRES_TARGET, '.vqb backups of PostgreSQL (integration)', (url
     if (!isPgConnection(c)) throw new Error('not pg')
     connection = c
     service = createBackupService(ctx, getSessionFactory(ctx), { scrypt: CHEAP })
-    for (const db of [SRC, DST, DST_ENC, DST_NEVER]) await dropDatabase(db)
+    for (const db of [SRC, DST, DST_ENC, DST_NEVER, BIG]) await dropDatabase(db)
     await withDb(connection.initialDatabase, (s) => s.query(`CREATE DATABASE "${SRC}"`))
     await withDb(SRC, async (s) => {
       for (const sql of SEED) await s.query(sql)
@@ -222,7 +224,7 @@ describeServer(POSTGRES_TARGET, '.vqb backups of PostgreSQL (integration)', (url
 
   afterAll(async () => {
     try {
-      for (const db of [SRC, DST, DST_ENC, DST_NEVER]) await dropDatabase(db)
+      for (const db of [SRC, DST, DST_ENC, DST_NEVER, BIG]) await dropDatabase(db)
     } catch {
       /* best effort */
     }
@@ -464,6 +466,42 @@ describeServer(POSTGRES_TARGET, '.vqb backups of PostgreSQL (integration)', (url
     )
     expect(extra).toHaveLength(0)
   }, 180_000)
+
+  it('cancels in the middle of a large table, not after it, and leaves no file', async () => {
+    await withDb(connection.initialDatabase, (s) => s.query(`CREATE DATABASE "${BIG}"`))
+    await withDb(BIG, (s) =>
+      s.query(
+        `CREATE TABLE public.big AS SELECT g AS id, repeat('x', 200) AS pad FROM generate_series(1, 300000) g`
+      )
+    )
+    const controller = new AbortController()
+    const events: { phase: string; rows: number | null }[] = []
+    const started = performance.now()
+    await expect(
+      service.create(
+        { connectionId: id, schema: BIG, includeData: true, format: 'vqb' },
+        (e) => {
+          events.push({ phase: e.phase, rows: e.detail?.rows ?? null })
+          // «Cancelar» as soon as the first rows of the table are reported.
+          if (e.phase === 'rows') controller.abort()
+        },
+        controller.signal
+      )
+    ).rejects.toThrow(BACKUP_CANCELLED)
+    expect(performance.now() - started).toBeLessThan(10_000)
+    expect(events.some((e) => e.phase === 'objectDone')).toBe(false)
+    expect(Math.max(...events.map((e) => e.rows ?? 0))).toBeLessThan(300000)
+    const folder = join(dir, 'backups', BIG)
+    expect(existsSync(folder) ? readdirSync(folder) : []).toEqual([])
+    // The session went back to the pool: the next copy of the same database works.
+    const again = await service.create({
+      connectionId: id,
+      schema: BIG,
+      includeData: false,
+      format: 'vqb'
+    })
+    expect(again.objects).toBe(1)
+  }, 120_000)
 
   it('refuses a .vqb of another engine and .nb3 formats for PostgreSQL', async () => {
     await expect(

@@ -30,6 +30,7 @@ import type { ObjectNode, TreeNode } from './tree'
 import { schemaRefOf } from './tree'
 import type { ResultsState, WebviewSettings } from '../webviewState'
 import type { ExecutionPlan } from '@shared/plan/types'
+import { showInformation, showWarning } from './notice'
 
 interface Running {
   seq: number
@@ -125,7 +126,7 @@ export class SqlRunner implements vscode.Disposable {
     // `starting` covers the prompts and the connect before the run is registered, so a second
     // Cmd+Enter meanwhile cannot send the script twice.
     if (this.running.has(uri) || this.starting.has(uri)) {
-      void vscode.window.showInformationMessage(
+      void showInformation(
         'Este documento ya está ejecutando una consulta. Pulsa «Detener» para cancelarla.'
       )
       return
@@ -155,7 +156,7 @@ export class SqlRunner implements vscode.Disposable {
             sqlDialectOf(connection)
           )
       if (!picked) {
-        void vscode.window.showWarningMessage('No hay SQL para ejecutar.')
+        void showWarning('No hay SQL para ejecutar.')
         return
       }
       await this.execute(uri, connection, target, picked, editor)
@@ -290,7 +291,7 @@ export class SqlRunner implements vscode.Disposable {
       if (!target || !connection) return null
     }
     if (connection.engine === 'mongodb') {
-      void vscode.window.showInformationMessage(
+      void showInformation(
         'MongoDB no tiene plan de ejecución en Vortaq: usa .explain() en la consulta.'
       )
       return null
@@ -305,7 +306,7 @@ export class SqlRunner implements vscode.Disposable {
       sqlDialectOf(connection)
     )
     if (!picked) {
-      void vscode.window.showWarningMessage('No hay SQL para analizar.')
+      void showWarning('No hay SQL para analizar.')
       return null
     }
     const schema = usesSchemaRef(connection.engine)

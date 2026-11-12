@@ -14,6 +14,7 @@ import {
   type ServerInfo,
   type VortaqCore
 } from '@core'
+import { showWarning } from './notice'
 
 export class ConnectionService implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<string | undefined>()
@@ -107,7 +108,7 @@ export class ConnectionService implements vscode.Disposable {
     this.forgetEphemeral(id)
     this.changed.fire(id)
     const name = this.get(id)?.name ?? id
-    void vscode.window.showWarningMessage(`Se perdió la conexión con «${name}»: ${reason}`)
+    void showWarning(`Se perdió la conexión con «${name}»: ${reason}`)
   }
 
   private async askMissingSecrets(connection: ConnectionConfig): Promise<boolean> {

@@ -21,7 +21,7 @@ MySQL · MariaDB · PostgreSQL · SQLite · MongoDB · SQL Server
 
 Extensión para **VS Code, Cursor, VSCodium y Windsurf**:
 [**Marketplace de VS Code**](https://marketplace.visualstudio.com/items?itemName=y0rshb3.vortaq) ·
-[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.2/vortaq-0.8.2.vsix) ·
+[descargar `.vsix`](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.3/vortaq-0.8.3.vsix) ·
 [cómo instalarla](#instalar-la-extensión)
 
 <br />
@@ -383,6 +383,12 @@ derecha, el asistente de IA (✦) y los ajustes (⚙).
 2. Rellena host, puerto, usuario y contraseña (en SQLite, el archivo). Elige el **Entorno**: marca como **Producción** cualquier servidor
    real que no quieras modificar por accidente.
 3. Opcional: túnel SSH (contraseña o archivo de clave privada) y SSL (CA, certificado y clave de cliente).
+   La primera vez que Vortaq conecta con un servidor SSH te muestra su **huella** (`SHA256:…`, la misma que da
+   `ssh-keygen -lf`) y no sigue hasta que confías en ella («Confiar y reintentar» al probar la conexión, o
+   «Confiar en el servidor SSH» al abrirla); desde entonces solo acepta esa clave. Si un día la huella cambia, no
+   se conecta: si quien administra el servidor cambió su clave, olvida la huella en la pestaña SSH y confirma la
+   nueva. Las tareas programadas y los agentes (MCP) nunca confían por su cuenta: abre la conexión una vez en
+   Vortaq antes.
 4. **Probar conexión** y guarda.
 
 **Conexiones sin contraseña.** Si el servidor no pide contraseña (un proxy local que autentica por su cuenta,
@@ -452,7 +458,9 @@ MySQL nada cambia.
 
 **Conexión › Nueva conexión PostgreSQL…** crea una conexión PostgreSQL. Funciona con **PostgreSQL 9.2 o
 posterior** (pensado para la 12 o posterior): en servidores antiguos, lo que el servidor no tiene (identidades,
-columnas generadas, particiones, vistas materializadas, procedimientos) simplemente no aparece.
+columnas generadas, particiones, vistas materializadas, procedimientos) simplemente no aparece. Una copia `.vqb`
+de un servidor más nuevo se restaura en uno antiguo: las secuencias y los triggers se escriben con la sintaxis del
+destino; lo que el destino no tiene (identidades, columnas generadas, `jsonb`…) falla con el error del servidor.
 
 - **Conexión**: host, puerto (5432), usuario, contraseña o «Sin contraseña», **base de datos inicial**,
   `search_path` opcional y «Mostrar esquemas y bases de datos del sistema». Pestaña **SSL** con los modos de
@@ -647,6 +655,9 @@ Database o Azure SQL Managed Instance.
     MFA); Vortaq no guarda nada.
   - **Microsoft Entra ID, aplicación**: inquilino, ID de aplicación y su secreto (en el campo de contraseña).
   - El usuario y contraseña de Entra sin navegador no se ofrece: Microsoft lo retiró y no funciona con MFA.
+  - Con cualquier método de Entra, Vortaq solo pide y entrega tokens para **Azure SQL** (nube pública, Azure
+    Government y Azure China), y solo por TLS con el certificado verificado: cifrado **Obligatorio** o
+    **Estricto** y sin «Confiar en el certificado del servidor».
 - **Conexión**: servidor y puerto (1433) o **instancia con nombre** (`SQLEXPRESS`, por SQL Server Browser; con
   túnel SSH escribe el puerto de la instancia), **base de datos inicial** (vacía = la del inicio de sesión) y
   «Mostrar bases de datos y esquemas del sistema». Pestaña **SSL**: cifrado **Obligatorio**, **Estricto** (TDS
@@ -1609,7 +1620,7 @@ navegador del sistema). Su código está en [`extensions/vscode`](extensions/vsc
   <img src="docs/images/extension-vscode.png" alt="La extensión Vortaq en VS Code: árbol de conexiones, archivo .sql y resultados editables" width="900" />
 </p>
 
-Qué hace (versión 0.8.2):
+Qué hace (versión 0.8.3):
 
 - **Conexiones** en la barra de actividad (icono de Vortaq): bases de datos, esquemas, tablas, vistas y
   colecciones, con el color, el entorno y el candado de producción de cada conexión. Se crean y editan con el
@@ -1694,8 +1705,8 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 
 - **Desde el archivo `.vsix`** (Cursor, VSCodium y Windsurf usan Open VSX, donde todavía no está):
   1. Descarga
-     [**`vortaq-0.8.2.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.2/vortaq-0.8.2.vsix)
-     (versión [`vscode-v0.8.2`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.2), con su
+     [**`vortaq-0.8.3.vsix`**](https://github.com/Y0rshB3/Vortaq/releases/download/vscode-v0.8.3/vortaq-0.8.3.vsix)
+     (versión [`vscode-v0.8.3`](https://github.com/Y0rshB3/Vortaq/releases/tag/vscode-v0.8.3), con su
      `SHA256SUMS.txt`).
   2. En el editor abre **Extensiones**, el menú **…** y **Instalar desde VSIX…** (en inglés,
      _Install from VSIX…_), y elige el archivo. Funciona igual en VS Code, Cursor, VSCodium y Windsurf.
@@ -1703,10 +1714,10 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
   O desde la terminal, en la carpeta donde lo descargaste:
 
   ```bash
-  code --install-extension vortaq-0.8.2.vsix       # VS Code
-  cursor --install-extension vortaq-0.8.2.vsix     # Cursor
-  codium --install-extension vortaq-0.8.2.vsix     # VSCodium
-  windsurf --install-extension vortaq-0.8.2.vsix   # Windsurf
+  code --install-extension vortaq-0.8.3.vsix       # VS Code
+  cursor --install-extension vortaq-0.8.3.vsix     # Cursor
+  codium --install-extension vortaq-0.8.3.vsix     # VSCodium
+  windsurf --install-extension vortaq-0.8.3.vsix   # Windsurf
   ```
 
 - **Actualizaciones de un `.vsix`:** el editor no actualiza una extensión instalada desde un archivo, así que
@@ -1719,7 +1730,7 @@ Requiere **VS Code 1.123 o posterior** (o un editor basado en esa versión o en 
 - **Open VSX** (próximamente), para instalarla desde la vista Extensiones de VSCodium, Cursor y Windsurf.
 
 Para generarla tú mismo desde el código: `npm run ext:install` (una vez) y `npm run ext:package`, que deja
-`extensions/vscode/vortaq-0.8.2.vsix`.
+`extensions/vscode/vortaq-0.8.3.vsix`.
 
 **SQLite** usa el `node:sqlite` del propio editor (Node 24.10 o posterior), sin módulos nativos. Funciona en VS
 Code 1.123+ y en las versiones actuales de Cursor, VSCodium y Windsurf en el escritorio, pero **no en el

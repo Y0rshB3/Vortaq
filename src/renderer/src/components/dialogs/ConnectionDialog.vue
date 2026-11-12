@@ -27,6 +27,7 @@ import { isAbsolutePathFor } from '@shared/connectionValidation'
 import { parseMongoUri } from '@shared/mongo/uri'
 import { parseSqlServerConnectionString } from '@shared/sqlserver/connectionString'
 import { trustFixesError } from '@shared/sqlserver/certificate'
+import { sshHostKeyIssue } from '@shared/sshHostKey'
 import {
   localInstanceLabel,
   localInstanceSteps,
@@ -401,6 +402,33 @@ async function trustAndRetry(): Promise<void> {
 }
 
 /*
+ * The SSH server's host key (shared/sshHostKey.ts): «Probar conexión» shows the
+ * fingerprint of a server not confirmed yet («Confiar y reintentar» saves it with
+ * the form) or of a changed key («Olvidar la huella guardada», then confirm the
+ * new one). The pinned key belongs to one SSH host and port: changing either drops it.
+ */
+const sshIssue = computed(() => sshHostKeyIssue(testResult.value?.error))
+const sshEndpoint = computed(
+  () => `${form.value.ssh.host.trim()}:${Number(form.value.ssh.port) || 22}`
+)
+const sshKeyEndpoint = ref<string | null>(null)
+function setSshHostKey(hostKey: string | undefined): void {
+  const ssh = { ...form.value.ssh }
+  if (hostKey) ssh.hostKey = hostKey
+  else delete ssh.hostKey
+  form.value = { ...form.value, ssh }
+  sshKeyEndpoint.value = hostKey ? sshEndpoint.value : null
+}
+async function trustSshHostAndRetry(fingerprint: string): Promise<void> {
+  setSshHostKey(fingerprint)
+  await test()
+}
+watch(sshEndpoint, (endpoint) => {
+  if (form.value.ssh.hostKey && sshKeyEndpoint.value !== null && endpoint !== sshKeyEndpoint.value)
+    setSshHostKey(undefined)
+})
+
+/*
  * «Buscar servidores en este equipo» (Windows): the local instances, with what
  * is missing for a TCP connection (src/main/sqlserver/localInstances.ts).
  */
@@ -558,6 +586,7 @@ async function reset(): Promise<void> {
   msString.value = ''
   msWarnings.value = []
   sshPassword.value = ''
+  sshKeyEndpoint.value = form.value.ssh.hostKey ? sshEndpoint.value : null
   clearPassword.value = false
   clearSshPassword.value = false
   showPassword.value = false
@@ -1590,6 +1619,28 @@ async function save(): Promise<void> {
                   </v-btn>
                 </template>
               </v-col>
+              <v-col
+                cols="12"
+                class="d-flex align-center flex-wrap ga-2"
+                data-test="conn-ssh-hostkey"
+              >
+                <template v-if="form.ssh.hostKey">
+                  <v-icon icon="mdi-shield-key-outline" size="18" color="success" />
+                  <span class="text-body-2">Huella del servidor confirmada:</span>
+                  <code class="nd-mono-input">{{ form.ssh.hostKey }}</code>
+                  <v-btn
+                    size="small"
+                    variant="text"
+                    data-test="conn-ssh-hostkey-forget"
+                    @click="setSshHostKey(undefined)"
+                    >Olvidar</v-btn
+                  >
+                </template>
+                <span v-else-if="form.ssh.enabled" class="text-caption text-medium-emphasis">
+                  La primera vez que Vortaq conecte con este servidor SSH te mostrará su huella para
+                  que la confirmes.
+                </span>
+              </v-col>
             </v-row>
           </v-window-item>
 
@@ -1999,6 +2050,49 @@ async function save(): Promise<void> {
               data-test="conn-ms-trust-retry"
               @click="trustAndRetry"
               >Confiar y reintentar</v-btn
+            >
+          </template>
+        </v-alert>
+        <v-alert
+          v-if="sshIssue?.kind === 'unknown'"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          data-test="conn-ssh-hostkey-offer"
+        >
+          Primera conexión con este servidor SSH. Su huella es
+          <code>{{ sshIssue.fingerprint }}</code
+          >. Compruébala con quien administra el servidor (<code>ssh-keygen -lf</code> de su clave)
+          antes de confiar en ella.
+          <template #append>
+            <v-btn
+              size="small"
+              variant="text"
+              :loading="testing"
+              data-test="conn-ssh-hostkey-trust"
+              @click="trustSshHostAndRetry(sshIssue.fingerprint)"
+              >Confiar y reintentar</v-btn
+            >
+          </template>
+        </v-alert>
+        <v-alert
+          v-else-if="sshIssue?.kind === 'changed'"
+          type="error"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          data-test="conn-ssh-hostkey-changed"
+        >
+          La huella del servidor SSH no es la que confirmaste. Si quien lo administra no ha cambiado
+          su clave, no te conectes: alguien podría estar haciéndose pasar por él.
+          <template #append>
+            <v-btn
+              size="small"
+              variant="text"
+              data-test="conn-ssh-hostkey-forget-changed"
+              @click="setSshHostKey(undefined)"
+              >Olvidar la huella guardada</v-btn
             >
           </template>
         </v-alert>

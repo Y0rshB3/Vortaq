@@ -22,6 +22,7 @@ import { getCACertificates, rootCertificates } from 'node:tls'
 import type { TokenCredential } from '@azure/core-auth'
 import { Connection, type ConnectionConfiguration } from 'tedious'
 import { DEFAULT_NETWORK, defaultSqlServerOptions } from '@shared/engines'
+import { entraTransportProblem } from '@shared/sqlserverAuth'
 import type { ConnectionInput, NetworkOptions, SqlServerOptions } from '@shared/types'
 import type { DriverSecrets, Endpoint } from '../db/driver'
 import { APP_NAME } from '../brand'
@@ -73,11 +74,15 @@ export function authenticationOf(
     }
     case 'entra-interactive':
     case 'entra-azure-cli':
-    case 'entra-service-principal':
+    case 'entra-service-principal': {
+      // Also for connections saved before 2.9.3: the token only travels over verified TLS.
+      const transport = entraTransportProblem(options)
+      if (transport) throw new MsUserError(transport, 'E_MS_ENTRA_TLS')
       return {
         type: 'token-credential',
         options: { credential: entraCredential(config, options, password) }
       }
+    }
     default:
       throw new MsUserError('Método de autenticación de SQL Server desconocido', 'E_MS_AUTH')
   }
